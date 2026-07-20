@@ -13,10 +13,10 @@ myWiki는 산업 관련 최신 정보를 자동으로 수집·정리하고,
 | 항목 | 내용 |
 |---|---|
 | 프로그램 | SK SUNI 5기 Full-Term Project |
-| 팀명 | Team 5 |
+| 팀 | Team 5 |
 | 프로젝트명 | myWiki |
 | 직무 트랙 | AI/DATA |
-| 프로젝트 주제 | 산업 동향 자동 큐레이션 |
+| 프로젝트 주제 | 4. 산업 동향 자동 큐레이션 |
 | 프로젝트 기간 | `2026.07.20 ~ 2026.08.20` |
 | 프로젝트 상태 | `기획` |
 | Repository | `SK_Suni_5th_project-myWiki` |
@@ -141,16 +141,11 @@ flowchart LR
 
 ## 8. Git Convention
 
-### Branch Strategy
-
-| Branch | 용도 |
-|---|---|
-| `main` | 최종 배포 및 제출 버전 |
-| `develop` | 개발 내용 통합 |
-| `feature/<issue-number>-<feature-name>` | 기능 개발 |
-| `fix/<issue-number>-<fix-name>` | 오류 수정 |
-| `docs/<issue-number>-<document-name>` | 문서 수정 |
-| `refactor/<issue-number>-<target-name>` | 코드 구조 개선 |
+### 브랜치 전략 (Branching Strategy)
+- main : 제품 출시 및 배포용 브랜치 (직접 commit 금지)
+- develop : 다음 버전을 개발하는 통합 브랜치
+- feature/기능명 : 새로운 기능을 개발하는 브랜치 (예시 : feature/login)
+- fix/버그명 : 버그를 수정하는 브랜치 (예시 : fix/error-404)
 
 ### Commit Message
 
@@ -158,15 +153,15 @@ flowchart LR
 <type>: <summary>
 ```
 
-| Type | 설명 |
+### 커밋 메시지 규칙(Commit Message Convention)
+커밋 메시지는 타입 : 메시지 내용 형태로 작성해주세요
+| 타입 | 의미 |
 |---|---|
-| `feat` | 새로운 기능 추가 |
-| `fix` | 오류 수정 |
-| `docs` | 문서 수정 |
-| `refactor` | 코드 리팩터링 |
-| `test` | 테스트 코드 추가 및 수정 |
-| `chore` | 설정, 패키지, 빌드 관련 변경 |
-| `data` | 데이터 추가 및 수정 |
+| Feat | 새로운 기능 추가 |
+| Fix | 버그 수정 |
+| Docs | 문서 수정(README 등) |
+| Style | 코드 포맷팅, 세미콜론 누락 등(코드 변경 없는 경우) |
+| Refactor | 코드 리팩토링 |
 
 #### Example
 
@@ -179,6 +174,10 @@ data: 반도체 산업 키워드 목록 업데이트
 
 ### Pull Request Rules
 
+1. feature 브랜치 작업 완료 후 develop 브랜치로 PR 을 보냅니다.
+2. 충돌(Conflict) 발생 시 작업자가 직접 해결 후 push 합니다.
+
+#### 참고사항
 - 하나의 PR에는 하나의 주요 목적만 포함합니다.
 - PR 본문에 작업 내용과 테스트 결과를 작성합니다.
 - 직접 `main` Branch에 Push하지 않습니다.
