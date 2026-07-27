@@ -1,0 +1,2929 @@
+{
+  "entityData": [
+    {
+      "_id": "7X6TRyoTArmygRwjc",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "reports",
+      "name": "reports",
+      "position": {
+        "x": 3960,
+        "y": 920
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "2uQuupPMnkFeNBp9w",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "G7geNlNtEz1PTaMna",
+          "name": "workspace_id",
+          "pName": "workspace_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "Ai3Y0zSD51kLpbwIU",
+          "relFieldId": "DsaRxrwEXXoNIR8mJ",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "Hr7tqDSLPIDQ5zgPw",
+          "name": "report_key",
+          "pName": "report_key",
+          "domain": "",
+          "type": "VARCHAR(200)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "UNIQUE(workspace_id, report_key, version)",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "YboQyFLcjTK3li6Z9",
+          "name": "version",
+          "pName": "version",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "1",
+          "isAllowNull": false,
+          "comment": "CHECK version >= 1; regeneration = new row, never UPDATE",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "8fwySg7Eitwdugoru",
+          "name": "requested_by",
+          "pName": "requested_by",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "NXNdMov9RFNGP7J7Z",
+          "relFieldId": "4EGxyYE2dgZRtTS5D",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "zPnSQovo6dubdegKW",
+          "name": "title",
+          "pName": "title",
+          "domain": "",
+          "type": "VARCHAR(500)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "3225p9ciqsWcSfpXd",
+          "name": "report_type",
+          "pName": "report_type",
+          "domain": "",
+          "type": "VARCHAR(50)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "maHLRttrodJfA94Sq",
+          "name": "status",
+          "pName": "status",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "8NaSiSnw5oEsJns2g",
+          "name": "request_config",
+          "pName": "request_config",
+          "domain": "",
+          "type": "JSONB",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "AW7PvFi8BXAGZoduQ",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "odK6CBA2ktXzSiCRS",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "mLGtMdLH29LLtdN5t",
+          "name": "completed_at",
+          "pName": "completed_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "8t6uCRWW2dgjhsqZA",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "pipeline_jobs",
+      "name": "pipeline_jobs",
+      "position": {
+        "x": 1100,
+        "y": 2100
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "wSPBPeavic9DQn2G2",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "zC9VFChTkg640p6PY",
+          "name": "workspace_id",
+          "pName": "workspace_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "Ai3Y0zSD51kLpbwIU",
+          "relFieldId": "DsaRxrwEXXoNIR8mJ",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "MPYgrCvar63Srsx9q",
+          "name": "job_type",
+          "pName": "job_type",
+          "domain": "",
+          "type": "VARCHAR(50)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "xT9458Wr6edcQJ5Hb",
+          "name": "target_type",
+          "pName": "target_type",
+          "domain": "",
+          "type": "VARCHAR(50)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "k8fgvjdJiziF2975L",
+          "name": "target_id",
+          "pName": "target_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "TYBnE9ctCCvKkdo5E",
+          "name": "status",
+          "pName": "status",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "eeZC8o4HHpgsqgBQ2",
+          "name": "progress",
+          "pName": "progress",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "SBEb4bBnkTprA4AnF",
+          "name": "error_message",
+          "pName": "error_message",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "r79WaedJfXzYSNgiS",
+          "name": "requested_by",
+          "pName": "requested_by",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "NXNdMov9RFNGP7J7Z",
+          "relFieldId": "4EGxyYE2dgZRtTS5D",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "97qjhaYz8LD6x29zM",
+          "name": "payload",
+          "pName": "payload",
+          "domain": "",
+          "type": "JSONB",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "iRionDhLZ8RWhAiXL",
+          "name": "result",
+          "pName": "result",
+          "domain": "",
+          "type": "JSONB",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "xMuaQjkHJ5ikCEKiD",
+          "name": "retry_count",
+          "pName": "retry_count",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "or86TEQPxtGBzuMin",
+          "name": "idempotency_key",
+          "pName": "idempotency_key",
+          "domain": "",
+          "type": "VARCHAR(200)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "3A7gDAoqb3ENz2eRt",
+          "name": "started_at",
+          "pName": "started_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "eFZcdowysgvD4kFMw",
+          "name": "completed_at",
+          "pName": "completed_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Pkh4SmLGKEfy9p3Ww",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "ZYFoF592H33QPJ2gs",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "9hpo3Jukafky9jYkq",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "qmd_index_entries",
+      "name": "qmd_index_entries",
+      "position": {
+        "x": 3210,
+        "y": 2190
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "zqDawrfecJoRkKFkH",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "KfQeWPtzyShkSw5qi",
+          "name": "document_version_id",
+          "pName": "document_version_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "adPxhZXL2MtA9gG8S",
+          "relFieldId": "FpsnHA7fcrGJ946pK",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "Pe2R9fycFPx2NqTe3",
+          "name": "wiki_version_id",
+          "pName": "wiki_version_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "revakc63tSKifD8fv",
+          "relFieldId": "EbJi3EcM5WPLyCtos",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "2Prv88bheXzrELBDK",
+          "name": "report_id",
+          "pName": "report_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "7X6TRyoTArmygRwjc",
+          "relFieldId": "2uQuupPMnkFeNBp9w",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "brGxFibFj8t9dmtzj",
+          "name": "collection_name",
+          "pName": "collection_name",
+          "domain": "",
+          "type": "VARCHAR(100)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Mt4vBYr8JjCmLiuEi",
+          "name": "status",
+          "pName": "status",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "6wjHBDq3WDbBLZw8J",
+          "name": "qmd_uri",
+          "pName": "qmd_uri",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "QPBRDxbgQMv2z4CpX",
+          "name": "qmd_docid",
+          "pName": "qmd_docid",
+          "domain": "",
+          "type": "VARCHAR(20)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "K3mkNWfZu5aSB22mH",
+          "name": "index_generation",
+          "pName": "index_generation",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "ocsK25JqxfsMkPaHL",
+          "name": "indexed_at",
+          "pName": "indexed_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "5KPRqQYoCaR9mc9NG",
+          "name": "last_error",
+          "pName": "last_error",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "eAJeMzRc2WSuRedtA",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "mkNPEZZxpyjw6P7DZ",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "Ed4PueqyAeguMfspz",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "wiki_page_sources",
+      "name": "wiki_page_sources",
+      "position": {
+        "x": 3120,
+        "y": 1710
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "DXNpYgLbnD4WTZ7Ep",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "GJhpJH76WSrR8TnhP",
+          "name": "wiki_version_id",
+          "pName": "wiki_version_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "revakc63tSKifD8fv",
+          "relFieldId": "EbJi3EcM5WPLyCtos",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "ht55YqaTc3RuYuxYC",
+          "name": "document_version_id",
+          "pName": "document_version_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "adPxhZXL2MtA9gG8S",
+          "relFieldId": "FpsnHA7fcrGJ946pK",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "mTZ9nJQzfgtEv8R3f",
+          "name": "claim_text",
+          "pName": "claim_text",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "xPsavW4jPhoesXv6r",
+          "name": "source_start_line",
+          "pName": "source_start_line",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "ihfdua5oiHmLDn85W",
+          "name": "source_end_line",
+          "pName": "source_end_line",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Ks5Bb5fcovnDpKstv",
+          "name": "support_type",
+          "pName": "support_type",
+          "domain": "",
+          "type": "VARCHAR(20)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "JST6fL2Gza9JcmTgP",
+          "name": "citation_order",
+          "pName": "citation_order",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "MBkjjfkbAZKTPTXqh",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "Lqjs4sXTaT5tLNL65",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "wiki_pages",
+      "name": "wiki_pages",
+      "position": {
+        "x": 3170,
+        "y": 560
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "vqY2QTiX66ktTQz6c",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "QS60g8hh9JqrzzdOP",
+          "name": "workspace_id",
+          "pName": "workspace_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "UNIQUE(workspace_id, slug)",
+          "relEntity": "Ai3Y0zSD51kLpbwIU",
+          "relFieldId": "DsaRxrwEXXoNIR8mJ",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "yB9QCJ97qMhWWZaMP",
+          "name": "parent_page_id",
+          "pName": "parent_page_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "Lqjs4sXTaT5tLNL65",
+          "relFieldId": "vqY2QTiX66ktTQz6c",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "R97mrtvdWxxLfron3",
+          "name": "slug",
+          "pName": "slug",
+          "domain": "",
+          "type": "VARCHAR(300)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "SpPBXkXaH7oMkGsKu",
+          "name": "title",
+          "pName": "title",
+          "domain": "",
+          "type": "VARCHAR(500)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "2RabK83KNGiqaDRX3",
+          "name": "page_type",
+          "pName": "page_type",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Pz3s4Ku6KGign2DuY",
+          "name": "status",
+          "pName": "status",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "BQnQQYd3TzxnfLbeN",
+          "name": "review_policy",
+          "pName": "review_policy",
+          "domain": "",
+          "type": "VARCHAR(20)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "kyNRs6eTviZNPawGH",
+          "name": "current_version_id",
+          "pName": "current_version_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "revakc63tSKifD8fv",
+          "relFieldId": "EbJi3EcM5WPLyCtos",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "2fJA53LTipuimQ3N4",
+          "name": "published_at",
+          "pName": "published_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "mG6cEqwLYA89hrsvM",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "4Av8uawX7EPuBs6dR",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "NXNdMov9RFNGP7J7Z",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "profiles",
+      "name": "profiles",
+      "position": {
+        "x": 2120,
+        "y": 770
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "4EGxyYE2dgZRtTS5D",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "SicjR8D8kkBduASod",
+          "name": "display_name",
+          "pName": "display_name",
+          "domain": "",
+          "type": "VARCHAR(100)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "dYK3A6Qc9ZvvtuPwY",
+          "name": "department",
+          "pName": "department",
+          "domain": "",
+          "type": "VARCHAR(100)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "v2rdgCTkNcczDse86",
+          "name": "role",
+          "pName": "role",
+          "domain": "",
+          "type": "VARCHAR(20)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "8EfiRFzLMuqSbS8pv",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "psH89vyeTvEHg3Cf3",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "NkHTrhPmu6MkW9NHn",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "sources",
+      "name": "sources",
+      "position": {
+        "x": 1080,
+        "y": 890
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "nmDHT8guMZ4QKfvZg",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "kb4R5KIkqk3cb0Apv",
+          "name": "workspace_id",
+          "pName": "workspace_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "UNIQUE(workspace_id, name)",
+          "relEntity": "Ai3Y0zSD51kLpbwIU",
+          "relFieldId": "DsaRxrwEXXoNIR8mJ",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "G36phDLm7e6yZZH8X",
+          "name": "name",
+          "pName": "name",
+          "domain": "",
+          "type": "VARCHAR(200)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "njszhSGA7N3mQPk7L",
+          "name": "source_type",
+          "pName": "source_type",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "iquPZ9NyiR45CZbR4",
+          "name": "base_url",
+          "pName": "base_url",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "SHSo5PNmzsxGp6LL4",
+          "name": "reliability_score",
+          "pName": "reliability_score",
+          "domain": "",
+          "type": "DECIMAL(5,4)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "BaCCrqtH524kYnehD",
+          "name": "config",
+          "pName": "config",
+          "domain": "",
+          "type": "JSONB",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "3eSKphxEX5MMLfbz5",
+          "name": "enabled",
+          "pName": "enabled",
+          "domain": "",
+          "type": "BOOLEAN",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "EAMQ2Tq64yjFoiJMt",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "ehktWNgrX2aKupwjJ",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "SFJcm4sFBui66tkuS",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "chat_messages",
+      "name": "chat_messages",
+      "position": {
+        "x": 2060,
+        "y": 1430
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "RHdjXqo3S6vG75rDX",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "WYuezXbPJyZBwfvbq",
+          "name": "session_id",
+          "pName": "session_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "nHFi88BNoAq4qxZx6",
+          "relFieldId": "nuesjYbjwnHK97L9F",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "66iN7ttapzAjn68Hx",
+          "name": "role",
+          "pName": "role",
+          "domain": "",
+          "type": "VARCHAR(20)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "aGQP79oKymktL8ZZ9",
+          "name": "content",
+          "pName": "content",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "zDnPf7ywe2FPXeZDy",
+          "name": "model_name",
+          "pName": "model_name",
+          "domain": "",
+          "type": "VARCHAR(100)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "PNiSK3NFMLPi4bKiL",
+          "name": "prompt_version",
+          "pName": "prompt_version",
+          "domain": "",
+          "type": "VARCHAR(50)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Pcj6t5K4HW8N6EfbG",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "T9fnLnjQeXJQcDrdt",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "report_sections",
+      "name": "report_sections",
+      "position": {
+        "x": 3980,
+        "y": 1440
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "QpokGtrTouhkN49qX",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "iWtyQDZ34mjMxJ95G",
+          "name": "report_id",
+          "pName": "report_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "7X6TRyoTArmygRwjc",
+          "relFieldId": "2uQuupPMnkFeNBp9w",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "2Wvg4TPu75Nr7yD4i",
+          "name": "section_order",
+          "pName": "section_order",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "8jyTLMhPKCNC7PvCf",
+          "name": "title",
+          "pName": "title",
+          "domain": "",
+          "type": "VARCHAR(500)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "ihi5pNReS693qXW7T",
+          "name": "content",
+          "pName": "content",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "9wvggTBYdgNXsZTnR",
+          "name": "status",
+          "pName": "status",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "HbaLMdkLiGhYeWGvR",
+          "name": "model_name",
+          "pName": "model_name",
+          "domain": "",
+          "type": "VARCHAR(100)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "2mmCSAFPM9R2PeHvL",
+          "name": "prompt_version",
+          "pName": "prompt_version",
+          "domain": "",
+          "type": "VARCHAR(50)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "dp7XEiJEcNtuAsnNN",
+          "name": "generation_run_id",
+          "pName": "generation_run_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "8t6uCRWW2dgjhsqZA",
+          "relFieldId": "wSPBPeavic9DQn2G2",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "rPojZmq3ZDrTEHf7y",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "LWPXymxyTApBjRCKS",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "TpWeZ7sX8c6tsakdY",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "message_citations",
+      "name": "message_citations",
+      "position": {
+        "x": 2000,
+        "y": 1880
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "p8marfL3ZQGBJub7g",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "a4ydeSdJJZ57Z5fCu",
+          "name": "message_id",
+          "pName": "message_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "SFJcm4sFBui66tkuS",
+          "relFieldId": "RHdjXqo3S6vG75rDX",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "H669nCk4svv5TSsWP",
+          "name": "document_version_id",
+          "pName": "document_version_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "adPxhZXL2MtA9gG8S",
+          "relFieldId": "FpsnHA7fcrGJ946pK",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "f3fTXbqx7ZSxPQwqR",
+          "name": "qmd_uri",
+          "pName": "qmd_uri",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "KvkKjhnDuDy9MhWs8",
+          "name": "source_start_line",
+          "pName": "source_start_line",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "c7AZ5XMMCDq47tnZ4",
+          "name": "source_end_line",
+          "pName": "source_end_line",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "k2zL6oGZNHuvZnjDx",
+          "name": "quoted_text",
+          "pName": "quoted_text",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "K2oCv8ZEcXCoyaHT7",
+          "name": "relevance_score",
+          "pName": "relevance_score",
+          "domain": "",
+          "type": "DECIMAL(5,4)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "MhZAAbXkkpf5sioyZ",
+          "name": "citation_order",
+          "pName": "citation_order",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "2BuzZS4zb6xorEQJq",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "adPxhZXL2MtA9gG8S",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "document_versions",
+      "name": "document_versions",
+      "position": {
+        "x": 1060,
+        "y": 1660
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "FpsnHA7fcrGJ946pK",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "u4H5KKhzT2cA7Eesy",
+          "name": "document_id",
+          "pName": "document_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "dE27i9euhvm7iSHyo",
+          "relFieldId": "qifNM2fje9BcaMeof",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "cnxuGTR4Wam6AQJzu",
+          "name": "version_no",
+          "pName": "version_no",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "nymPKfpw8fWhuL2G9",
+          "name": "content_hash",
+          "pName": "content_hash",
+          "domain": "",
+          "type": "VARCHAR(64)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "866CTL9fKpiZmGcaM",
+          "name": "raw_object_key",
+          "pName": "raw_object_key",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "uuGPK7XB7yY6CRdk8",
+          "name": "markdown_object_key",
+          "pName": "markdown_object_key",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "tQmXbduMYEX38byXn",
+          "name": "parser_version",
+          "pName": "parser_version",
+          "domain": "",
+          "type": "VARCHAR(50)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "DPSWjNrpnQsT9Kh8Y",
+          "name": "language",
+          "pName": "language",
+          "domain": "",
+          "type": "VARCHAR(10)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "JxbCuG5EYwLpeBw3v",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "bHXcy2jHRscZg8ngB",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "report_citations",
+      "name": "report_citations",
+      "position": {
+        "x": 3910,
+        "y": 1980
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "fkbPHs76b3ZfMMoZF",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "vCR4zinP7gWDicegB",
+          "name": "section_id",
+          "pName": "section_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "T9fnLnjQeXJQcDrdt",
+          "relFieldId": "QpokGtrTouhkN49qX",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "tk3B2odxRGcnEYD4H",
+          "name": "document_version_id",
+          "pName": "document_version_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "adPxhZXL2MtA9gG8S",
+          "relFieldId": "FpsnHA7fcrGJ946pK",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "Lbju6Sqno5sXfv8jv",
+          "name": "source_start_line",
+          "pName": "source_start_line",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "3gYuNZ5JWjpgEivWx",
+          "name": "source_end_line",
+          "pName": "source_end_line",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "hRQ5ThHm5vLSEm75t",
+          "name": "quoted_text",
+          "pName": "quoted_text",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "pYMZ2RLbGL3j9vQy3",
+          "name": "relevance_score",
+          "pName": "relevance_score",
+          "domain": "",
+          "type": "DECIMAL(5,4)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "RcaKvPPNALAtJLqTH",
+          "name": "citation_order",
+          "pName": "citation_order",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "yterXQ73rjxTRs3GP",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "dE27i9euhvm7iSHyo",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "documents",
+      "name": "documents",
+      "position": {
+        "x": 1080,
+        "y": 1270
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "qifNM2fje9BcaMeof",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "stZelnCSALIyWWPEx",
+          "name": "workspace_id",
+          "pName": "workspace_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "UNIQUE(workspace_id, canonical_url)",
+          "relEntity": "Ai3Y0zSD51kLpbwIU",
+          "relFieldId": "DsaRxrwEXXoNIR8mJ",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "mtcuas3sNsard2w7y",
+          "name": "source_id",
+          "pName": "source_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "NkHTrhPmu6MkW9NHn",
+          "relFieldId": "nmDHT8guMZ4QKfvZg",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "Y67ezmZvvZCtqYh4q",
+          "name": "title",
+          "pName": "title",
+          "domain": "",
+          "type": "VARCHAR(500)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Pp23MtGtL7vB6Hh9K",
+          "name": "canonical_url",
+          "pName": "canonical_url",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "zYsu5yP7vToTQ3xoy",
+          "name": "published_at",
+          "pName": "published_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "PufWMWXw2xYeNTn2A",
+          "name": "status",
+          "pName": "status",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "32RREJv2rGNfiCGrj",
+          "name": "uploaded_by",
+          "pName": "uploaded_by",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "NXNdMov9RFNGP7J7Z",
+          "relFieldId": "4EGxyYE2dgZRtTS5D",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "Pns3NjWorShbvE9kK",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "ko7GvnFBwyGeSXa6B",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "nHFi88BNoAq4qxZx6",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "chat_sessions",
+      "name": "chat_sessions",
+      "position": {
+        "x": 2100,
+        "y": 1140
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "nuesjYbjwnHK97L9F",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "kF0v55DUMVMxVfkRf",
+          "name": "workspace_id",
+          "pName": "workspace_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "Ai3Y0zSD51kLpbwIU",
+          "relFieldId": "DsaRxrwEXXoNIR8mJ",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "Y7aeLT5TLBxhjugSr",
+          "name": "user_id",
+          "pName": "user_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "NXNdMov9RFNGP7J7Z",
+          "relFieldId": "4EGxyYE2dgZRtTS5D",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "FaEjqM4zuxz33dGnf",
+          "name": "title",
+          "pName": "title",
+          "domain": "",
+          "type": "VARCHAR(500)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "asmMQnAwpaxY8HZLm",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "d2uvocNGYLNGciGsX",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "revakc63tSKifD8fv",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "wiki_page_versions",
+      "name": "wiki_page_versions",
+      "position": {
+        "x": 3130,
+        "y": 1080
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "EbJi3EcM5WPLyCtos",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "QZoXqeTbAZa2Y5iTW",
+          "name": "page_id",
+          "pName": "page_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "Lqjs4sXTaT5tLNL65",
+          "relFieldId": "vqY2QTiX66ktTQz6c",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "wkXawg2wwm7R2x9ec",
+          "name": "version_no",
+          "pName": "version_no",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "oqtsuTCXEYTu9obuT",
+          "name": "markdown_object_key",
+          "pName": "markdown_object_key",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "xA4RjoBZfqguP5R6g",
+          "name": "content_hash",
+          "pName": "content_hash",
+          "domain": "",
+          "type": "VARCHAR(64)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "6mRwyvZWntJfWRit5",
+          "name": "change_summary",
+          "pName": "change_summary",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "MxSxWgX5FCApfnAe3",
+          "name": "created_by",
+          "pName": "created_by",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "NXNdMov9RFNGP7J7Z",
+          "relFieldId": "4EGxyYE2dgZRtTS5D",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "sXvg6kMuYuxQn9R9C",
+          "name": "review_status",
+          "pName": "review_status",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "HLHjAF7ke52eokA5a",
+          "name": "reviewed_by",
+          "pName": "reviewed_by",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "NXNdMov9RFNGP7J7Z",
+          "relFieldId": "4EGxyYE2dgZRtTS5D",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "KC8Ypa5spaksNfTAD",
+          "name": "reviewed_at",
+          "pName": "reviewed_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Cu3GpcXGCr6D458jr",
+          "name": "generated_by",
+          "pName": "generated_by",
+          "domain": "",
+          "type": "VARCHAR(20)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "7LTXuLKKHJEFKd2ZQ",
+          "name": "generator_model",
+          "pName": "generator_model",
+          "domain": "",
+          "type": "VARCHAR(100)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "eDS2y4hc8HBTGuo4q",
+          "name": "generator_prompt_version",
+          "pName": "generator_prompt_version",
+          "domain": "",
+          "type": "VARCHAR(50)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "P3AjRoNSEvvKzbCe8",
+          "name": "generation_run_id",
+          "pName": "generation_run_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "8t6uCRWW2dgjhsqZA",
+          "relFieldId": "wSPBPeavic9DQn2G2",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "nnMLrtLw9ocxsffE8",
+          "name": "validation_status",
+          "pName": "validation_status",
+          "domain": "",
+          "type": "VARCHAR(30)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "HHpQY3aEA9CRLg4RQ",
+          "name": "confidence_score",
+          "pName": "confidence_score",
+          "domain": "",
+          "type": "DECIMAL(5,4)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "i8G3KDFW85dw4mrjd",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "Ai3Y0zSD51kLpbwIU",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "workspaces",
+      "name": "workspaces",
+      "position": {
+        "x": 5400,
+        "y": 400
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "DsaRxrwEXXoNIR8mJ",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "ugiM6fPmWYzDLiAYc",
+          "name": "name",
+          "pName": "name",
+          "domain": "",
+          "type": "VARCHAR(200)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "L9W39VUSxHWr89hw1",
+          "name": "slug",
+          "pName": "slug",
+          "domain": "",
+          "type": "VARCHAR(100)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "UNIQUE",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "eRq7kRqEzkGf1Sbb5",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "8vT8HQ0uSCQIidYy8",
+          "name": "updated_at",
+          "pName": "updated_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "qQEC0BBdRcm7aOX3S",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "workspace_members",
+      "name": "workspace_members",
+      "position": {
+        "x": 5400,
+        "y": 850
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "DS4tEwDE8AJ5ommWl",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "vPcYsJ4XzAs1Ydp9H",
+          "name": "workspace_id",
+          "pName": "workspace_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "UNIQUE(workspace_id, user_id)",
+          "relEntity": "Ai3Y0zSD51kLpbwIU",
+          "relFieldId": "DsaRxrwEXXoNIR8mJ",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "38XosmNKNGJEFoddD",
+          "name": "user_id",
+          "pName": "user_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": "NXNdMov9RFNGP7J7Z",
+          "relFieldId": "4EGxyYE2dgZRtTS5D",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "YJkXRsTvillbizsku",
+          "name": "role",
+          "pName": "role",
+          "domain": "",
+          "type": "VARCHAR(20)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "CHECK IN ('owner','admin','editor','viewer')",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Yvmtsg3nKDmxBNW19",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    },
+    {
+      "_id": "mWl1bSiwBMK5RQZCZ",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "pName": "artifacts",
+      "name": "artifacts",
+      "position": {
+        "x": 5400,
+        "y": 1300
+      },
+      "keys": {
+        "pks": [
+          {
+            "_id": "xX1khW9ivBklbvtMa",
+            "name": "id",
+            "pName": "id",
+            "domain": "",
+            "type": "UUID",
+            "defaultValue": "",
+            "isAllowNull": false,
+            "comment": "",
+            "relEntity": null,
+            "relFieldId": null,
+            "relType": null
+          }
+        ],
+        "fks": []
+      },
+      "fields": [
+        {
+          "_id": "2qpgIhVHoupwJQVpo",
+          "name": "report_id",
+          "pName": "report_id",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "UNIQUE(report_id, artifact_type, version)",
+          "relEntity": "7X6TRyoTArmygRwjc",
+          "relFieldId": "2uQuupPMnkFeNBp9w",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "NnB2db65nhJYlrkqr",
+          "name": "artifact_type",
+          "pName": "artifact_type",
+          "domain": "",
+          "type": "VARCHAR(20)",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "CHECK IN ('markdown','pdf','pptx','docx')",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "Ff78F0N7iVrafLn6D",
+          "name": "object_key",
+          "pName": "object_key",
+          "domain": "",
+          "type": "TEXT",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "UNIQUE",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "4WNaofz5ais2j6F7G",
+          "name": "version",
+          "pName": "version",
+          "domain": "",
+          "type": "INTEGER",
+          "defaultValue": "1",
+          "isAllowNull": false,
+          "comment": "CHECK version >= 1",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "SSBzUxMemEJLQOTlT",
+          "name": "file_size",
+          "pName": "file_size",
+          "domain": "",
+          "type": "BIGINT",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "rwuL1fsmNStQEBfSW",
+          "name": "mime_type",
+          "pName": "mime_type",
+          "domain": "",
+          "type": "VARCHAR(100)",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        },
+        {
+          "_id": "8wyyotnIdZZP9LIKc",
+          "name": "created_by",
+          "pName": "created_by",
+          "domain": "",
+          "type": "UUID",
+          "defaultValue": "",
+          "isAllowNull": true,
+          "comment": "",
+          "relEntity": "NXNdMov9RFNGP7J7Z",
+          "relFieldId": "4EGxyYE2dgZRtTS5D",
+          "relType": "ZERO_OR_ONE_OR_MANY"
+        },
+        {
+          "_id": "NncmQ7wsRKqw8NWZx",
+          "name": "created_at",
+          "pName": "created_at",
+          "domain": "",
+          "type": "TIMESTAMPTZ",
+          "defaultValue": "",
+          "isAllowNull": false,
+          "comment": "",
+          "relEntity": null,
+          "relFieldId": null,
+          "relType": null
+        }
+      ],
+      "color": "rgba(10, 10, 10, 0.5)"
+    }
+  ],
+  "memoData": [
+    {
+      "_id": "2gdkaRAxAvC5DFng5",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 2620,
+        "y": 450
+      },
+      "content": "9. wiki_pages\n산업, 기업, 기술, 이슈, 용어 등 Wiki 페이지의 논리적인 기본 정보를 저장한다.\n실제 Wiki 본문과 수정 이력은 wiki_page_versions에서 관리한다.\n\nid\nWiki 페이지의 고유 ID이다.\nparent_page_id\n계층 구조에서 상위 Wiki 페이지의 ID이다.\n예: 반도체 > 메모리 반도체 > HBM > HBM4.\nslug\nURL과 Markdown 파일명에 사용하는 고유 식별자이다.\ntitle\nWiki 페이지 제목이다.\npage_type\nWiki 페이지 유형이다.\nindustry, company, technology, issue, term 등을 사용한다.\nstatus\nWiki 페이지 상태이다. draft, active, archived 등을 사용한다.\nreview_policy\nWiki 버전의 검수 정책이다. manual, auto, hybrid 등을 사용한다.\ncurrent_version_id\n현재 사용자에게 공개 중인 Wiki 버전 ID이다.\npublished_at\nWiki 페이지가 최초 또는 최근 공개된 시각이다.\ncreated_at\nWiki 페이지가 생성된 시각이다.\nupdated_at\n페이지 기본 정보 또는 현재 공개 버전이 마지막으로 변경된 시각이다.",
+      "color": "#3ecaa0",
+      "width": 450,
+      "height": 447,
+      "minWidth": 450,
+      "minHeight": 447
+    },
+    {
+      "_id": "3t5qNuHbyLMNquRsS",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 580,
+        "y": 1590
+      },
+      "content": "4. document_versions\n문서 본문의 변경 이력과 파싱 결과를 버전별로 저장한다.\n원본 파일과 정제된 Evidence Markdown의 Storage 경로를 관리한다.\n\nid\n문서 버전의 고유 ID이다.\n챗봇, Wiki, 보고서의 출처 연결에서 정본 ID로 사용한다.\ndocument_id\n해당 버전이 속한 논리 문서 ID이다.\nversion_no\n문서 내부 버전 번호이다. 최초 버전은 1이며 변경될 때마다 증가한다.\ncontent_hash\n본문의 중복 및 변경 여부를 확인하기 위한 SHA-256 해시이다.\nraw_object_key\n원본 HTML, PDF 또는 업로드 파일이 저장된 Storage 경로이다.\nmarkdown_object_key\n검색과 LLM 처리에 사용하는 정제된 Markdown 파일의 Storage 경로이다.\nparser_version\n원문을 Markdown으로 변환할 때 사용한 파서 버전이다.\nlanguage\n문서 언어 코드이다. 예: ko, en.\ncreated_at\n해당 문서 버전이 생성된 시각이다.",
+      "color": "#6dd4ec",
+      "width": 440,
+      "height": 360,
+      "minWidth": 16,
+      "minHeight": 16
+    },
+    {
+      "_id": "4vzgEPo9Th2dPmsXY",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 520,
+        "y": 1200
+      },
+      "content": "3. documents\n수집된 하나의 논리적인 뉴스, 공시, 보고서 또는 웹 문서의 공통 메타데이터를 저장한다.\n실제 문서 내용과 변경 이력은 document_versions에서 관리한다.\n\nid\n논리 문서의 고유 ID이다.\nsource_id\n문서를 가져온 수집 출처의 ID이다.\n수동 업로드 문서는 NULL일 수 있다.\ntitle\n문서 제목이다.\ncanonical_url\n중복 문서 판별에 사용하는 대표 URL이다.\npublished_at\n원문이 실제로 발행된 시각이다.\nstatus\n문서의 현재 상태이다. active, deleted, blocked, failed 등을 사용한다.\nuploaded_by\n문서를 수동으로 업로드한 사용자 ID이다.\n자동 수집 문서는 NULL일 수 있다.\ncreated_at\n문서가 시스템에 최초 등록된 시각이다.\nupdated_at\n문서 제목, 상태 등 메타데이터가 마지막으로 수정된 시각이다.",
+      "color": "#6dd4ec",
+      "width": 500,
+      "height": 370,
+      "minWidth": 16,
+      "minHeight": 16
+    },
+    {
+      "_id": "9CT3aimT3LyZbZTyR",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 1030,
+        "y": 3370
+      },
+      "content": "3. Wiki·지식베이스 담당 — 초록색\n\n담당 경로:\nsrc/wiki/\n\n담당 테이블\nwiki_pages\nwiki_page_versions\nwiki_page_sources\nqmd_index_entries\n\n테이블\t담당 이유\nwiki_pages\t산업·기업·기술·이슈별 Wiki 구조 관리\nwiki_page_versions\tWiki 본문 버전·검수·생성 모델 관리\nwiki_page_sources\tWiki 주장과 원문 출처 연결\nqmd_index_entries\tEvidence·Wiki·Report와 QMD 인덱스 연결\n\n주요 책임\nWiki 분류 체계 설계\n→ Wiki 초안 생성\n→ 원문 출처 연결\n→ 버전 저장\n→ 검수·승인\n→ QMD Collection 색인\n→ 검색 가능한 지식베이스 구성\nqmd_index_entries 소유권\n\n데이터 파이프라인 → evidence 색인 요청\nWiki 담당자       → wiki 색인 관리\n보고서 담당자     → reports 색인 요청\nAgent 담당자      → 색인 결과 검색\n\n[Wiki·지식베이스 영역]\n정제된 문서를 기반으로 산업, 기업, 기술, 이슈별 Wiki를 구성한다.\nWiki 버전과 출처를 관리하고, QMD 검색 인덱스의 구조와\nCollection 정책을 담당한다.",
+      "color": "#3ecaa0",
+      "width": 450,
+      "height": 571,
+      "minWidth": 400,
+      "minHeight": 571
+    },
+    {
+      "_id": "AhZokKKNDZuGJbSuz",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 580,
+        "y": 3370
+      },
+      "content": "2. AI 분석·보고서 담당 — 노랑\n\n담당 경로\nsrc/analysis/\nsrc/report/\n\n담당 테이블\nreports\nreport_sections\nreport_citations\n\n테이블\t담당 이유\nreports\t보고서 생성 요청과 최종 결과 관리\nreport_sections\t보고서 목차·섹션별 분석 결과 저장\nreport_citations\t각 보고서 섹션의 원문 출처 관리\n\n주요 책임\n정제 문서 입력\n→ 문서 분류\n→ 핵심 내용 요약\n→ 시사점 추출\n→ 보고서 목차 생성\n→ 섹션별 작성\n→ 출처 검증\n→ Markdown·PDF 출력\n\n\n[AI 분석·보고서 영역]\n전처리가 완료된 문서를 분류·요약하고 핵심 동향과 시사점을 추출한다.\n일일·주간·기업·기술 보고서를 섹션 단위로 생성하며,\n각 내용의 근거 원문을 report_citations에 기록한다.",
+      "color": "#cbc377",
+      "width": 420,
+      "height": 570,
+      "minWidth": 16,
+      "minHeight": 16
+    },
+    {
+      "_id": "Hadxv37p4LBr9pYsA",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 1600,
+        "y": 540
+      },
+      "content": "1. profiles\nmyWiki 사용자의 기본 프로필과 서비스 권한을 저장한다.\nSupabase Auth를 사용하는 경우 id는 auth.users.id와 동일한 UUID를 사용한다.\n\nid\n 사용자 고유 ID. Supabase Auth 사용 시 auth.users.id와 연결한다.\ndisplay_name\n서비스 화면에 표시할 사용자 이름이다.\ndepartment\n사용자의 부서, 팀 또는 소속 정보를 저장한다.\nrole\n서비스 권한을 나타낸다. admin, editor, viewer 중 하나를 사용한다.\ncreated_at\n사용자 프로필이 생성된 시각이다.\nupdated_at\n사용자 프로필이 마지막으로 수정된 시각이다.",
+      "color": "#ffc7de",
+      "width": 490,
+      "height": 263,
+      "minWidth": 473,
+      "minHeight": 263
+    },
+    {
+      "_id": "N89EQfMevK7waY5YX",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 100,
+        "y": 3370
+      },
+      "content": "1. 데이터 파이프라인 담당 — 파란색\n\n담당 경로\nsrc/collectors/\nsrc/preprocessing/\n\n담당 테이블\nsources\ndocuments\ndocument_versions\npipeline_jobs\n\n테이블\t담당 이유\nsources\t뉴스·공시·RSS·보고서 등 수집 출처 관리\ndocuments\t수집한 문서의 제목·URL·발행일·상태 관리\ndocument_versions\t원본 파일, 정제 Markdown, 중복 해시, 파서 버전 관리\n\n주요 책임\n수집 출처 등록\n→ 원문 수집\n→ 중복 문서 판별\n→ PDF·HTML 전처리\n→ Markdown 변환\n→ document_versions 저장\n\n[데이터 파이프라인 영역]\n외부 뉴스, 공시, 보고서, 웹 문서를 수집하고 정제한다.\n중복 제거, 원문 보존, Markdown 변환, 문서 버전 관리를 담당한다.",
+      "color": "#6dd4ec",
+      "width": 450,
+      "height": 560,
+      "minWidth": 449,
+      "minHeight": 447
+    },
+    {
+      "_id": "ShwNfxKRZ8Qzv7KHo",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 1580,
+        "y": 1370
+      },
+      "content": "6. chat_messages\n채팅 세션 안에서 사용자 질문, AI 답변, 시스템 메시지를 시간순으로 저장한다.\n\nid\n채팅 메시지의 고유 ID이다.\nsession_id\n메시지가 속한 채팅 세션 ID이다.\nrole\n메시지 작성 주체이다. user, assistant, system 중 하나를 사용한다.\ncontent\n사용자 질문 또는 AI 답변의 본문이다.\nmodel_name\nAI 답변 생성에 사용한 LLM 모델 이름이다.\n사용자 메시지에는 NULL일 수 있다.\nprompt_version\nAI 답변 생성에 사용한 프롬프트 버전이다.\n\ncreated_at\n메시지가 생성된 시각이다.",
+      "color": "#ffc7de",
+      "width": 452,
+      "height": 309,
+      "minWidth": 452,
+      "minHeight": 309
+    },
+    {
+      "_id": "Xn6kWfbya7hbb9Tio",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 4460,
+        "y": 1360
+      },
+      "content": "13. report_sections\n보고서를 목차 또는 섹션 단위로 나누어 저장한다.\n일부 섹션에서 오류가 발생하면 전체 보고서가 아니라 해당 섹션만 재생성할 수 있게 한다.\n\nid\n보고서 섹션의 고유 ID이다.\nreport_id\n섹션이 속한 보고서 ID이다.\nsection_order\n보고서에서 해당 섹션이 표시되는 순서이다.\ntitle\n보고서 섹션 제목이다.\ncontent\n섹션의 초안 또는 최종 본문이다.\nstatus\n섹션 생성 상태이다.\npending, researching, drafting, verifying, completed, failed 등을 사용한다.\nmodel_name\n섹션 생성에 사용한 LLM 모델 이름이다.\nprompt_version\n섹션 생성에 사용한 프롬프트 버전이다.\ngeneration_run_id\n해당 섹션을 생성한 pipeline_jobs 작업 ID이다.\ncreated_at\n보고서 섹션이 생성된 시각이다.\nupdated_at\n섹션 상태 또는 내용이 마지막으로 수정된 시각이다.\n\n\n중요한 제약조건 메모\ndocument_version_id, wiki_version_id, report_id 중\n한 행에서는 정확히 하나만 값이 있어야 한다.",
+      "color": "#cbc377",
+      "width": 510,
+      "height": 500,
+      "minWidth": 16,
+      "minHeight": 16
+    },
+    {
+      "_id": "XxGQNbnm5XWjZBDQL",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 480,
+        "y": 850
+      },
+      "content": "2. sources\n뉴스, RSS, 공시, 기업 홈페이지, 산업 보고서 등 문서를 수집하는 출처와 수집 설정을 관리한다.\n컬럼 설명,id수집 출처의 고유 ID이다.\n\nname\n출처의 표시 이름이다. 예: SK하이닉스 뉴스룸, DART, 산업통상자원부.\nsource_type\n출처 유형이다. news, rss, disclosure, report, website, manual_upload 등을 사용한다.\nbase_url\n출처 사이트의 기본 URL이다.\nreliability_score\n출처의 신뢰도 점수이다. 0부터 1 사이의 값을 사용한다.\nconfig\n수집 주기, 요청 헤더, 파서 설정, CSS 선택자 등 출처별 설정을 JSON으로 저장한다.\nenabled\n해당 출처의 자동 수집 활성화 여부이다.\ncreated_at\n출처가 시스템에 등록된 시각이다.\nupdated_at\n출처 정보와 수집 설정이 마지막으로 수정된 시각이다.",
+      "color": "#6dd4ec",
+      "width": 540,
+      "height": 324,
+      "minWidth": 540,
+      "minHeight": 324
+    },
+    {
+      "_id": "aM9e2cfwNBc62dLmm",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 2600,
+        "y": 2170
+      },
+      "content": "15. qmd_index_entries\nPostgreSQL의 원문 Evidence, Wiki 버전, 보고서와 QMD 검색 인덱스의 연결 정보를 저장한다.\nQMD의 docid는 검색용 보조값이며 서비스의 정본 ID로 사용하지 않는다.\n\nid\nQMD 색인 연결 정보의 고유 ID이다.\ndocument_version_id\nQMD evidence Collection에 색인된 원문 버전 ID이다.\nwiki_version_id\nQMD wiki Collection에 색인된 Wiki 버전 ID이다.\nreport_id\nQMD reports Collection에 색인된 보고서 ID이다.\ncollection_name\n문서가 색인된 QMD Collection 이름이다.\nevidence, wiki, reports 등을 사용한다.\nstatus\nQMD 색인 처리 상태이다.\npending, indexing, indexed, failed, stale 등을 사용한다.\nqmd_uri\nQMD가 반환하는 qmd:// 형식의 문서 경로이다.\nqmd_docid\nQMD 내부에서 사용하는 짧은 보조 문서 ID이다.\nPostgreSQL의 정본 ID를 대신하지 않는다.\nindex_generation\nQMD 인덱스를 전체 재생성한 세대 번호이다.\nindexed_at\nQMD 색인이 마지막으로 완료된 시각이다.\nlast_error\n최근 QMD 색인 실패 원인을 저장한다.\ncreated_at\nQMD 색인 연결 정보가 생성된 시각이다.\nupdated_at\nQMD 색인 상태가 마지막으로 변경된 시각이다.\n\ndocument_version_id, wiki_version_id, report_id 중\n한 행에서는 정확히 하나만 값이 있어야 한다.",
+      "color": "#3ecaa0",
+      "width": 560,
+      "height": 570,
+      "minWidth": 556,
+      "minHeight": 570
+    },
+    {
+      "_id": "are2wKGxXePQRa9NE",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 1990,
+        "y": 3210
+      },
+      "content": "1번 데이터 파이프라인\n        ↓\n3번 Wiki·지식베이스 ─────┐\n        ↓                 │\n2번 AI 분석·보고서 ──────┤\n        ↓                 │\n4번 Agent·API ◀───────────┘\n\n\n1번: 실제 전처리 데이터 생성\n2번: 샘플 document JSON으로 분석 개발\n3번: 샘플 Markdown으로 Wiki·QMD 개발\n4번: Mock 검색 결과로 API 개발\n\n\n<역할>\n\n사용자 및 권한\n- profiles\n\n원문 수집 및 버전 관리\n- sources\n- documents\n- document_versions\n\n챗봇 및 답변 출처\n- chat_sessions\n- chat_messages\n- message_citations\n\n비동기 작업 관리\n- pipeline_jobs\n\nLLM Wiki 및 근거\n- wiki_pages\n- wiki_page_versions\n- wiki_page_sources\n\n보고서 생성 및 출처\n- reports\n- report_sections\n- report_citations\n\nQMD 검색 인덱스 연결\n- qmd_index_entries\n챗봇, Wiki, 보고서는 모두 document_versions.id를 통해 동일한 원문 근거를 참조한다.",
+      "color": "#ff9d87",
+      "width": 604,
+      "height": 725,
+      "minWidth": 507,
+      "minHeight": 725
+    },
+    {
+      "_id": "gFQjjvWR5Npy2xLpf",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 2600,
+        "y": 920
+      },
+      "content": "10. wiki_page_versions\nWiki 페이지의 실제 내용과 생성, 자동 검증, 사람 검수 이력을 버전별로 저장한다.\n기존 버전을 삭제하지 않고 새로운 버전을 추가해 변경 이력을 보존한다.\n\nid\nWiki 버전의 고유 ID이다.\npage_id\n해당 버전이 속한 Wiki 페이지 ID이다.\nversion_no\nWiki 페이지 내부의 버전 번호이다.\nmarkdown_object_key\nWiki 본문 Markdown 파일의 Storage 경로이다.\ncontent_hash\nWiki 내용의 무결성과 중복 여부를 확인하기 위한 SHA-256 해시이다.\nchange_summary\n이전 버전과 비교했을 때 변경된 내용을 요약한다.\ncreated_by\nWiki 버전을 직접 생성하거나 생성 요청을 수행한 사용자 ID이다.\nreview_status\n사람 검수 상태이다. pending, approved, rejected 등을 사용한다.\nreviewed_by\nWiki 버전을 검수한 사용자 ID이다.\nreviewed_at\n사람 검수가 완료된 시각이다.\ngenerated_by\nWiki 본문의 작성 주체이다. human, llm, hybrid 등을 사용한다.\ngenerator_model\nWiki 생성에 사용한 LLM 모델 이름이다.\ngenerator_prompt_version\nWiki 생성에 사용한 프롬프트 버전이다.\ngeneration_run_id\n해당 Wiki 버전을 생성한 pipeline_jobs 작업 ID이다.\nvalidation_status\n자동 출처 검사와 형식 검증 결과이다. pending, passed, failed 등을 사용한다.\nconfdence_score\nWiki 생성 결과의 신뢰 점수이다. 0부터 1 사이의 값을 사용한다.\ncreated_at\nWiki 버전이 생성된 시각이다.\n\n\n추가 메모\nreview_status는 사람의 검수 결과이고,\nvalidation_status는 시스템의 자동 검증 결과이다.\n두 상태는 서로 다른 목적을 가진다.",
+      "color": "#3ecaa0",
+      "width": 470,
+      "height": 678,
+      "minWidth": 16,
+      "minHeight": 16
+    },
+    {
+      "_id": "gT4TfrmNbxzDDRAXa",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 4460,
+        "y": 1930
+      },
+      "content": "14. report_citations\n보고서의 각 섹션과 해당 내용을 뒷받침하는 원문 근거를 연결한다.\n보고서의 출처 표시와 사실 검증에 사용한다.\n\nid\n보고서 출처 정보의 고유 ID이다.\nsection_id\n출처가 사용된 보고서 섹션 ID이다.\ndocument_version_id\n근거가 된 원문 버전 ID이다.\nsource_start_line\n근거가 시작되는 원문 Markdown 줄 번호이다.\nsource_end_line\n근거가 끝나는 원문 Markdown 줄 번호이다.\nquoted_text\n보고서 작성에 실제로 사용한 원문 일부이다.\nrelevance_score\n검색 결과의 관련도 점수이다. 0부터 1 사이의 값을 사용한다.\ncitation_order\n보고서에서 출처를 표시하는 순서이다.\ncreated_at\n보고서 출처 정보가 생성된 시각이다.",
+      "color": "#cbc377",
+      "width": 410,
+      "height": 350,
+      "minWidth": 16,
+      "minHeight": 16
+    },
+    {
+      "_id": "m2NDcEG7tyXdSFx9y",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 2020,
+        "y": 2180
+      },
+      "content": "7. message_citations\nAI 챗봇 답변과 해당 답변을 뒷받침하는 원문 근거를 연결한다.\n답변의 출처 표시와 사실 검증에 사용한다.\n\nid\n챗봇 답변 인용 정보의 고유 ID이다.\nmessage_id\n출처를 사용하는 assistant 메시지 ID이다.\ndocument_version_id\n답변의 근거가 된 원문 버전 ID이다.\nqmd_uri\n검색 당시 QMD가 반환한 qmd:// 형식의 문서 경로이다.\nsource_start_line\n근거가 시작되는 Markdown 줄 번호이다.\nsource_end_line\n근거가 끝나는 Markdown 줄 번호이다.\nquoted_text\n답변 생성에 실제로 사용한 원문 일부이다.\nrelevance_score\nQMD 검색 결과의 관련도 점수이다. 0부터 1 사이의 값을 사용한다.\ncitation_order\n사용자 화면에서 출처를 표시하는 순서이다.\n\ncreated_at\n인용 정보가 생성된 시각이다.",
+      "color": "#ffc7de",
+      "width": 393,
+      "height": 401,
+      "minWidth": 393,
+      "minHeight": 401
+    },
+    {
+      "_id": "mvetwtrtMyo3bn6NB",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 2600,
+        "y": 1630
+      },
+      "content": "11. wiki_page_sources\nWiki 버전에 포함된 주장과 이를 뒷받침하거나 반박하는 원문 근거를 연결한다.\nWiki의 출처 추적, 충돌 정보 표현, 사실 검증에 사용한다.\n\nid\nWiki 출처 연결의 고유 ID이다.\nwiki_version_id\n출처를 사용하는 Wiki 버전 ID이다.\ndocument_version_id\n근거가 된 원문 버전 ID이다.\nclaim_text\n해당 원문이 뒷받침하거나 반박하는 Wiki의 주장 문장이다.\nsource_start_line\n근거가 시작되는 원문 Markdown 줄 번호이다.\nsource_end_line\n근거가 끝나는 원문 Markdown 줄 번호이다.\nsupport_type\n원문과 주장 사이의 관계이다.\nsupports, contradicts, context 등을 사용한다.\ncitation_order\nWiki 페이지에서 출처를 표시하는 순서이다.\n\ncreated_at\nWiki와 원문 사이의 출처 연결이 생성된 시각이다.",
+      "color": "#3ecaa0",
+      "width": 458,
+      "height": 386,
+      "minWidth": 458,
+      "minHeight": 386
+    },
+    {
+      "_id": "o7sfK3kPeubCEdhc2",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 410,
+        "y": 1980
+      },
+      "content": "8. pipeline_jobs\n문서 수집, 파싱, QMD 색인, Wiki 생성, 보고서 생성 등 시간이 오래 걸리는 비동기 작업의 상태를 관리한다.\nRedis와 Celery가 작업을 실행하더라도 작업 상태의 정본은 이 테이블에 저장한다.\n\nid\n비동기 작업의 고유 ID이다.\njob_type\n작업 유형이다.\ncollect, parse_document, index_qmd, generate_wiki, generate_report 등을 사용한다.\ntarget_type\n작업 대상의 종류이다.\ndocument, document_version, wiki_page, report 등을 사용한다.\ntarget_id\n작업 대상 데이터의 UUID이다.\nstatus\n작업 상태이다.\npending, running, completed, failed, cancelled 등을 사용한다.\nprogress\n작업 진행률이다. 0부터 100 사이의 값을 사용한다.\nerror_message\n작업 실패 시 발생한 오류 내용을 저장한다.\nrequested_by\n작업을 요청한 사용자 ID이다.\n자동 스케줄 작업은 NULL일 수 있다.\npayload\n작업 실행에 필요한 입력값과 옵션을 JSON으로 저장한다.\nresult\n작업 완료 후 생성된 결과 요약을 JSON으로 저장한다.\nretry_count\n작업 실패 후 재시도한 횟수이다.\nidempotency_key\n동일한 작업이 중복 실행되는 것을 방지하기 위한 고유 키이다.\nstarted_at\n작업 실행이 시작된 시각이다.\ncompleted_at\n작업이 완료되거나 실패한 시각이다.\ncreated_at\n작업이 대기열에 등록된 시각이다.\n\nupdated_at\n작업 상태가 마지막으로 변경된 시각이다.",
+      "color": "#6dd4ec",
+      "width": 614,
+      "height": 647,
+      "minWidth": 614,
+      "minHeight": 647
+    },
+    {
+      "_id": "uMFCacDE7wmNhosQu",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 1510,
+        "y": 3370
+      },
+      "content": "4. Agent·API 담당 - 핑크\n\n담당 경로\nsrc/agent/\nsrc/api/\n\n담당 테이블\nprofiles\nchat_sessions\nchat_messages\nmessage_citations\n\n테이블\t담당 이유\nprofiles\t로그인 사용자·권한·API 사용자 정보 관리\nchat_sessions\t사용자별 챗봇 대화 세션 관리\nchat_messages\t사용자 질문과 AI 답변 저장\nmessage_citations\t챗봇 답변과 원문 출처 연결\n\n주요 책임\n사용자 인증·권한 확인\n→ 질문 접수\n→ QMD 검색\n→ Wiki·Evidence 조회\n→ LLM 답변 생성\n→ 출처 검증\n→ 답변과 citation 저장\n→ API 응답\n\n메모 문구\n사용자의 검색·질의응답 요청을 처리하고,\nQMD, Wiki, 보고서 데이터를 조합해 결과를 생성한다.\n사용자 인증, 채팅 세션, 답변, 출처 표시와 외부 API 제공을 담당한다.",
+      "color": "#ffc7de",
+      "width": 440,
+      "height": 570,
+      "minWidth": 399,
+      "minHeight": 509
+    },
+    {
+      "_id": "xD2FyJF98N4ngGDHz",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 1680,
+        "y": 1090
+      },
+      "content": "5. chat_sessons\n사용자별 챗봇 대화 세션을 저장한다.\n하나의 세션은 여러 개의 사용자 질문과 AI 답변을 포함한다.\n\nid\n채팅 세션의 고유 ID이다.\nuser_id\n대화를 시작한 사용자 ID이다.\ntitle\n대화방 제목이다.\n첫 질문을 바탕으로 자동 생성할 수 있다.\ncreated_at\n채팅 세션이 생성된 시각이다.\nupdated_at\n마지막 메시지가 추가되거나 제목이 수정된 시각이다.",
+      "color": "#ffc7de",
+      "width": 350,
+      "height": 240,
+      "minWidth": 16,
+      "minHeight": 16
+    },
+    {
+      "_id": "xbhgp65ZrhYywDrNM",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 4460,
+        "y": 840
+      },
+      "content": "12. reports\n일일, 주간, 기업, 기술, 이슈 분석 보고서의 생성 요청과 최종 결과를 관리한다.\n\nid\n보고서의 고유 ID이다.\nrequested_by\n보고서 생성을 요청한 사용자 ID이다.\n자동 생성 보고서는 NULL일 수 있다.\ntitle\n보고서 제목이다.\nreport_type\n보고서 유형이다.\ndaily, weekly, company, technology, issue_briefing 등을 사용한다.\nstatus\n보고서 생성 상태이다.\npending, planning, researching, drafting, verifying, rendering, completed, failed, cancelled 등을 사용한다.\nreqest_config\n보고서 기간, 대상 기업, 기술, 산업, 언어 등 생성 조건을 JSON으로 저장한다.\nmarkdown_object_key\n완성된 Markdown 보고서의 Storage 경로이다.\npdf_object_key\n완성된 PDF 보고서의 Storage 경로이다.\ncreated_at\n보고서 생성 요청이 등록된 시각이다.\nupdated_at\n보고서 상태나 결과가 마지막으로 변경된 시각이다.\ncompleted_at\n보고서 생성이 최종 완료된 시각이다.",
+      "color": "#cbc377",
+      "width": 460,
+      "height": 450,
+      "minWidth": 16,
+      "minHeight": 16
+    },
+    {
+      "_id": "rFJ6MdJX5sseBFOPD",
+      "_diagramId": "uXDznfvALtmnsL8qt",
+      "position": {
+        "x": 5400,
+        "y": 1750
+      },
+      "content": "v2 변경 요약 (멘토 피드백 반영)\n\n1. workspaces, workspace_members 신설 — 멀티테넌시/RLS 기준 단위\n2. sources, documents, wiki_pages, reports, chat_sessions, pipeline_jobs 에 workspace_id 추가\n3. reports: markdown_object_key/pdf_object_key 제거 → artifacts 테이블로 이관\n   report_key + version 도입, 재생성 시 UPDATE 대신 새 행 INSERT\n4. artifacts 신설 — report 산출물(markdown/pdf/pptx/docx)을 버전별로 관리\n\n주의: erdcloud snapshot.json 포맷은 UNIQUE/CHECK 제약을 저장하지 않는다.\n아래 제약은 각 필드 comment에 표기만 해두었고, 실제 적용은 Supabase에서\nALTER TABLE ... ADD CONSTRAINT 로 별도 실행해야 한다 (myWiki_v2.sql 참고).\n\nUNIQUE:\n- workspace_members(workspace_id, user_id)\n- sources(workspace_id, name)\n- documents(workspace_id, canonical_url)\n- wiki_pages(workspace_id, slug)\n- reports(workspace_id, report_key, version)\n- artifacts(report_id, artifact_type, version), artifacts(object_key)\n\nCHECK:\n- artifacts.artifact_type IN ('markdown','pdf','pptx','docx')\n- artifacts.version >= 1, reports.version >= 1\n- workspace_members.role IN ('owner','admin','editor','viewer')\n- pipeline_jobs.progress BETWEEN 0 AND 100, retry_count >= 0\n\nobject_key 네이밍 규칙:\n{workspace_id}/reports/{report_id}/{artifact_type}/v{version}.{ext}",
+      "color": "#ff9d87",
+      "width": 560,
+      "height": 640,
+      "minWidth": 400,
+      "minHeight": 400
+    }
+  ],
+  "domainData": [],
+  "createdAt": "2026-07-25T02:03:53.000Z",
+  "creatorName": "",
+  "creatorThumb": ""
+}
