@@ -8,6 +8,7 @@
 --   4) 중복 방지 UNIQUE 제약 추가
 --   5) 값 범위 CHECK 제약 추가
 --   6) object_key 버전 충돌 방지용 UNIQUE 추가 (+ 파일 경로 설계 가이드는 하단 주석 참고)
+--   7) [7/27 멘토링 반영] profiles.role 제거 → 권한은 workspace_members.role 하나로만 관리 (역할 중복 해소)
 -- ============================================================
 
 
@@ -27,7 +28,7 @@ CREATE TABLE `workspace_members` (
 	`id`	UUID	NOT NULL,
 	`workspace_id`	UUID	NOT NULL,
 	`user_id`	UUID	NOT NULL,
-	`role`	VARCHAR(20)	NOT NULL,
+	`role`	VARCHAR(20)	NOT NULL,	-- 유일한 권한 소스. admin/editor/viewer. profiles.role은 제거됨(중복 방지)
 	`created_at`	TIMESTAMPTZ	NOT NULL
 );
 
@@ -153,14 +154,13 @@ CREATE TABLE `wiki_pages` (
 
 
 -- ------------------------------------------------------------
--- 7. profiles (변경 없음)
+-- 7. profiles (변경: role 컬럼 제거 — 7/27 멘토링 지적사항, 권한은 workspace_members.role로 일원화)
 -- ------------------------------------------------------------
 
 CREATE TABLE `profiles` (
 	`id`	UUID	NOT NULL,
 	`display_name`	VARCHAR(100)	NOT NULL,
 	`department`	VARCHAR(100)	NULL,
-	`role`	VARCHAR(20)	NOT NULL,
 	`created_at`	TIMESTAMPTZ	NOT NULL,
 	`updated_at`	TIMESTAMPTZ	NOT NULL
 );
@@ -355,26 +355,34 @@ ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `PK_WIKI_PAGE_VERSIONS` PRIMARY 
 -- FOREIGN KEYS (원본 SQL엔 없었지만, workspace 격리·이력 추적을 위해 명시)
 -- ============================================================
 
+-- 참고: profiles.id -> auth.users.id FK는 Supabase 실행본(myWiki_v2_supabase.sql)에만 추가함
+-- (auth.users는 이 다이어그램에 없는 테이블이라 erdcloud import 시 에러 방지 차원에서 여기선 생략)
+
 ALTER TABLE `workspace_members` ADD CONSTRAINT `FK_WM_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
 ALTER TABLE `workspace_members` ADD CONSTRAINT `FK_WM_USER` FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`);
 
 ALTER TABLE `sources` ADD CONSTRAINT `FK_SOURCES_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
 ALTER TABLE `documents` ADD CONSTRAINT `FK_DOCUMENTS_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
 ALTER TABLE `documents` ADD CONSTRAINT `FK_DOCUMENTS_SOURCE` FOREIGN KEY (`source_id`) REFERENCES `sources`(`id`);
+ALTER TABLE `documents` ADD CONSTRAINT `FK_DOCUMENTS_UPLOADED_BY` FOREIGN KEY (`uploaded_by`) REFERENCES `profiles`(`id`);
 ALTER TABLE `document_versions` ADD CONSTRAINT `FK_DV_DOCUMENT` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`);
 
 ALTER TABLE `wiki_pages` ADD CONSTRAINT `FK_WIKI_PAGES_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
 ALTER TABLE `wiki_pages` ADD CONSTRAINT `FK_WIKI_PAGES_PARENT` FOREIGN KEY (`parent_page_id`) REFERENCES `wiki_pages`(`id`);
 ALTER TABLE `wiki_pages` ADD CONSTRAINT `FK_WIKI_PAGES_CURRENT_VERSION` FOREIGN KEY (`current_version_id`) REFERENCES `wiki_page_versions`(`id`);
 ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `FK_WPV_PAGE` FOREIGN KEY (`page_id`) REFERENCES `wiki_pages`(`id`);
+ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `FK_WPV_CREATED_BY` FOREIGN KEY (`created_by`) REFERENCES `profiles`(`id`);
+ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `FK_WPV_REVIEWED_BY` FOREIGN KEY (`reviewed_by`) REFERENCES `profiles`(`id`);
 ALTER TABLE `wiki_page_sources` ADD CONSTRAINT `FK_WPS_WIKI_VERSION` FOREIGN KEY (`wiki_version_id`) REFERENCES `wiki_page_versions`(`id`);
 ALTER TABLE `wiki_page_sources` ADD CONSTRAINT `FK_WPS_DOCUMENT_VERSION` FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
 
 ALTER TABLE `reports` ADD CONSTRAINT `FK_REPORTS_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
+ALTER TABLE `reports` ADD CONSTRAINT `FK_REPORTS_REQUESTED_BY` FOREIGN KEY (`requested_by`) REFERENCES `profiles`(`id`);
 ALTER TABLE `report_sections` ADD CONSTRAINT `FK_RS_REPORT` FOREIGN KEY (`report_id`) REFERENCES `reports`(`id`);
 ALTER TABLE `report_citations` ADD CONSTRAINT `FK_RC_SECTION` FOREIGN KEY (`section_id`) REFERENCES `report_sections`(`id`);
 ALTER TABLE `report_citations` ADD CONSTRAINT `FK_RC_DOCUMENT_VERSION` FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
 ALTER TABLE `artifacts` ADD CONSTRAINT `FK_ARTIFACTS_REPORT` FOREIGN KEY (`report_id`) REFERENCES `reports`(`id`);
+ALTER TABLE `artifacts` ADD CONSTRAINT `FK_ARTIFACTS_CREATED_BY` FOREIGN KEY (`created_by`) REFERENCES `profiles`(`id`);
 
 ALTER TABLE `chat_sessions` ADD CONSTRAINT `FK_CS_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
 ALTER TABLE `chat_sessions` ADD CONSTRAINT `FK_CS_USER` FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`);
@@ -383,6 +391,7 @@ ALTER TABLE `message_citations` ADD CONSTRAINT `FK_MC_MESSAGE` FOREIGN KEY (`mes
 ALTER TABLE `message_citations` ADD CONSTRAINT `FK_MC_DOCUMENT_VERSION` FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
 
 ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `FK_PJ_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
+ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `FK_PJ_REQUESTED_BY` FOREIGN KEY (`requested_by`) REFERENCES `profiles`(`id`);
 
 ALTER TABLE `qmd_index_entries` ADD CONSTRAINT `FK_QMD_DOCUMENT_VERSION` FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
 ALTER TABLE `qmd_index_entries` ADD CONSTRAINT `FK_QMD_WIKI_VERSION` FOREIGN KEY (`wiki_version_id`) REFERENCES `wiki_page_versions`(`id`);
@@ -419,6 +428,9 @@ ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `UQ_PJ_IDEMPOTENCY_KEY` UNIQUE (`idem
 -- ============================================================
 -- CHECK 제약 (값 범위)
 -- ============================================================
+
+-- 권한 값 고정 (admin/editor/viewer 외 값 차단)
+ALTER TABLE `workspace_members` ADD CONSTRAINT `CK_WM_ROLE` CHECK (`role` IN ('admin','editor','viewer'));
 
 -- 진행률 0~100
 ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `CK_PJ_PROGRESS` CHECK (`progress` BETWEEN 0 AND 100);
