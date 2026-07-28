@@ -1,14 +1,28 @@
 -- ============================================================
--- myWiki 스키마 v2 (멘토님 피드백 반영본)
--- 원본: myWiki.sql
--- 변경 요약:
---   1) workspaces / workspace_members 추가 → RLS로 팀 데이터 격리
+-- erdcloud Import용 (MySQL 스타일 backtick 문법)
+-- 실행 순서: 1) CREATE TABLE -> 2) PK -> 3) FK -> 4) UNIQUE -> 5) CHECK
+--
+-- [참고] profiles.id -> auth.users.id FK는 Supabase 실행본(myWiki_v2_supabase.sql)에만
+-- 추가함 (auth.users는 이 다이어그램에 없는 테이블이라 erdcloud import 시
+-- 에러 방지 차원에서 여기선 생략).
+-- RLS 정책 / 트리거 / Storage 버킷 SQL도 Postgres 전용 기능이라 여기서는 생략
+-- (해당 내용은 myWiki_v2_supabase.sql 참고).
+-- ============================================================
+
+-- ============================================================
+-- myWiki 스키마 v2 (멘토링 피드백 반영본)
+-- 변경 이력:
+--   1) workspaces / workspace_members 추가 + RLS로 데이터 격리
 --   2) reports를 재생성 시마다 새 row(버전)를 쌓는 구조로 변경
---   3) artifacts 테이블 신설 → 보고서 산출물(md/pdf/pptx/docx)을 버전별로 관리
---   4) 중복 방지 UNIQUE 제약 추가
---   5) 값 범위 CHECK 제약 추가
---   6) object_key 버전 충돌 방지용 UNIQUE 추가 (+ 파일 경로 설계 가이드는 하단 주석 참고)
---   7) [7/27 멘토링 반영] profiles.role 제거 → 권한은 workspace_members.role 하나로만 관리 (역할 중복 해소)
+--   3) artifacts 테이블 신설 + 리포트 산출물(md/pdf/pptx/docx)을 버전별로 관리
+--   4) 문자열 필드 UNIQUE 제약 추가
+--   5) 각 상태 필드 CHECK 제약 추가
+--   6) object_key 버킷 정책 및 경로 규칙은 UNIQUE 제약 + 코드 레벨 가이드로 관리
+--   7) [7/27 멘토링 반영] profiles.role 제거 (역할은 workspace_members.role 로 일원화)
+--   8) documents/wiki_page_versions/reports/artifacts/pipeline_jobs 의
+--      "행위자(actor)" 컬럼에 profiles(id) FK 추가
+--   9) workspaces.slug UNIQUE 제약 추가
+--  10) workspace_members.role / wiki_page_versions.generated_by CHECK 제약 추가
 -- ============================================================
 
 
@@ -17,313 +31,263 @@
 -- ------------------------------------------------------------
 
 CREATE TABLE `workspaces` (
-	`id`	UUID	NOT NULL,
-	`name`	VARCHAR(200)	NOT NULL,
-	`slug`	VARCHAR(100)	NOT NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
+    `id`          UUID          NOT NULL,
+    `name`        VARCHAR(200)  NOT NULL,
+    `slug`        VARCHAR(100)  NOT NULL,
+    `created_at`  TIMESTAMPTZ   NOT NULL,
+    `updated_at`  TIMESTAMPTZ   NOT NULL
 );
 
 CREATE TABLE `workspace_members` (
-	`id`	UUID	NOT NULL,
-	`workspace_id`	UUID	NOT NULL,
-	`user_id`	UUID	NOT NULL,
-	`role`	VARCHAR(20)	NOT NULL,	-- 유일한 권한 소스. admin/editor/viewer. profiles.role은 제거됨(중복 방지)
-	`created_at`	TIMESTAMPTZ	NOT NULL
+    `id`           UUID          NOT NULL,
+    `workspace_id` UUID          NOT NULL,
+    `user_id`      UUID          NOT NULL,
+    `role`         VARCHAR(20)   NOT NULL,
+    `created_at`   TIMESTAMPTZ   NOT NULL
 );
 
 
 -- ------------------------------------------------------------
--- 1. reports (변경: markdown_object_key/pdf_object_key 제거, 버전 필드 추가)
--- ------------------------------------------------------------
-
-CREATE TABLE `reports` (
-	`id`	UUID	NOT NULL,
-	`workspace_id`	UUID	NOT NULL,
-	`report_key`	VARCHAR(200)	NOT NULL,	-- 같은 보고서 계열을 묶는 키 (예: "daily-semiconductor-trend")
-	`version`	INTEGER	NOT NULL,	-- 재생성할 때마다 +1, row는 새로 INSERT (UPDATE 금지)
-	`requested_by`	UUID	NULL,
-	`title`	VARCHAR(500)	NOT NULL,
-	`report_type`	VARCHAR(50)	NOT NULL,
-	`status`	VARCHAR(30)	NOT NULL,
-	`request_config`	JSONB	NOT NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL,
-	`completed_at`	TIMESTAMPTZ	NULL
-);
-
-
--- ------------------------------------------------------------
--- 2. artifacts (신규) — 보고서 산출물(md/pdf/pptx/docx)을 report 1:N으로 관리
--- ------------------------------------------------------------
-
-CREATE TABLE `artifacts` (
-	`id`	UUID	NOT NULL,
-	`report_id`	UUID	NOT NULL,
-	`artifact_type`	VARCHAR(20)	NOT NULL,	-- 'markdown' | 'pdf' | 'pptx' | 'docx'
-	`object_key`	TEXT	NOT NULL,	-- 버전을 경로에 포함해서 저장 (하단 가이드 참고)
-	`version`	INTEGER	NOT NULL,
-	`file_size`	INTEGER	NULL,
-	`mime_type`	VARCHAR(100)	NULL,
-	`created_by`	UUID	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 3. pipeline_jobs (변경: workspace_id 추가)
--- ------------------------------------------------------------
-
-CREATE TABLE `pipeline_jobs` (
-	`id`	UUID	NOT NULL,
-	`workspace_id`	UUID	NOT NULL,
-	`job_type`	VARCHAR(50)	NOT NULL,
-	`target_type`	VARCHAR(50)	NULL,
-	`target_id`	UUID	NULL,
-	`status`	VARCHAR(30)	NOT NULL,
-	`progress`	INTEGER	NOT NULL,
-	`error_message`	TEXT	NULL,
-	`requested_by`	UUID	NULL,
-	`payload`	JSONB	NOT NULL,
-	`result`	JSONB	NULL,
-	`retry_count`	INTEGER	NOT NULL,
-	`idempotency_key`	VARCHAR(200)	NULL,
-	`started_at`	TIMESTAMPTZ	NULL,
-	`completed_at`	TIMESTAMPTZ	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 4. qmd_index_entries (변경 없음)
--- ------------------------------------------------------------
-
-CREATE TABLE `qmd_index_entries` (
-	`id`	UUID	NOT NULL,
-	`document_version_id`	UUID	NULL,
-	`wiki_version_id`	UUID	NULL,
-	`report_id`	UUID	NULL,
-	`collection_name`	VARCHAR(100)	NOT NULL,
-	`status`	VARCHAR(30)	NOT NULL,
-	`qmd_uri`	TEXT	NULL,
-	`qmd_docid`	VARCHAR(20)	NULL,
-	`index_generation`	INTEGER	NOT NULL,
-	`indexed_at`	TIMESTAMPTZ	NULL,
-	`last_error`	TEXT	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 5. wiki_page_sources (변경 없음)
--- ------------------------------------------------------------
-
-CREATE TABLE `wiki_page_sources` (
-	`id`	UUID	NOT NULL,
-	`wiki_version_id`	UUID	NOT NULL,
-	`document_version_id`	UUID	NOT NULL,
-	`claim_text`	TEXT	NULL,
-	`source_start_line`	INTEGER	NULL,
-	`source_end_line`	INTEGER	NULL,
-	`support_type`	VARCHAR(20)	NULL,
-	`citation_order`	INTEGER	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 6. wiki_pages (변경: workspace_id 추가)
--- ------------------------------------------------------------
-
-CREATE TABLE `wiki_pages` (
-	`id`	UUID	NOT NULL,
-	`workspace_id`	UUID	NOT NULL,
-	`parent_page_id`	UUID	NULL,
-	`slug`	VARCHAR(300)	NOT NULL,
-	`title`	VARCHAR(500)	NOT NULL,
-	`page_type`	VARCHAR(30)	NOT NULL,
-	`status`	VARCHAR(30)	NOT NULL,
-	`review_policy`	VARCHAR(20)	NOT NULL,
-	`current_version_id`	UUID	NULL,
-	`published_at`	TIMESTAMPTZ	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 7. profiles (변경: role 컬럼 제거 — 7/27 멘토링 지적사항, 권한은 workspace_members.role로 일원화)
+-- 1. profiles (auth.users 확장, 7/27 멘토링 반영: role 제거)
 -- ------------------------------------------------------------
 
 CREATE TABLE `profiles` (
-	`id`	UUID	NOT NULL,
-	`display_name`	VARCHAR(100)	NOT NULL,
-	`department`	VARCHAR(100)	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
+    `id`            UUID          NOT NULL,
+    `display_name`  VARCHAR(100)  NOT NULL,
+    `department`    VARCHAR(100),
+    `created_at`    TIMESTAMPTZ   NOT NULL,
+    `updated_at`    TIMESTAMPTZ   NOT NULL
 );
 
 
 -- ------------------------------------------------------------
--- 8. sources (변경: workspace_id 추가)
+-- 2. sources / documents / document_versions
 -- ------------------------------------------------------------
 
 CREATE TABLE `sources` (
-	`id`	UUID	NOT NULL,
-	`workspace_id`	UUID	NOT NULL,
-	`name`	VARCHAR(200)	NOT NULL,
-	`source_type`	VARCHAR(30)	NOT NULL,
-	`base_url`	TEXT	NULL,
-	`reliability_score`	DECIMAL(5,4)	NULL,
-	`config`	JSONB	NOT NULL,
-	`enabled`	BOOLEAN	NOT NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
+    `id`                 UUID           NOT NULL,
+    `workspace_id`       UUID           NOT NULL,
+    `name`               VARCHAR(200)   NOT NULL,
+    `source_type`        VARCHAR(30)    NOT NULL,
+    `base_url`           TEXT,
+    `reliability_score`  NUMERIC(5,4),
+    `config`             JSONB          NOT NULL,
+    `enabled`            BOOLEAN        NOT NULL,
+    `created_at`         TIMESTAMPTZ    NOT NULL,
+    `updated_at`         TIMESTAMPTZ    NOT NULL
 );
-
-
--- ------------------------------------------------------------
--- 9. chat_messages (변경 없음)
--- ------------------------------------------------------------
-
-CREATE TABLE `chat_messages` (
-	`id`	UUID	NOT NULL,
-	`session_id`	UUID	NOT NULL,
-	`role`	VARCHAR(20)	NOT NULL,
-	`content`	TEXT	NOT NULL,
-	`model_name`	VARCHAR(100)	NULL,
-	`prompt_version`	VARCHAR(50)	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 10. report_sections (변경 없음)
--- ------------------------------------------------------------
-
-CREATE TABLE `report_sections` (
-	`id`	UUID	NOT NULL,
-	`report_id`	UUID	NOT NULL,
-	`section_order`	INTEGER	NOT NULL,
-	`title`	VARCHAR(500)	NOT NULL,
-	`content`	TEXT	NULL,
-	`status`	VARCHAR(30)	NOT NULL,
-	`model_name`	VARCHAR(100)	NULL,
-	`prompt_version`	VARCHAR(50)	NULL,
-	`generation_run_id`	UUID	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 11. message_citations (변경 없음, CHECK만 하단 추가)
--- ------------------------------------------------------------
-
-CREATE TABLE `message_citations` (
-	`id`	UUID	NOT NULL,
-	`message_id`	UUID	NOT NULL,
-	`document_version_id`	UUID	NOT NULL,
-	`qmd_uri`	TEXT	NULL,
-	`source_start_line`	INTEGER	NULL,
-	`source_end_line`	INTEGER	NULL,
-	`quoted_text`	TEXT	NULL,
-	`relevance_score`	DECIMAL(5,4)	NULL,
-	`citation_order`	INTEGER	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 12. document_versions (변경 없음, UNIQUE만 하단 추가)
--- ------------------------------------------------------------
-
-CREATE TABLE `document_versions` (
-	`id`	UUID	NOT NULL,
-	`document_id`	UUID	NOT NULL,
-	`version_no`	INTEGER	NOT NULL,
-	`content_hash`	VARCHAR(64)	NOT NULL,
-	`raw_object_key`	TEXT	NULL,
-	`markdown_object_key`	TEXT	NOT NULL,
-	`parser_version`	VARCHAR(50)	NULL,
-	`language`	VARCHAR(10)	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 13. report_citations (변경 없음, CHECK만 하단 추가)
--- ------------------------------------------------------------
-
-CREATE TABLE `report_citations` (
-	`id`	UUID	NOT NULL,
-	`section_id`	UUID	NOT NULL,
-	`document_version_id`	UUID	NOT NULL,
-	`source_start_line`	INTEGER	NULL,
-	`source_end_line`	INTEGER	NULL,
-	`quoted_text`	TEXT	NULL,
-	`relevance_score`	DECIMAL(5,4)	NULL,
-	`citation_order`	INTEGER	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL
-);
-
-
--- ------------------------------------------------------------
--- 14. documents (변경: workspace_id 추가)
--- ------------------------------------------------------------
 
 CREATE TABLE `documents` (
-	`id`	UUID	NOT NULL,
-	`workspace_id`	UUID	NOT NULL,
-	`source_id`	UUID	NULL,
-	`title`	VARCHAR(500)	NOT NULL,
-	`canonical_url`	TEXT	NULL,
-	`published_at`	TIMESTAMPTZ	NULL,
-	`status`	VARCHAR(30)	NOT NULL,
-	`uploaded_by`	UUID	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
+    `id`             UUID          NOT NULL,
+    `workspace_id`   UUID          NOT NULL,
+    `source_id`      UUID,
+    `title`          VARCHAR(500)  NOT NULL,
+    `canonical_url`  TEXT,
+    `published_at`   TIMESTAMPTZ,
+    `status`         VARCHAR(30)   NOT NULL,
+    `uploaded_by`    UUID,
+    `created_at`     TIMESTAMPTZ   NOT NULL,
+    `updated_at`     TIMESTAMPTZ   NOT NULL
+);
+
+CREATE TABLE `document_versions` (
+    `id`                   UUID          NOT NULL,
+    `document_id`          UUID          NOT NULL,
+    `version_no`           INTEGER       NOT NULL,
+    `content_hash`         VARCHAR(64)   NOT NULL,
+    `raw_object_key`       TEXT,
+    `markdown_object_key`  TEXT          NOT NULL,
+    `parser_version`       VARCHAR(50),
+    `language`             VARCHAR(10),
+    `created_at`           TIMESTAMPTZ   NOT NULL
 );
 
 
 -- ------------------------------------------------------------
--- 15. chat_sessions (변경: workspace_id 추가)
+-- 3. wiki_pages / wiki_page_versions / wiki_page_sources
+-- ------------------------------------------------------------
+
+CREATE TABLE `wiki_pages` (
+    `id`                  UUID          NOT NULL,
+    `workspace_id`        UUID          NOT NULL,
+    `parent_page_id`      UUID,
+    `slug`                VARCHAR(300)  NOT NULL,
+    `title`               VARCHAR(500)  NOT NULL,
+    `page_type`           VARCHAR(30)   NOT NULL,
+    `status`              VARCHAR(30)   NOT NULL,
+    `review_policy`       VARCHAR(20)   NOT NULL,
+    `current_version_id`  UUID,
+    `published_at`        TIMESTAMPTZ,
+    `created_at`          TIMESTAMPTZ   NOT NULL,
+    `updated_at`          TIMESTAMPTZ   NOT NULL
+);
+
+CREATE TABLE `wiki_page_versions` (
+    `id`                         UUID          NOT NULL,
+    `page_id`                    UUID          NOT NULL,
+    `version_no`                 INTEGER       NOT NULL,
+    `markdown_object_key`        TEXT          NOT NULL,
+    `content_hash`               VARCHAR(64)   NOT NULL,
+    `change_summary`             TEXT,
+    `created_by`                 UUID,
+    `review_status`              VARCHAR(30)   NOT NULL,
+    `reviewed_by`                UUID,
+    `reviewed_at`                TIMESTAMPTZ,
+    `generated_by`               VARCHAR(20)   NOT NULL,
+    `generator_model`            VARCHAR(100),
+    `generator_prompt_version`   VARCHAR(50),
+    `generation_run_id`          UUID,
+    `validation_status`          VARCHAR(30)   NOT NULL,
+    `confidence_score`           NUMERIC(5,4),
+    `created_at`                 TIMESTAMPTZ   NOT NULL
+);
+
+CREATE TABLE `wiki_page_sources` (
+    `id`                    UUID         NOT NULL,
+    `wiki_version_id`       UUID         NOT NULL,
+    `document_version_id`   UUID         NOT NULL,
+    `claim_text`            TEXT,
+    `source_start_line`     INTEGER,
+    `source_end_line`       INTEGER,
+    `support_type`          VARCHAR(20),
+    `citation_order`        INTEGER,
+    `created_at`            TIMESTAMPTZ  NOT NULL
+);
+
+
+-- ------------------------------------------------------------
+-- 4. reports / report_sections / report_citations / artifacts
+-- ------------------------------------------------------------
+
+CREATE TABLE `reports` (
+    `id`              UUID          NOT NULL,
+    `workspace_id`    UUID          NOT NULL,
+    `report_key`      VARCHAR(200)  NOT NULL,
+    `version`         INTEGER       NOT NULL,
+    `requested_by`    UUID,
+    `title`           VARCHAR(500)  NOT NULL,
+    `report_type`     VARCHAR(50)   NOT NULL,
+    `status`          VARCHAR(30)   NOT NULL,
+    `request_config`  JSONB         NOT NULL,
+    `created_at`      TIMESTAMPTZ   NOT NULL,
+    `updated_at`      TIMESTAMPTZ   NOT NULL,
+    `completed_at`    TIMESTAMPTZ
+);
+
+CREATE TABLE `report_sections` (
+    `id`                  UUID          NOT NULL,
+    `report_id`           UUID          NOT NULL,
+    `section_order`       INTEGER       NOT NULL,
+    `title`               VARCHAR(500)  NOT NULL,
+    `content`             TEXT,
+    `status`              VARCHAR(30)   NOT NULL,
+    `model_name`          VARCHAR(100),
+    `prompt_version`      VARCHAR(50),
+    `generation_run_id`   UUID,
+    `created_at`          TIMESTAMPTZ   NOT NULL,
+    `updated_at`          TIMESTAMPTZ   NOT NULL
+);
+
+CREATE TABLE `report_citations` (
+    `id`                    UUID          NOT NULL,
+    `section_id`            UUID          NOT NULL,
+    `document_version_id`   UUID          NOT NULL,
+    `source_start_line`     INTEGER,
+    `source_end_line`       INTEGER,
+    `quoted_text`           TEXT,
+    `relevance_score`       NUMERIC(5,4),
+    `citation_order`        INTEGER,
+    `created_at`            TIMESTAMPTZ   NOT NULL
+);
+
+CREATE TABLE `artifacts` (
+    `id`             UUID          NOT NULL,
+    `report_id`      UUID          NOT NULL,
+    `artifact_type`  VARCHAR(20)   NOT NULL,
+    `object_key`     TEXT          NOT NULL,
+    `version`        INTEGER       NOT NULL,
+    `file_size`      INTEGER,
+    `mime_type`      VARCHAR(100),
+    `created_by`     UUID,
+    `created_at`     TIMESTAMPTZ   NOT NULL
+);
+
+
+-- ------------------------------------------------------------
+-- 5. chat_sessions / chat_messages / message_citations
 -- ------------------------------------------------------------
 
 CREATE TABLE `chat_sessions` (
-	`id`	UUID	NOT NULL,
-	`workspace_id`	UUID	NOT NULL,
-	`user_id`	UUID	NOT NULL,
-	`title`	VARCHAR(500)	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL,
-	`updated_at`	TIMESTAMPTZ	NOT NULL
+    `id`            UUID          NOT NULL,
+    `workspace_id`  UUID          NOT NULL,
+    `user_id`       UUID          NOT NULL,
+    `title`         VARCHAR(500),
+    `created_at`    TIMESTAMPTZ   NOT NULL,
+    `updated_at`    TIMESTAMPTZ   NOT NULL
+);
+
+CREATE TABLE `chat_messages` (
+    `id`              UUID          NOT NULL,
+    `session_id`      UUID          NOT NULL,
+    `role`            VARCHAR(20)   NOT NULL,
+    `content`         TEXT          NOT NULL,
+    `model_name`      VARCHAR(100),
+    `prompt_version`  VARCHAR(50),
+    `created_at`      TIMESTAMPTZ   NOT NULL
+);
+
+CREATE TABLE `message_citations` (
+    `id`                    UUID          NOT NULL,
+    `message_id`            UUID          NOT NULL,
+    `document_version_id`   UUID          NOT NULL,
+    `qmd_uri`               TEXT,
+    `source_start_line`     INTEGER,
+    `source_end_line`       INTEGER,
+    `quoted_text`           TEXT,
+    `relevance_score`       NUMERIC(5,4),
+    `citation_order`        INTEGER,
+    `created_at`            TIMESTAMPTZ   NOT NULL
 );
 
 
 -- ------------------------------------------------------------
--- 16. wiki_page_versions (변경 없음, UNIQUE/CHECK만 하단 추가)
+-- 6. pipeline_jobs / qmd_index_entries
 -- ------------------------------------------------------------
 
-CREATE TABLE `wiki_page_versions` (
-	`id`	UUID	NOT NULL,
-	`page_id`	UUID	NOT NULL,
-	`version_no`	INTEGER	NOT NULL,
-	`markdown_object_key`	TEXT	NOT NULL,
-	`content_hash`	VARCHAR(64)	NOT NULL,
-	`change_summary`	TEXT	NULL,
-	`created_by`	UUID	NULL,
-	`review_status`	VARCHAR(30)	NOT NULL,
-	`reviewed_by`	UUID	NULL,
-	`reviewed_at`	TIMESTAMPTZ	NULL,
-	`generated_by`	VARCHAR(20)	NOT NULL,
-	`generator_model`	VARCHAR(100)	NULL,
-	`generator_prompt_version`	VARCHAR(50)	NULL,
-	`generation_run_id`	UUID	NULL,
-	`validation_status`	VARCHAR(30)	NOT NULL,
-	`confidence_score`	DECIMAL(5,4)	NULL,
-	`created_at`	TIMESTAMPTZ	NOT NULL
+CREATE TABLE `pipeline_jobs` (
+    `id`                UUID           NOT NULL,
+    `workspace_id`      UUID           NOT NULL,
+    `job_type`          VARCHAR(50)    NOT NULL,
+    `target_type`       VARCHAR(50),
+    `target_id`         UUID,
+    `status`            VARCHAR(30)    NOT NULL,
+    `progress`          INTEGER        NOT NULL,
+    `error_message`     TEXT,
+    `requested_by`      UUID,
+    `payload`           JSONB          NOT NULL,
+    `result`            JSONB,
+    `retry_count`       INTEGER        NOT NULL,
+    `idempotency_key`   VARCHAR(200),
+    `started_at`        TIMESTAMPTZ,
+    `completed_at`      TIMESTAMPTZ,
+    `created_at`        TIMESTAMPTZ    NOT NULL,
+    `updated_at`        TIMESTAMPTZ    NOT NULL
+);
+
+CREATE TABLE `qmd_index_entries` (
+    `id`                    UUID          NOT NULL,
+    `document_version_id`   UUID,
+    `wiki_version_id`       UUID,
+    `report_id`             UUID,
+    `collection_name`       VARCHAR(100)  NOT NULL,
+    `status`                VARCHAR(30)   NOT NULL,
+    `qmd_uri`               TEXT,
+    `qmd_docid`             VARCHAR(20),
+    `index_generation`      INTEGER       NOT NULL,
+    `indexed_at`            TIMESTAMPTZ,
+    `last_error`            TEXT,
+    `created_at`            TIMESTAMPTZ   NOT NULL,
+    `updated_at`            TIMESTAMPTZ   NOT NULL
 );
 
 
@@ -331,149 +295,140 @@ CREATE TABLE `wiki_page_versions` (
 -- PRIMARY KEYS
 -- ============================================================
 
-ALTER TABLE `workspaces` ADD CONSTRAINT `PK_WORKSPACES` PRIMARY KEY (`id`);
-ALTER TABLE `workspace_members` ADD CONSTRAINT `PK_WORKSPACE_MEMBERS` PRIMARY KEY (`id`);
-ALTER TABLE `artifacts` ADD CONSTRAINT `PK_ARTIFACTS` PRIMARY KEY (`id`);
-ALTER TABLE `reports` ADD CONSTRAINT `PK_REPORTS` PRIMARY KEY (`id`);
-ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `PK_PIPELINE_JOBS` PRIMARY KEY (`id`);
-ALTER TABLE `qmd_index_entries` ADD CONSTRAINT `PK_QMD_INDEX_ENTRIES` PRIMARY KEY (`id`);
-ALTER TABLE `wiki_page_sources` ADD CONSTRAINT `PK_WIKI_PAGE_SOURCES` PRIMARY KEY (`id`);
-ALTER TABLE `wiki_pages` ADD CONSTRAINT `PK_WIKI_PAGES` PRIMARY KEY (`id`);
-ALTER TABLE `profiles` ADD CONSTRAINT `PK_PROFILES` PRIMARY KEY (`id`);
-ALTER TABLE `sources` ADD CONSTRAINT `PK_SOURCES` PRIMARY KEY (`id`);
-ALTER TABLE `chat_messages` ADD CONSTRAINT `PK_CHAT_MESSAGES` PRIMARY KEY (`id`);
-ALTER TABLE `report_sections` ADD CONSTRAINT `PK_REPORT_SECTIONS` PRIMARY KEY (`id`);
-ALTER TABLE `message_citations` ADD CONSTRAINT `PK_MESSAGE_CITATIONS` PRIMARY KEY (`id`);
-ALTER TABLE `document_versions` ADD CONSTRAINT `PK_DOCUMENT_VERSIONS` PRIMARY KEY (`id`);
-ALTER TABLE `report_citations` ADD CONSTRAINT `PK_REPORT_CITATIONS` PRIMARY KEY (`id`);
-ALTER TABLE `documents` ADD CONSTRAINT `PK_DOCUMENTS` PRIMARY KEY (`id`);
-ALTER TABLE `chat_sessions` ADD CONSTRAINT `PK_CHAT_SESSIONS` PRIMARY KEY (`id`);
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `PK_WIKI_PAGE_VERSIONS` PRIMARY KEY (`id`);
+ALTER TABLE `workspaces`           ADD CONSTRAINT `pk_workspaces`          PRIMARY KEY (`id`);
+ALTER TABLE `workspace_members`    ADD CONSTRAINT `pk_workspace_members`   PRIMARY KEY (`id`);
+ALTER TABLE `profiles`             ADD CONSTRAINT `pk_profiles`            PRIMARY KEY (`id`);
+ALTER TABLE `sources`              ADD CONSTRAINT `pk_sources`             PRIMARY KEY (`id`);
+ALTER TABLE `documents`            ADD CONSTRAINT `pk_documents`           PRIMARY KEY (`id`);
+ALTER TABLE `document_versions`    ADD CONSTRAINT `pk_document_versions`   PRIMARY KEY (`id`);
+ALTER TABLE `wiki_pages`           ADD CONSTRAINT `pk_wiki_pages`          PRIMARY KEY (`id`);
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `pk_wiki_page_versions`  PRIMARY KEY (`id`);
+ALTER TABLE `wiki_page_sources`    ADD CONSTRAINT `pk_wiki_page_sources`   PRIMARY KEY (`id`);
+ALTER TABLE `reports`              ADD CONSTRAINT `pk_reports`             PRIMARY KEY (`id`);
+ALTER TABLE `report_sections`      ADD CONSTRAINT `pk_report_sections`     PRIMARY KEY (`id`);
+ALTER TABLE `report_citations`     ADD CONSTRAINT `pk_report_citations`    PRIMARY KEY (`id`);
+ALTER TABLE `artifacts`            ADD CONSTRAINT `pk_artifacts`           PRIMARY KEY (`id`);
+ALTER TABLE `chat_sessions`        ADD CONSTRAINT `pk_chat_sessions`       PRIMARY KEY (`id`);
+ALTER TABLE `chat_messages`        ADD CONSTRAINT `pk_chat_messages`       PRIMARY KEY (`id`);
+ALTER TABLE `message_citations`    ADD CONSTRAINT `pk_message_citations`   PRIMARY KEY (`id`);
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `pk_pipeline_jobs`       PRIMARY KEY (`id`);
+ALTER TABLE `qmd_index_entries`    ADD CONSTRAINT `pk_qmd_index_entries`   PRIMARY KEY (`id`);
 
 
 -- ============================================================
--- FOREIGN KEYS (원본 SQL엔 없었지만, workspace 격리·이력 추적을 위해 명시)
+-- FOREIGN KEYS
+-- (참고: profiles -> auth.users FK는 Supabase 실행본에서만 추가함)
 -- ============================================================
 
--- 참고: profiles.id -> auth.users.id FK는 Supabase 실행본(myWiki_v2_supabase.sql)에만 추가함
--- (auth.users는 이 다이어그램에 없는 테이블이라 erdcloud import 시 에러 방지 차원에서 여기선 생략)
+ALTER TABLE `workspace_members`  ADD CONSTRAINT `fk_wm_workspace`         FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
+ALTER TABLE `workspace_members`  ADD CONSTRAINT `fk_wm_user`              FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`) ON DELETE CASCADE;
 
-ALTER TABLE `workspace_members` ADD CONSTRAINT `FK_WM_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
-ALTER TABLE `workspace_members` ADD CONSTRAINT `FK_WM_USER` FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`);
+ALTER TABLE `sources`             ADD CONSTRAINT `fk_sources_workspace`           FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
 
-ALTER TABLE `sources` ADD CONSTRAINT `FK_SOURCES_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
-ALTER TABLE `documents` ADD CONSTRAINT `FK_DOCUMENTS_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
-ALTER TABLE `documents` ADD CONSTRAINT `FK_DOCUMENTS_SOURCE` FOREIGN KEY (`source_id`) REFERENCES `sources`(`id`);
-ALTER TABLE `documents` ADD CONSTRAINT `FK_DOCUMENTS_UPLOADED_BY` FOREIGN KEY (`uploaded_by`) REFERENCES `profiles`(`id`);
-ALTER TABLE `document_versions` ADD CONSTRAINT `FK_DV_DOCUMENT` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`);
+ALTER TABLE `documents`           ADD CONSTRAINT `fk_documents_workspace`         FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
+ALTER TABLE `documents`           ADD CONSTRAINT `fk_documents_source`            FOREIGN KEY (`source_id`) REFERENCES `sources`(`id`);
+ALTER TABLE `documents`           ADD CONSTRAINT `fk_documents_uploaded_by`       FOREIGN KEY (`uploaded_by`) REFERENCES `profiles`(`id`) ON DELETE SET NULL;
 
-ALTER TABLE `wiki_pages` ADD CONSTRAINT `FK_WIKI_PAGES_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
-ALTER TABLE `wiki_pages` ADD CONSTRAINT `FK_WIKI_PAGES_PARENT` FOREIGN KEY (`parent_page_id`) REFERENCES `wiki_pages`(`id`);
-ALTER TABLE `wiki_pages` ADD CONSTRAINT `FK_WIKI_PAGES_CURRENT_VERSION` FOREIGN KEY (`current_version_id`) REFERENCES `wiki_page_versions`(`id`);
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `FK_WPV_PAGE` FOREIGN KEY (`page_id`) REFERENCES `wiki_pages`(`id`);
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `FK_WPV_CREATED_BY` FOREIGN KEY (`created_by`) REFERENCES `profiles`(`id`);
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `FK_WPV_REVIEWED_BY` FOREIGN KEY (`reviewed_by`) REFERENCES `profiles`(`id`);
-ALTER TABLE `wiki_page_sources` ADD CONSTRAINT `FK_WPS_WIKI_VERSION` FOREIGN KEY (`wiki_version_id`) REFERENCES `wiki_page_versions`(`id`);
-ALTER TABLE `wiki_page_sources` ADD CONSTRAINT `FK_WPS_DOCUMENT_VERSION` FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
+ALTER TABLE `document_versions`   ADD CONSTRAINT `fk_dv_document`                 FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`);
 
-ALTER TABLE `reports` ADD CONSTRAINT `FK_REPORTS_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
-ALTER TABLE `reports` ADD CONSTRAINT `FK_REPORTS_REQUESTED_BY` FOREIGN KEY (`requested_by`) REFERENCES `profiles`(`id`);
-ALTER TABLE `report_sections` ADD CONSTRAINT `FK_RS_REPORT` FOREIGN KEY (`report_id`) REFERENCES `reports`(`id`);
-ALTER TABLE `report_citations` ADD CONSTRAINT `FK_RC_SECTION` FOREIGN KEY (`section_id`) REFERENCES `report_sections`(`id`);
-ALTER TABLE `report_citations` ADD CONSTRAINT `FK_RC_DOCUMENT_VERSION` FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
-ALTER TABLE `artifacts` ADD CONSTRAINT `FK_ARTIFACTS_REPORT` FOREIGN KEY (`report_id`) REFERENCES `reports`(`id`);
-ALTER TABLE `artifacts` ADD CONSTRAINT `FK_ARTIFACTS_CREATED_BY` FOREIGN KEY (`created_by`) REFERENCES `profiles`(`id`);
+ALTER TABLE `wiki_pages`          ADD CONSTRAINT `fk_wiki_pages_workspace`        FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
+ALTER TABLE `wiki_pages`          ADD CONSTRAINT `fk_wiki_pages_parent`           FOREIGN KEY (`parent_page_id`) REFERENCES `wiki_pages`(`id`);
+ALTER TABLE `wiki_pages`          ADD CONSTRAINT `fk_wiki_pages_current_version`  FOREIGN KEY (`current_version_id`) REFERENCES `wiki_page_versions`(`id`);
 
-ALTER TABLE `chat_sessions` ADD CONSTRAINT `FK_CS_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
-ALTER TABLE `chat_sessions` ADD CONSTRAINT `FK_CS_USER` FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`);
-ALTER TABLE `chat_messages` ADD CONSTRAINT `FK_CM_SESSION` FOREIGN KEY (`session_id`) REFERENCES `chat_sessions`(`id`);
-ALTER TABLE `message_citations` ADD CONSTRAINT `FK_MC_MESSAGE` FOREIGN KEY (`message_id`) REFERENCES `chat_messages`(`id`);
-ALTER TABLE `message_citations` ADD CONSTRAINT `FK_MC_DOCUMENT_VERSION` FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
+ALTER TABLE `wiki_page_versions`  ADD CONSTRAINT `fk_wpv_page`                    FOREIGN KEY (`page_id`) REFERENCES `wiki_pages`(`id`);
+ALTER TABLE `wiki_page_versions`  ADD CONSTRAINT `fk_wpv_created_by`              FOREIGN KEY (`created_by`) REFERENCES `profiles`(`id`) ON DELETE SET NULL;
+ALTER TABLE `wiki_page_versions`  ADD CONSTRAINT `fk_wpv_reviewed_by`             FOREIGN KEY (`reviewed_by`) REFERENCES `profiles`(`id`) ON DELETE SET NULL;
 
-ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `FK_PJ_WORKSPACE` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
-ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `FK_PJ_REQUESTED_BY` FOREIGN KEY (`requested_by`) REFERENCES `profiles`(`id`);
+ALTER TABLE `wiki_page_sources`   ADD CONSTRAINT `fk_wps_wiki_version`            FOREIGN KEY (`wiki_version_id`) REFERENCES `wiki_page_versions`(`id`);
+ALTER TABLE `wiki_page_sources`   ADD CONSTRAINT `fk_wps_document_version`        FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
 
-ALTER TABLE `qmd_index_entries` ADD CONSTRAINT `FK_QMD_DOCUMENT_VERSION` FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
-ALTER TABLE `qmd_index_entries` ADD CONSTRAINT `FK_QMD_WIKI_VERSION` FOREIGN KEY (`wiki_version_id`) REFERENCES `wiki_page_versions`(`id`);
-ALTER TABLE `qmd_index_entries` ADD CONSTRAINT `FK_QMD_REPORT` FOREIGN KEY (`report_id`) REFERENCES `reports`(`id`);
+ALTER TABLE `reports`              ADD CONSTRAINT `fk_reports_workspace`          FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
+ALTER TABLE `reports`              ADD CONSTRAINT `fk_reports_requested_by`       FOREIGN KEY (`requested_by`) REFERENCES `profiles`(`id`) ON DELETE SET NULL;
 
+ALTER TABLE `report_sections`      ADD CONSTRAINT `fk_rs_report`                  FOREIGN KEY (`report_id`) REFERENCES `reports`(`id`);
 
--- ============================================================
--- UNIQUE 제약 (중복 방지)
--- ============================================================
+ALTER TABLE `report_citations`     ADD CONSTRAINT `fk_rc_section`                 FOREIGN KEY (`section_id`) REFERENCES `report_sections`(`id`);
+ALTER TABLE `report_citations`     ADD CONSTRAINT `fk_rc_document_version`        FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
 
-ALTER TABLE `workspace_members` ADD CONSTRAINT `UQ_WM_WORKSPACE_USER` UNIQUE (`workspace_id`, `user_id`);
+ALTER TABLE `artifacts`            ADD CONSTRAINT `fk_artifacts_report`           FOREIGN KEY (`report_id`) REFERENCES `reports`(`id`);
+ALTER TABLE `artifacts`            ADD CONSTRAINT `fk_artifacts_created_by`       FOREIGN KEY (`created_by`) REFERENCES `profiles`(`id`) ON DELETE SET NULL;
 
-ALTER TABLE `sources` ADD CONSTRAINT `UQ_SOURCES_WORKSPACE_NAME` UNIQUE (`workspace_id`, `name`);
+ALTER TABLE `chat_sessions`        ADD CONSTRAINT `fk_cs_workspace`               FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
+ALTER TABLE `chat_sessions`        ADD CONSTRAINT `fk_cs_user`                    FOREIGN KEY (`user_id`) REFERENCES `profiles`(`id`) ON DELETE CASCADE;
 
-ALTER TABLE `documents` ADD CONSTRAINT `UQ_DOCUMENTS_WORKSPACE_URL` UNIQUE (`workspace_id`, `canonical_url`);
+ALTER TABLE `chat_messages`        ADD CONSTRAINT `fk_cm_session`                 FOREIGN KEY (`session_id`) REFERENCES `chat_sessions`(`id`);
 
-ALTER TABLE `document_versions` ADD CONSTRAINT `UQ_DV_DOCUMENT_HASH` UNIQUE (`document_id`, `content_hash`);
-ALTER TABLE `document_versions` ADD CONSTRAINT `UQ_DV_DOCUMENT_VERSIONNO` UNIQUE (`document_id`, `version_no`);
-ALTER TABLE `document_versions` ADD CONSTRAINT `UQ_DV_MARKDOWN_OBJECT_KEY` UNIQUE (`markdown_object_key`);
+ALTER TABLE `message_citations`    ADD CONSTRAINT `fk_mc_message`                 FOREIGN KEY (`message_id`) REFERENCES `chat_messages`(`id`);
+ALTER TABLE `message_citations`    ADD CONSTRAINT `fk_mc_document_version`        FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
 
-ALTER TABLE `wiki_pages` ADD CONSTRAINT `UQ_WIKI_PAGES_WORKSPACE_SLUG` UNIQUE (`workspace_id`, `slug`);
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `fk_pj_workspace`               FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `fk_pj_requested_by`            FOREIGN KEY (`requested_by`) REFERENCES `profiles`(`id`) ON DELETE SET NULL;
 
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `UQ_WPV_PAGE_VERSIONNO` UNIQUE (`page_id`, `version_no`);
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `UQ_WPV_MARKDOWN_OBJECT_KEY` UNIQUE (`markdown_object_key`);
-
-ALTER TABLE `reports` ADD CONSTRAINT `UQ_REPORTS_WORKSPACE_KEY_VERSION` UNIQUE (`workspace_id`, `report_key`, `version`);
-
-ALTER TABLE `artifacts` ADD CONSTRAINT `UQ_ARTIFACTS_REPORT_TYPE_VERSION` UNIQUE (`report_id`, `artifact_type`, `version`);
-ALTER TABLE `artifacts` ADD CONSTRAINT `UQ_ARTIFACTS_OBJECT_KEY` UNIQUE (`object_key`);
-
-ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `UQ_PJ_IDEMPOTENCY_KEY` UNIQUE (`idempotency_key`);
+ALTER TABLE `qmd_index_entries`    ADD CONSTRAINT `fk_qmd_document_version`       FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
+ALTER TABLE `qmd_index_entries`    ADD CONSTRAINT `fk_qmd_wiki_version`           FOREIGN KEY (`wiki_version_id`) REFERENCES `wiki_page_versions`(`id`);
+ALTER TABLE `qmd_index_entries`    ADD CONSTRAINT `fk_qmd_report`                 FOREIGN KEY (`report_id`) REFERENCES `reports`(`id`);
 
 
 -- ============================================================
--- CHECK 제약 (값 범위)
+-- UNIQUE 제약
 -- ============================================================
 
--- 권한 값 고정 (admin/editor/viewer 외 값 차단)
-ALTER TABLE `workspace_members` ADD CONSTRAINT `CK_WM_ROLE` CHECK (`role` IN ('admin','editor','viewer'));
-
--- 진행률 0~100
-ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `CK_PJ_PROGRESS` CHECK (`progress` BETWEEN 0 AND 100);
-ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `CK_PJ_RETRY_COUNT` CHECK (`retry_count` >= 0);
-ALTER TABLE `pipeline_jobs` ADD CONSTRAINT `CK_PJ_STATUS` CHECK (`status` IN ('pending','running','completed','failed','cancelled'));
-
--- 점수류 0~1
-ALTER TABLE `sources` ADD CONSTRAINT `CK_SOURCES_RELIABILITY` CHECK (`reliability_score` BETWEEN 0 AND 1);
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `CK_WPV_CONFIDENCE` CHECK (`confidence_score` BETWEEN 0 AND 1);
-ALTER TABLE `message_citations` ADD CONSTRAINT `CK_MC_RELEVANCE` CHECK (`relevance_score` BETWEEN 0 AND 1);
-ALTER TABLE `report_citations` ADD CONSTRAINT `CK_RC_RELEVANCE` CHECK (`relevance_score` BETWEEN 0 AND 1);
-
--- 버전 번호는 1 이상
-ALTER TABLE `document_versions` ADD CONSTRAINT `CK_DV_VERSIONNO` CHECK (`version_no` >= 1);
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `CK_WPV_VERSIONNO` CHECK (`version_no` >= 1);
-ALTER TABLE `reports` ADD CONSTRAINT `CK_REPORTS_VERSION` CHECK (`version` >= 1);
-ALTER TABLE `artifacts` ADD CONSTRAINT `CK_ARTIFACTS_VERSION` CHECK (`version` >= 1);
-
--- 상태값 enum 고정
-ALTER TABLE `documents` ADD CONSTRAINT `CK_DOCUMENTS_STATUS` CHECK (`status` IN ('active','deleted','blocked','failed'));
-ALTER TABLE `wiki_pages` ADD CONSTRAINT `CK_WIKI_PAGES_STATUS` CHECK (`status` IN ('draft','published','archived'));
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `CK_WPV_REVIEW_STATUS` CHECK (`review_status` IN ('pending','approved','rejected'));
-ALTER TABLE `wiki_page_versions` ADD CONSTRAINT `CK_WPV_VALIDATION_STATUS` CHECK (`validation_status` IN ('pending','passed','failed'));
-ALTER TABLE `reports` ADD CONSTRAINT `CK_REPORTS_STATUS` CHECK (`status` IN ('pending','generating','completed','failed'));
-ALTER TABLE `report_sections` ADD CONSTRAINT `CK_RS_STATUS` CHECK (`status` IN ('pending','generating','completed','failed'));
-ALTER TABLE `qmd_index_entries` ADD CONSTRAINT `CK_QMD_STATUS` CHECK (`status` IN ('pending','indexing','indexed','failed','stale'));
-ALTER TABLE `artifacts` ADD CONSTRAINT `CK_ARTIFACTS_TYPE` CHECK (`artifact_type` IN ('markdown','pdf','pptx','docx'));
+ALTER TABLE `workspaces`           ADD CONSTRAINT `uq_workspaces_slug`           UNIQUE (`slug`);
+ALTER TABLE `workspace_members`    ADD CONSTRAINT `uq_wm_workspace_user`         UNIQUE (`workspace_id`, `user_id`);
+ALTER TABLE `sources`              ADD CONSTRAINT `uq_sources_workspace_name`    UNIQUE (`workspace_id`, `name`);
+ALTER TABLE `documents`            ADD CONSTRAINT `uq_documents_workspace_url`   UNIQUE (`workspace_id`, `canonical_url`);
+ALTER TABLE `document_versions`    ADD CONSTRAINT `uq_dv_document_versionno`     UNIQUE (`document_id`, `version_no`);
+ALTER TABLE `document_versions`    ADD CONSTRAINT `uq_dv_document_hash`          UNIQUE (`document_id`, `content_hash`);
+ALTER TABLE `document_versions`    ADD CONSTRAINT `uq_dv_markdown_object_key`    UNIQUE (`markdown_object_key`);
+ALTER TABLE `wiki_pages`           ADD CONSTRAINT `uq_wiki_pages_workspace_slug` UNIQUE (`workspace_id`, `slug`);
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `uq_wpv_page_versionno`        UNIQUE (`page_id`, `version_no`);
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `uq_wpv_markdown_object_key`   UNIQUE (`markdown_object_key`);
+ALTER TABLE `reports`              ADD CONSTRAINT `uq_reports_workspace_key_version` UNIQUE (`workspace_id`, `report_key`, `version`);
+ALTER TABLE `artifacts`            ADD CONSTRAINT `uq_artifacts_report_type_version` UNIQUE (`report_id`, `artifact_type`, `version`);
+ALTER TABLE `artifacts`            ADD CONSTRAINT `uq_artifacts_object_key`      UNIQUE (`object_key`);
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `uq_pj_idempotency_key`        UNIQUE (`idempotency_key`);
 
 
 -- ============================================================
--- object_key 경로 설계 가이드 (DB 제약이 아니라 애플리케이션 규칙)
+-- CHECK 제약
 -- ============================================================
--- 모든 Storage 경로는 workspace/엔티티/버전을 경로 자체에 포함시켜서,
--- 같은 경로를 실수로 덮어쓰는 일이 없도록 합니다.
---
---   document_versions.markdown_object_key:
---     {workspace_id}/documents/{document_id}/v{version_no}-{content_hash}.md
---
---   wiki_page_versions.markdown_object_key:
---     {workspace_id}/wiki/{page_id}/v{version_no}-{content_hash}.md
---
---   artifacts.object_key:
---     {workspace_id}/reports/{report_id}/{artifact_type}/v{version}.{ext}
---
--- 위 UNIQUE(object_key) 제약이 안전장치 역할을 하므로,
--- 경로 규칙을 어기고 같은 키로 다시 쓰려고 하면 INSERT 시점에 바로 에러가 납니다.
+
+ALTER TABLE `workspace_members`    ADD CONSTRAINT `ck_wm_role`         CHECK (`role` IN ('admin','editor','viewer'));
+
+ALTER TABLE `documents`            ADD CONSTRAINT `ck_documents_status`  CHECK (`status` IN ('active','deleted','blocked','failed'));
+ALTER TABLE `document_versions`    ADD CONSTRAINT `ck_dv_versionno`      CHECK (`version_no` >= 1);
+
+ALTER TABLE `wiki_pages`           ADD CONSTRAINT `ck_wiki_pages_status` CHECK (`status` IN ('draft','published','archived'));
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_versionno`     CHECK (`version_no` >= 1);
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_review_status` CHECK (`review_status` IN ('pending','approved','rejected'));
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_generated_by`  CHECK (`generated_by` IN ('human','llm'));
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_validation_status` CHECK (`validation_status` IN ('pending','passed','failed'));
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_confidence`    CHECK (`confidence_score` >= 0 AND `confidence_score` <= 1);
+
+ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_status`    CHECK (`status` IN ('pending','generating','completed','failed'));
+ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_version`   CHECK (`version` >= 1);
+
+ALTER TABLE `report_sections`      ADD CONSTRAINT `ck_rs_status`         CHECK (`status` IN ('pending','generating','completed','failed'));
+
+ALTER TABLE `report_citations`     ADD CONSTRAINT `ck_rc_relevance`      CHECK (`relevance_score` >= 0 AND `relevance_score` <= 1);
+
+ALTER TABLE `artifacts`            ADD CONSTRAINT `ck_artifacts_type`    CHECK (`artifact_type` IN ('markdown','pdf','pptx','docx'));
+ALTER TABLE `artifacts`            ADD CONSTRAINT `ck_artifacts_version` CHECK (`version` >= 1);
+
+ALTER TABLE `message_citations`    ADD CONSTRAINT `ck_mc_relevance`      CHECK (`relevance_score` >= 0 AND `relevance_score` <= 1);
+
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `ck_pj_status`         CHECK (`status` IN ('pending','running','completed','failed','cancelled'));
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `ck_pj_progress`       CHECK (`progress` >= 0 AND `progress` <= 100);
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `ck_pj_retry_count`    CHECK (`retry_count` >= 0);
+
+ALTER TABLE `qmd_index_entries`    ADD CONSTRAINT `ck_qmd_status`        CHECK (`status` IN ('pending','indexing','indexed','failed','stale'));
+
+ALTER TABLE `sources`              ADD CONSTRAINT `ck_sources_reliability` CHECK (`reliability_score` >= 0 AND `reliability_score` <= 1);
+
+
+-- ============================================================
+-- object_key 경로 설계 가이드 (애플리케이션 레벨 규칙, DB 제약 아님)
+--   raw/{workspace_id}/{document_id}/{version_no}.{ext}
+--   processed/{workspace_id}/{document_id}/{version_no}.md
+--   wiki/{workspace_id}/{page_id}/{version_no}.md
+-- ============================================================
