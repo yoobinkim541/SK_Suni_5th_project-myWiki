@@ -29,6 +29,11 @@
 --  13) 회원가입 시 profiles 자동 생성 트리거 적용
 --  14) updated_at 자동 갱신 트리거 적용
 --  15) Storage 버킷(raw/processed/wiki) 생성
+--  16) [7/29] id/created_at/updated_at 등 컬럼 DEFAULT 전체 추가
+--      (gen_random_uuid()/now()/'{}'::jsonb/true/0) - profiles.id 제외
+--  17) [7/29] workspace_members.role CHECK 버그 수정 (owner 누락 -> 추가)
+--  18) [7/29] chat_messages.role / sources.source_type /
+--      wiki_pages.page_type / wiki_pages.review_policy CHECK 제약 신규 추가
 -- ============================================================
 
 
@@ -37,19 +42,19 @@
 -- ------------------------------------------------------------
 
 CREATE TABLE workspaces (
-    id          UUID          NOT NULL,
+    id          UUID          NOT NULL DEFAULT gen_random_uuid(),
     name        VARCHAR(200)  NOT NULL,
     slug        VARCHAR(100)  NOT NULL,
-    created_at  TIMESTAMPTZ   NOT NULL,
-    updated_at  TIMESTAMPTZ   NOT NULL
+    created_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE workspace_members (
-    id           UUID          NOT NULL,
+    id           UUID          NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID          NOT NULL,
     user_id      UUID          NOT NULL,
     role         VARCHAR(20)   NOT NULL,
-    created_at   TIMESTAMPTZ   NOT NULL
+    created_at   TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 
@@ -58,11 +63,11 @@ CREATE TABLE workspace_members (
 -- ------------------------------------------------------------
 
 CREATE TABLE profiles (
-    id            UUID          NOT NULL,
+    id            UUID          NOT NULL,  -- DEFAULT 없음: auth.users.id 값을 그대로 사용
     display_name  VARCHAR(100)  NOT NULL,
     department    VARCHAR(100),
-    created_at    TIMESTAMPTZ   NOT NULL,
-    updated_at    TIMESTAMPTZ   NOT NULL
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 
@@ -71,20 +76,20 @@ CREATE TABLE profiles (
 -- ------------------------------------------------------------
 
 CREATE TABLE sources (
-    id                 UUID           NOT NULL,
+    id                 UUID           NOT NULL DEFAULT gen_random_uuid(),
     workspace_id       UUID           NOT NULL,
     name               VARCHAR(200)   NOT NULL,
     source_type        VARCHAR(30)    NOT NULL,
     base_url           TEXT,
     reliability_score  NUMERIC(5,4),
-    config             JSONB          NOT NULL,
-    enabled            BOOLEAN        NOT NULL,
-    created_at         TIMESTAMPTZ    NOT NULL,
-    updated_at         TIMESTAMPTZ    NOT NULL
+    config             JSONB          NOT NULL DEFAULT '{}'::jsonb,
+    enabled            BOOLEAN        NOT NULL DEFAULT true,
+    created_at         TIMESTAMPTZ    NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ    NOT NULL DEFAULT now()
 );
 
 CREATE TABLE documents (
-    id             UUID          NOT NULL,
+    id             UUID          NOT NULL DEFAULT gen_random_uuid(),
     workspace_id   UUID          NOT NULL,
     source_id      UUID,
     title          VARCHAR(500)  NOT NULL,
@@ -92,12 +97,12 @@ CREATE TABLE documents (
     published_at   TIMESTAMPTZ,
     status         VARCHAR(30)   NOT NULL,
     uploaded_by    UUID,
-    created_at     TIMESTAMPTZ   NOT NULL,
-    updated_at     TIMESTAMPTZ   NOT NULL
+    created_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE document_versions (
-    id                   UUID          NOT NULL,
+    id                   UUID          NOT NULL DEFAULT gen_random_uuid(),
     document_id          UUID          NOT NULL,
     version_no           INTEGER       NOT NULL,
     content_hash         VARCHAR(64)   NOT NULL,
@@ -105,7 +110,7 @@ CREATE TABLE document_versions (
     markdown_object_key  TEXT          NOT NULL,
     parser_version       VARCHAR(50),
     language             VARCHAR(10),
-    created_at           TIMESTAMPTZ   NOT NULL
+    created_at           TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 
@@ -114,7 +119,7 @@ CREATE TABLE document_versions (
 -- ------------------------------------------------------------
 
 CREATE TABLE wiki_pages (
-    id                  UUID          NOT NULL,
+    id                  UUID          NOT NULL DEFAULT gen_random_uuid(),
     workspace_id        UUID          NOT NULL,
     parent_page_id      UUID,
     slug                VARCHAR(300)  NOT NULL,
@@ -124,12 +129,12 @@ CREATE TABLE wiki_pages (
     review_policy       VARCHAR(20)   NOT NULL,
     current_version_id  UUID,
     published_at        TIMESTAMPTZ,
-    created_at          TIMESTAMPTZ   NOT NULL,
-    updated_at          TIMESTAMPTZ   NOT NULL
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE wiki_page_versions (
-    id                         UUID          NOT NULL,
+    id                         UUID          NOT NULL DEFAULT gen_random_uuid(),
     page_id                    UUID          NOT NULL,
     version_no                 INTEGER       NOT NULL,
     markdown_object_key        TEXT          NOT NULL,
@@ -145,11 +150,11 @@ CREATE TABLE wiki_page_versions (
     generation_run_id          UUID,
     validation_status          VARCHAR(30)   NOT NULL,
     confidence_score           NUMERIC(5,4),
-    created_at                 TIMESTAMPTZ   NOT NULL
+    created_at                 TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE wiki_page_sources (
-    id                    UUID         NOT NULL,
+    id                    UUID         NOT NULL DEFAULT gen_random_uuid(),
     wiki_version_id       UUID         NOT NULL,
     document_version_id   UUID         NOT NULL,
     claim_text            TEXT,
@@ -157,7 +162,7 @@ CREATE TABLE wiki_page_sources (
     source_end_line       INTEGER,
     support_type          VARCHAR(20),
     citation_order        INTEGER,
-    created_at            TIMESTAMPTZ  NOT NULL
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 
@@ -166,7 +171,7 @@ CREATE TABLE wiki_page_sources (
 -- ------------------------------------------------------------
 
 CREATE TABLE reports (
-    id              UUID          NOT NULL,
+    id              UUID          NOT NULL DEFAULT gen_random_uuid(),
     workspace_id    UUID          NOT NULL,
     report_key      VARCHAR(200)  NOT NULL,
     version         INTEGER       NOT NULL,
@@ -175,13 +180,13 @@ CREATE TABLE reports (
     report_type     VARCHAR(50)   NOT NULL,
     status          VARCHAR(30)   NOT NULL,
     request_config  JSONB         NOT NULL,
-    created_at      TIMESTAMPTZ   NOT NULL,
-    updated_at      TIMESTAMPTZ   NOT NULL,
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
     completed_at    TIMESTAMPTZ
 );
 
 CREATE TABLE report_sections (
-    id                  UUID          NOT NULL,
+    id                  UUID          NOT NULL DEFAULT gen_random_uuid(),
     report_id           UUID          NOT NULL,
     section_order       INTEGER       NOT NULL,
     title               VARCHAR(500)  NOT NULL,
@@ -190,12 +195,12 @@ CREATE TABLE report_sections (
     model_name          VARCHAR(100),
     prompt_version      VARCHAR(50),
     generation_run_id   UUID,
-    created_at          TIMESTAMPTZ   NOT NULL,
-    updated_at          TIMESTAMPTZ   NOT NULL
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE report_citations (
-    id                    UUID          NOT NULL,
+    id                    UUID          NOT NULL DEFAULT gen_random_uuid(),
     section_id            UUID          NOT NULL,
     document_version_id   UUID          NOT NULL,
     source_start_line     INTEGER,
@@ -203,11 +208,11 @@ CREATE TABLE report_citations (
     quoted_text           TEXT,
     relevance_score       NUMERIC(5,4),
     citation_order        INTEGER,
-    created_at            TIMESTAMPTZ   NOT NULL
+    created_at            TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE artifacts (
-    id             UUID          NOT NULL,
+    id             UUID          NOT NULL DEFAULT gen_random_uuid(),
     report_id      UUID          NOT NULL,
     artifact_type  VARCHAR(20)   NOT NULL,
     object_key     TEXT          NOT NULL,
@@ -215,7 +220,7 @@ CREATE TABLE artifacts (
     file_size      INTEGER,
     mime_type      VARCHAR(100),
     created_by     UUID,
-    created_at     TIMESTAMPTZ   NOT NULL
+    created_at     TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 
@@ -224,26 +229,26 @@ CREATE TABLE artifacts (
 -- ------------------------------------------------------------
 
 CREATE TABLE chat_sessions (
-    id            UUID          NOT NULL,
+    id            UUID          NOT NULL DEFAULT gen_random_uuid(),
     workspace_id  UUID          NOT NULL,
     user_id       UUID          NOT NULL,
     title         VARCHAR(500),
-    created_at    TIMESTAMPTZ   NOT NULL,
-    updated_at    TIMESTAMPTZ   NOT NULL
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE chat_messages (
-    id              UUID          NOT NULL,
+    id              UUID          NOT NULL DEFAULT gen_random_uuid(),
     session_id      UUID          NOT NULL,
     role            VARCHAR(20)   NOT NULL,
     content         TEXT          NOT NULL,
     model_name      VARCHAR(100),
     prompt_version  VARCHAR(50),
-    created_at      TIMESTAMPTZ   NOT NULL
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE TABLE message_citations (
-    id                    UUID          NOT NULL,
+    id                    UUID          NOT NULL DEFAULT gen_random_uuid(),
     message_id            UUID          NOT NULL,
     document_version_id   UUID          NOT NULL,
     qmd_uri               TEXT,
@@ -252,7 +257,7 @@ CREATE TABLE message_citations (
     quoted_text           TEXT,
     relevance_score       NUMERIC(5,4),
     citation_order        INTEGER,
-    created_at            TIMESTAMPTZ   NOT NULL
+    created_at            TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 
@@ -261,27 +266,27 @@ CREATE TABLE message_citations (
 -- ------------------------------------------------------------
 
 CREATE TABLE pipeline_jobs (
-    id                UUID           NOT NULL,
+    id                UUID           NOT NULL DEFAULT gen_random_uuid(),
     workspace_id      UUID           NOT NULL,
     job_type          VARCHAR(50)    NOT NULL,
     target_type       VARCHAR(50),
     target_id         UUID,
     status            VARCHAR(30)    NOT NULL,
-    progress          INTEGER        NOT NULL,
+    progress          INTEGER        NOT NULL DEFAULT 0,
     error_message     TEXT,
     requested_by      UUID,
-    payload           JSONB          NOT NULL,
+    payload           JSONB          NOT NULL DEFAULT '{}'::jsonb,
     result            JSONB,
-    retry_count       INTEGER        NOT NULL,
+    retry_count       INTEGER        NOT NULL DEFAULT 0,
     idempotency_key   VARCHAR(200),
     started_at        TIMESTAMPTZ,
     completed_at      TIMESTAMPTZ,
-    created_at        TIMESTAMPTZ    NOT NULL,
-    updated_at        TIMESTAMPTZ    NOT NULL
+    created_at        TIMESTAMPTZ    NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ    NOT NULL DEFAULT now()
 );
 
 CREATE TABLE qmd_index_entries (
-    id                    UUID          NOT NULL,
+    id                    UUID          NOT NULL DEFAULT gen_random_uuid(),
     document_version_id   UUID,
     wiki_version_id       UUID,
     report_id             UUID,
@@ -292,8 +297,8 @@ CREATE TABLE qmd_index_entries (
     index_generation      INTEGER       NOT NULL,
     indexed_at            TIMESTAMPTZ,
     last_error            TEXT,
-    created_at            TIMESTAMPTZ   NOT NULL,
-    updated_at            TIMESTAMPTZ   NOT NULL
+    created_at            TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 
@@ -400,11 +405,20 @@ ALTER TABLE pipeline_jobs        ADD CONSTRAINT uq_pj_idempotency_key        UNI
 -- CHECK 제약
 -- ============================================================
 
-ALTER TABLE workspace_members    ADD CONSTRAINT ck_wm_role         CHECK (role IN ('admin','editor','viewer'));
+-- [7/29] owner 누락 버그 수정: 기존엔 admin/editor/viewer만 허용되어 있었음
+ALTER TABLE workspace_members    ADD CONSTRAINT ck_wm_role         CHECK (role IN ('owner','admin','editor','viewer'));
+
+ALTER TABLE chat_messages        ADD CONSTRAINT ck_cm_role           CHECK (role IN ('user','assistant','system'));
+ALTER TABLE sources              ADD CONSTRAINT ck_sources_type      CHECK (source_type IN ('news','rss','disclosure','report','website','manual_upload'));
 
 ALTER TABLE documents            ADD CONSTRAINT ck_documents_status  CHECK (status IN ('active','deleted','blocked','failed'));
 ALTER TABLE document_versions    ADD CONSTRAINT ck_dv_versionno      CHECK (version_no >= 1);
 
+-- [7/29] page_type: ERD 메모 원문 기준(industry/company/technology/issue/term)
+-- review_policy: 기존 메모는 manual/auto/hybrid였으나, LLM 자율 진행 방식으로
+-- 설계 변경하여 draft/review/confirmed 로 교체함 (2026-07-29 팀 확인)
+ALTER TABLE wiki_pages           ADD CONSTRAINT ck_wp_page_type      CHECK (page_type IN ('industry','company','technology','issue','term'));
+ALTER TABLE wiki_pages           ADD CONSTRAINT ck_wp_review_policy  CHECK (review_policy IN ('draft','review','confirmed'));
 ALTER TABLE wiki_pages           ADD CONSTRAINT ck_wiki_pages_status CHECK (status IN ('draft','published','archived'));
 ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_versionno     CHECK (version_no >= 1);
 ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_review_status CHECK (review_status IN ('pending','approved','rejected'));
