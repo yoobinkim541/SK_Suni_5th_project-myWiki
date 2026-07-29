@@ -424,7 +424,8 @@ ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_version`   CHECK (
 -- [7/29] ERD 메모 원문 기준 (daily/weekly/company/technology/issue_briefing)
 ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_type`      CHECK (`report_type` IN ('daily','weekly','company','technology','issue_briefing'));
 
-ALTER TABLE `report_sections`      ADD CONSTRAINT `ck_rs_status`         CHECK (`status` IN ('pending','generating','completed','failed'));
+-- [7/29] ERD 메모 원문 기준으로 4단계 -> 6단계로 확장 (pending/researching/drafting/verifying/completed/failed)
+ALTER TABLE `report_sections`      ADD CONSTRAINT `ck_rs_status`         CHECK (`status` IN ('pending','researching','drafting','verifying','completed','failed'));
 
 ALTER TABLE `report_citations`     ADD CONSTRAINT `ck_rc_relevance`      CHECK (`relevance_score` >= 0 AND `relevance_score` <= 1);
 
