@@ -418,10 +418,14 @@ ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_generated_by`  CHECK (
 ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_validation_status` CHECK (`validation_status` IN ('pending','passed','failed'));
 ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_confidence`    CHECK (`confidence_score` >= 0 AND `confidence_score` <= 1);
 
-ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_status`    CHECK (`status` IN ('pending','generating','completed','failed'));
+-- [7/29] ERD 메모 원문 기준으로 4단계 -> 9단계로 확장 (pending/planning/researching/drafting/verifying/rendering/completed/failed/cancelled)
+ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_status`    CHECK (`status` IN ('pending','planning','researching','drafting','verifying','rendering','completed','failed','cancelled'));
 ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_version`   CHECK (`version` >= 1);
+-- [7/29] ERD 메모 원문 기준 (daily/weekly/company/technology/issue_briefing)
+ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_type`      CHECK (`report_type` IN ('daily','weekly','company','technology','issue_briefing'));
 
-ALTER TABLE `report_sections`      ADD CONSTRAINT `ck_rs_status`         CHECK (`status` IN ('pending','generating','completed','failed'));
+-- [7/29] ERD 메모 원문 기준으로 4단계 -> 6단계로 확장 (pending/researching/drafting/verifying/completed/failed)
+ALTER TABLE `report_sections`      ADD CONSTRAINT `ck_rs_status`         CHECK (`status` IN ('pending','researching','drafting','verifying','completed','failed'));
 
 ALTER TABLE `report_citations`     ADD CONSTRAINT `ck_rc_relevance`      CHECK (`relevance_score` >= 0 AND `relevance_score` <= 1);
 
@@ -433,6 +437,9 @@ ALTER TABLE `message_citations`    ADD CONSTRAINT `ck_mc_relevance`      CHECK (
 ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `ck_pj_status`         CHECK (`status` IN ('pending','running','completed','failed','cancelled'));
 ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `ck_pj_progress`       CHECK (`progress` >= 0 AND `progress` <= 100);
 ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `ck_pj_retry_count`    CHECK (`retry_count` >= 0);
+-- [7/29] ERD 메모 원문 기준
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `ck_pj_job_type`       CHECK (`job_type` IN ('collect','parse_document','index_qmd','generate_wiki','generate_report'));
+ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `ck_pj_target_type`    CHECK (`target_type` IN ('document','document_version','wiki_page','report'));
 
 ALTER TABLE `qmd_index_entries`    ADD CONSTRAINT `ck_qmd_status`        CHECK (`status` IN ('pending','indexing','indexed','failed','stale'));
 
