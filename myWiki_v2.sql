@@ -418,7 +418,8 @@ ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_generated_by`  CHECK (
 ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_validation_status` CHECK (`validation_status` IN ('pending','passed','failed'));
 ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_confidence`    CHECK (`confidence_score` >= 0 AND `confidence_score` <= 1);
 
-ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_status`    CHECK (`status` IN ('pending','generating','completed','failed'));
+-- [7/29] ERD 메모 원문 기준으로 4단계 -> 9단계로 확장 (pending/planning/researching/drafting/verifying/rendering/completed/failed/cancelled)
+ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_status`    CHECK (`status` IN ('pending','planning','researching','drafting','verifying','rendering','completed','failed','cancelled'));
 ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_version`   CHECK (`version` >= 1);
 -- [7/29] ERD 메모 원문 기준 (daily/weekly/company/technology/issue_briefing)
 ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_type`      CHECK (`report_type` IN ('daily','weekly','company','technology','issue_briefing'));
