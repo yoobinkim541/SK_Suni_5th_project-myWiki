@@ -73,7 +73,7 @@ def send_message(
         if m["id"] != user_message["id"]
     ]
 
-    wiki_tools = WikiTools(db.get_supabase(), workspace_id=workspace_id)
+    wiki_tools = WikiTools(workspace_id=workspace_id)
     agent = WikiAgent(wiki_tools)
     result = agent.answer(body.content, history=history)
 
