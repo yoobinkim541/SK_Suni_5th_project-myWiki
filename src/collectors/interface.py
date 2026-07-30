@@ -29,5 +29,11 @@ def collect(source_id: str) -> list[CollectedDocument]:
     해당 출처에서 새 문서를 수집한다.
     - 이미 canonical_url이 존재하면 새로 만들지 않는다.
     - 성공/실패 여부는 pipeline_jobs에 기록한다 (job_type='collect').
+
+    raw_object_key 경로 구성 순서:
+      1) documents 행을 INSERT 또는 조회해 document_id 확보
+      2) preprocessing.next_document_version_no(document_id) 로 next_ver 계산
+      3) raw/{workspace_id}/{document_id}/{next_ver}.{ext} 에 파일 업로드
+      4) CollectedDocument.raw_object_key 에 해당 경로 저장
     """
     raise NotImplementedError
