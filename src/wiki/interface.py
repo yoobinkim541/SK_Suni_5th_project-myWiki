@@ -43,7 +43,7 @@ class WikiDraftInput:
     title: str
     page_type: PageType
     markdown: str
-    sources: tuple[WikiSourceInput, ...]  # frozen=True 이므로 list 대신 tuple
+    sources: list[WikiSourceInput]
     change_summary: Optional[str] = None
     parent_page_id: Optional[str] = None
     created_by: Optional[str] = None
