@@ -53,15 +53,8 @@ def upsert_wiki_page(
 
 
 def create_wiki_version(draft: WikiDraftInput) -> str:
-    """
-    새 wiki_page_versions 초안을 만든다.
-    - review_status='pending', validation_status='pending' 으로 삽입한다.
-    - current_version_id 는 변경하지 않는다.
-    반환값: 새 wiki_page_versions.id
-    """
     db = _get_client()
 
-    # 1. page_id 확보
     page_id = upsert_wiki_page(
         draft.workspace_id,
         draft.slug,
@@ -70,7 +63,6 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
         draft.parent_page_id,
     )
 
-    # 2. 다음 version_no 계산
     ver_res = (
         db.table("wiki_page_versions")
         .select("version_no")
@@ -84,17 +76,14 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
     else:
         version_no = 1
 
-    # 3. object_key 구성
     object_key = f"{draft.workspace_id}/{page_id}/{version_no}.md"
 
-    # 4. Storage 업로드
     db.storage.from_(WIKI_BUCKET).upload(
         object_key,
         draft.markdown.encode("utf-8"),
         {"content-type": "text/markdown"},
     )
 
-    # 5. wiki_page_versions INSERT
     content_hash = hashlib.sha256(draft.markdown.encode()).hexdigest()[:64]
     insert_data = {
         "page_id": page_id,
@@ -123,7 +112,6 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
     )
     version_id = version_res.data[0]["id"]
 
-    # 6. wiki_page_sources Bulk INSERT
     if draft.sources:
         sources_data = [
             {
