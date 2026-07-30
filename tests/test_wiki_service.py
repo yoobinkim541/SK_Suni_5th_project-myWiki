@@ -180,7 +180,8 @@ def test_publish_wiki_version_success(workspace_id):
     assert page.data["status"] == "published"
     assert page.data["published_at"] is not None
 
-    # teardown
+    # teardown — current_version_id FK를 먼저 해제해야 wiki_page_versions 삭제 가능
+    db.table("wiki_pages").update({"current_version_id": None}).eq("id", page_id).execute()
     db.storage.from_("wiki").remove([obj_key])
     db.table("wiki_page_sources").delete().eq("wiki_version_id", vid).execute()
     db.table("wiki_page_versions").delete().eq("id", vid).execute()
