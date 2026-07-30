@@ -134,7 +134,8 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
     - current_version_id 는 변경하지 않는다.
     반환값: 새 wiki_page_versions.id
     """
-    raise NotImplementedError
+    from .service import create_wiki_version as _impl
+    return _impl(draft)
 
 
 def record_wiki_validation(

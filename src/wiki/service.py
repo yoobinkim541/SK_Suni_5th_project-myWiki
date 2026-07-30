@@ -9,10 +9,11 @@ SERVICE_ROLE_KEY 를 사용하며, 모든 쿼리에 workspace_id 필터를 명�
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Optional
 
-from .query import _get_client
-from .interface import PageType
+from .query import WIKI_BUCKET, _get_client
+from .interface import PageType, WikiDraftInput
 
 
 def upsert_wiki_page(
@@ -49,3 +50,93 @@ def upsert_wiki_page(
         .execute()
     )
     return existing.data["id"]
+
+
+def create_wiki_version(draft: WikiDraftInput) -> str:
+    """
+    새 wiki_page_versions 초안을 만든다.
+    - review_status='pending', validation_status='pending' 으로 삽입한다.
+    - current_version_id 는 변경하지 않는다.
+    반환값: 새 wiki_page_versions.id
+    """
+    db = _get_client()
+
+    # 1. page_id 확보
+    page_id = upsert_wiki_page(
+        draft.workspace_id,
+        draft.slug,
+        draft.title,
+        draft.page_type,
+        draft.parent_page_id,
+    )
+
+    # 2. 다음 version_no 계산
+    ver_res = (
+        db.table("wiki_page_versions")
+        .select("version_no")
+        .eq("page_id", page_id)
+        .order("version_no", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if ver_res.data:
+        version_no = ver_res.data[0]["version_no"] + 1
+    else:
+        version_no = 1
+
+    # 3. object_key 구성
+    object_key = f"{draft.workspace_id}/{page_id}/{version_no}.md"
+
+    # 4. Storage 업로드
+    db.storage.from_(WIKI_BUCKET).upload(
+        object_key,
+        draft.markdown.encode("utf-8"),
+        {"content-type": "text/markdown"},
+    )
+
+    # 5. wiki_page_versions INSERT
+    content_hash = hashlib.sha256(draft.markdown.encode()).hexdigest()[:64]
+    insert_data = {
+        "page_id": page_id,
+        "version_no": version_no,
+        "markdown_object_key": object_key,
+        "content_hash": content_hash,
+        "validation_status": "pending",
+        "review_status": "pending",
+        "generated_by": draft.generated_by,
+    }
+    if draft.change_summary is not None:
+        insert_data["change_summary"] = draft.change_summary
+    if draft.created_by is not None:
+        insert_data["created_by"] = draft.created_by
+    if draft.generator_model is not None:
+        insert_data["generator_model"] = draft.generator_model
+    if draft.generator_prompt_version is not None:
+        insert_data["generator_prompt_version"] = draft.generator_prompt_version
+    if draft.generation_run_id is not None:
+        insert_data["generation_run_id"] = draft.generation_run_id
+
+    version_res = (
+        db.table("wiki_page_versions")
+        .insert(insert_data)
+        .execute()
+    )
+    version_id = version_res.data[0]["id"]
+
+    # 6. wiki_page_sources Bulk INSERT
+    if draft.sources:
+        sources_data = [
+            {
+                "wiki_version_id": version_id,
+                "document_version_id": s.document_version_id,
+                "claim_text": s.claim_text,
+                "support_type": s.support_type,
+                "source_start_line": s.source_start_line,
+                "source_end_line": s.source_end_line,
+                "citation_order": s.citation_order if s.citation_order is not None else idx + 1,
+            }
+            for idx, s in enumerate(draft.sources)
+        ]
+        db.table("wiki_page_sources").insert(sources_data).execute()
+
+    return version_id
