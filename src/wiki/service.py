@@ -9,6 +9,7 @@ SERVICE_ROLE_KEY 를 사용하며, 모든 쿼리에 workspace_id 필터를 명�
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 from typing import Optional
 
@@ -128,3 +129,29 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
         db.table("wiki_page_sources").insert(sources_data).execute()
 
     return version_id
+
+
+def record_wiki_validation(
+    version_id: str,
+    validation_status: str,
+    confidence_score: Optional[float],
+) -> None:
+    db = _get_client()
+    db.table("wiki_page_versions").update(
+        {"validation_status": validation_status, "confidence_score": confidence_score}
+    ).eq("id", version_id).execute()
+
+
+def review_wiki_version(
+    version_id: str,
+    reviewer_id: str,
+    decision: str,
+) -> None:
+    db = _get_client()
+    db.table("wiki_page_versions").update(
+        {
+            "review_status": decision,
+            "reviewed_by": reviewer_id,
+            "reviewed_at": datetime.datetime.utcnow().isoformat() + "Z",
+        }
+    ).eq("id", version_id).execute()

@@ -144,7 +144,8 @@ def record_wiki_validation(
     confidence_score: Optional[float],
 ) -> None:
     """wiki_page_versions.validation_status / confidence_score 를 기록한다."""
-    raise NotImplementedError
+    from .service import record_wiki_validation as _impl
+    return _impl(version_id, validation_status, confidence_score)
 
 
 def review_wiki_version(
@@ -153,7 +154,8 @@ def review_wiki_version(
     decision: ReviewDecision,
 ) -> None:
     """검수 결과를 기록한다. current_version_id 는 변경하지 않는다."""
-    raise NotImplementedError
+    from .service import review_wiki_version as _impl
+    return _impl(version_id, reviewer_id, decision)
 
 
 def publish_wiki_version(page_id: str, version_id: str) -> None:

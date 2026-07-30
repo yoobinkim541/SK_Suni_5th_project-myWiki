@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput
+from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version
 from src.wiki.query import _get_client
 
 
@@ -99,3 +99,45 @@ def test_create_wiki_version_with_sources(workspace_id):
     db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
     db.table("wiki_page_versions").delete().eq("id", version_id).execute()
     db.table("wiki_pages").delete().eq("slug", slug).eq("workspace_id", workspace_id).execute()
+
+
+@pytest.fixture
+def version_id(workspace_id):
+    slug = f"test-val-{uuid.uuid4().hex[:8]}"
+    draft = WikiDraftInput(
+        workspace_id=workspace_id,
+        slug=slug,
+        title="검증 테스트",
+        page_type="term",
+        markdown="내용",
+        sources=[],
+    )
+    vid = create_wiki_version(draft)
+    yield vid
+    db = _get_client()
+    ver = db.table("wiki_page_versions").select("markdown_object_key,page_id").eq("id", vid).single().execute()
+    db.storage.from_("wiki").remove([ver.data["markdown_object_key"]])
+    db.table("wiki_page_sources").delete().eq("wiki_version_id", vid).execute()
+    db.table("wiki_page_versions").delete().eq("id", vid).execute()
+    db.table("wiki_pages").delete().eq("id", ver.data["page_id"]).execute()
+
+
+def test_record_wiki_validation(version_id):
+    record_wiki_validation(version_id, "passed", 0.92)
+    db = _get_client()
+    ver = db.table("wiki_page_versions").select("validation_status,confidence_score").eq("id", version_id).single().execute()
+    assert ver.data["validation_status"] == "passed"
+    assert abs(ver.data["confidence_score"] - 0.92) < 0.001
+
+
+def test_review_wiki_version(workspace_id, version_id):
+    db = _get_client()
+    profile = db.table("profiles").select("id").limit(1).execute()
+    if not profile.data:
+        pytest.skip("profiles 데이터 없음")
+    reviewer_id = profile.data[0]["id"]
+
+    review_wiki_version(version_id, reviewer_id, "approved")
+    ver = db.table("wiki_page_versions").select("review_status,reviewed_by").eq("id", version_id).single().execute()
+    assert ver.data["review_status"] == "approved"
+    assert ver.data["reviewed_by"] == reviewer_id
