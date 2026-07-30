@@ -173,7 +173,8 @@ def request_wiki_index(
     requested_by: Optional[str] = None,
 ) -> str:
     """QMD 색인 pipeline_job 을 생성하고 job_id 를 반환한다."""
-    raise NotImplementedError
+    from .service import request_wiki_index as _impl
+    return _impl(wiki_version_id, collection_name, requested_by)
 
 
 # ---------------------------------------------------------------------------

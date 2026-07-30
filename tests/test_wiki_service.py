@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version, publish_wiki_version
+from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version, publish_wiki_version, request_wiki_index
 from src.wiki.query import _get_client
 
 
@@ -184,5 +184,41 @@ def test_publish_wiki_version_success(workspace_id):
     db.table("wiki_pages").update({"current_version_id": None}).eq("id", page_id).execute()
     db.storage.from_("wiki").remove([obj_key])
     db.table("wiki_page_sources").delete().eq("wiki_version_id", vid).execute()
+    db.table("wiki_page_versions").delete().eq("id", vid).execute()
+    db.table("wiki_pages").delete().eq("id", page_id).execute()
+
+
+def test_request_wiki_index(workspace_id):
+    slug = f"test-idx-{uuid.uuid4().hex[:8]}"
+    draft = WikiDraftInput(
+        workspace_id=workspace_id,
+        slug=slug,
+        title="색인 테스트",
+        page_type="term",
+        markdown="색인할 내용",
+        sources=[],
+    )
+    vid = create_wiki_version(draft)
+    db = _get_client()
+    ver = db.table("wiki_page_versions").select("page_id,markdown_object_key").eq("id", vid).single().execute()
+    page_id = ver.data["page_id"]
+    obj_key = ver.data["markdown_object_key"]
+
+    job_id = request_wiki_index(vid, "wiki-ko")
+    assert isinstance(job_id, str)
+
+    job = db.table("pipeline_jobs").select("*").eq("id", job_id).single().execute()
+    assert job.data["job_type"] == "index_qmd"
+    assert job.data["status"] == "pending"
+    assert job.data["workspace_id"] == workspace_id
+
+    entry = db.table("qmd_index_entries").select("*").eq("wiki_version_id", vid).single().execute()
+    assert entry.data["collection_name"] == "wiki-ko"
+    assert entry.data["status"] == "pending"
+
+    # teardown
+    db.table("pipeline_jobs").delete().eq("id", job_id).execute()
+    db.table("qmd_index_entries").delete().eq("wiki_version_id", vid).execute()
+    db.storage.from_("wiki").remove([obj_key])
     db.table("wiki_page_versions").delete().eq("id", vid).execute()
     db.table("wiki_pages").delete().eq("id", page_id).execute()

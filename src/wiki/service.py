@@ -171,3 +171,46 @@ def publish_wiki_version(page_id: str, version_id: str) -> None:
             "status": "published",
         }
     ).eq("id", page_id).execute()
+
+
+def request_wiki_index(
+    wiki_version_id: str,
+    collection_name: str,
+    requested_by: Optional[str] = None,
+) -> str:
+    db = _get_client()
+
+    ver = db.table("wiki_page_versions").select("page_id").eq("id", wiki_version_id).single().execute()
+    page_id = ver.data["page_id"]
+
+    page = db.table("wiki_pages").select("workspace_id").eq("id", page_id).single().execute()
+    workspace_id = page.data["workspace_id"]
+
+    entry_res = db.table("qmd_index_entries").insert(
+        {
+            "wiki_version_id": wiki_version_id,
+            "collection_name": collection_name,
+            "status": "pending",
+            "index_generation": 1,
+        }
+    ).execute()
+    entry_id = entry_res.data[0]["id"]
+
+    job_data = {
+        "workspace_id": workspace_id,
+        "job_type": "index_qmd",
+        "target_type": "wiki_page",
+        "target_id": wiki_version_id,
+        "status": "pending",
+        "progress": 0,
+        "retry_count": 0,
+        "payload": {
+            "qmd_index_entry_id": entry_id,
+            "collection_name": collection_name,
+        },
+    }
+    if requested_by is not None:
+        job_data["requested_by"] = requested_by
+    job_res = db.table("pipeline_jobs").insert(job_data).execute()
+
+    return job_res.data[0]["id"]
