@@ -19,10 +19,12 @@ from .schemas import (
     SendMessageRequest,
     SendMessageResponse,
 )
+from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
 from ..agent.wiki_tools import WikiTools
 
 app = FastAPI(title="myWiki Agent API")
+app.include_router(wiki_router)
 
 
 def _require_workspace(profile: dict) -> str:
