@@ -30,4 +30,6 @@ def test_upsert_wiki_page_returns_same_id_for_duplicate_slug(workspace_id):
     id2 = upsert_wiki_page(workspace_id, slug, "제목2", "term")
     assert id1 == id2
     db = _get_client()
+    row = db.table("wiki_pages").select("title").eq("id", id1).single().execute()
+    assert row.data["title"] == "제목1"
     db.table("wiki_pages").delete().eq("id", id1).execute()

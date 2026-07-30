@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .query import WIKI_BUCKET, _get_client
-from .interface import PageType, WikiDraftInput
+from .query import _get_client
+from .interface import PageType
 
 
 def upsert_wiki_page(
@@ -31,11 +31,21 @@ def upsert_wiki_page(
         "status": "draft",
         "review_policy": "review",
     }
-    if parent_page_id:
+    if parent_page_id is not None:
         data["parent_page_id"] = parent_page_id
     res = (
         db.table("wiki_pages")
-        .upsert(data, on_conflict="workspace_id,slug")
+        .upsert(data, on_conflict="workspace_id,slug", ignore_duplicates=True)
         .execute()
     )
-    return res.data[0]["id"]
+    if res.data:
+        return res.data[0]["id"]
+    existing = (
+        db.table("wiki_pages")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .eq("slug", slug)
+        .single()
+        .execute()
+    )
+    return existing.data["id"]
