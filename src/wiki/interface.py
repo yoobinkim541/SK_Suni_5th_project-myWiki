@@ -123,7 +123,8 @@ def upsert_wiki_page(
     parent_page_id: Optional[str] = None,
 ) -> str:
     """slug 기준으로 wiki_pages를 찾거나 새로 만들고 id를 반환한다."""
-    raise NotImplementedError
+    from .service import upsert_wiki_page as _impl
+    return _impl(workspace_id, slug, title, page_type, parent_page_id)
 
 
 def create_wiki_version(draft: WikiDraftInput) -> str:
