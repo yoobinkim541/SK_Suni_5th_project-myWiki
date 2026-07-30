@@ -164,13 +164,15 @@ def publish_wiki_version(page_id: str, version_id: str) -> None:
         raise ValueError(
             f"게시 조건 미충족: validation={ver.data['validation_status']}, review={ver.data['review_status']}"
         )
+    page = db.table("wiki_pages").select("workspace_id").eq("id", page_id).single().execute()
+    workspace_id = page.data["workspace_id"]
     db.table("wiki_pages").update(
         {
             "current_version_id": version_id,
             "published_at": datetime.datetime.utcnow().isoformat() + "Z",
             "status": "published",
         }
-    ).eq("id", page_id).execute()
+    ).eq("id", page_id).eq("workspace_id", workspace_id).execute()
 
 
 def request_wiki_index(
