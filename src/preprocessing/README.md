@@ -7,6 +7,10 @@
 ## 참고 자료
 - `docs/architecture/myWiki_v2_supabase.sql`
 
+## DB 접속 (2026-07-30 팀 결정)
+`collectors`와 동일하게 `SUPABASE_SERVICE_ROLE_KEY`로 RLS를 우회하고, `workspace_id`는
+애플리케이션 코드에서 직접 필터링한다 (`src/collectors/README.md` 참고).
+
 ## 이 파트가 해야 하는 일
 1. `collectors`가 만든 `documents.raw_object_key`(원문)를 읽어서 Markdown으로 변환한다.
 2. `content_hash`(SHA-256)로 동일 내용 중복을 판별한다 — 같은 문서라도 재수집됐을 뿐이면

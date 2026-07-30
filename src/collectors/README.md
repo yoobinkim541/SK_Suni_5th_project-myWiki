@@ -9,6 +9,12 @@
 - `docs/architecture/myWiki_v2_supabase.sql` — 위 테이블 정확한 컬럼/제약조건
 - `docs/architecture/myWiki_v2_snapshot.json` — ERD (erdcloud로 열람 가능)
 
+## DB 접속 (2026-07-30 팀 결정)
+배치에는 로그인 사용자가 없어 RLS(`is_workspace_member` 기준)를 통과할 수 없다.
+`SUPABASE_SERVICE_ROLE_KEY`로 RLS를 우회하고, 모든 쿼리에 `workspace_id`를 애플리케이션 코드에서
+직접 필터링하는 방식으로 통일한다 — `src/api/db.py`, `src/wiki/query.py`와 동일한 패턴.
+배치 전용 계정을 따로 만들어 `workspace_members`에 등록하는 방식(RLS 적용)은 채택하지 않는다.
+
 ## 이 파트가 해야 하는 일
 1. GeekNews / 구글 RSS / 네이버 검색 API 등에서 반도체·SK하이닉스 관련 원문을 가져온다.
 2. `sources`에 등록된 출처 기준으로 수집하고, 새 문서는 `documents` + `document_versions`(raw 단계)에 기록한다.

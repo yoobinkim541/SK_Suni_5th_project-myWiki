@@ -610,7 +610,9 @@ CREATE POLICY qmd_index_entries_select ON qmd_index_entries FOR SELECT
 
 
 -- ============================================================
--- 회원가입 시 profiles 자동 생성 트리거
+-- 회원가입 시 profiles 자동 생성 + MVP workspace 자동 합류 트리거
+-- (2026-07-31 변경: workspace_members 자동 합류 추가 — 마이그레이션
+--  handle_new_user_auto_join_mvp_workspace)
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -619,6 +621,8 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  mvp_workspace_id uuid;
 BEGIN
   INSERT INTO public.profiles (id, display_name, created_at, updated_at)
   VALUES (
@@ -628,6 +632,16 @@ BEGIN
     now()
   )
   ON CONFLICT (id) DO NOTHING;
+
+  -- MVP 단계: workspace가 'mywiki' 하나뿐이므로 신규 가입자를 자동으로 editor로 합류시킨다.
+  -- workspace가 여러 개로 늘어나면 이 자동 합류 로직은 제거하고 초대 흐름으로 교체해야 한다.
+  SELECT id INTO mvp_workspace_id FROM public.workspaces WHERE slug = 'mywiki' LIMIT 1;
+  IF mvp_workspace_id IS NOT NULL THEN
+    INSERT INTO public.workspace_members (workspace_id, user_id, role)
+    VALUES (mvp_workspace_id, NEW.id, 'editor')
+    ON CONFLICT (workspace_id, user_id) DO NOTHING;
+  END IF;
+
   RETURN NEW;
 END;
 $$;
