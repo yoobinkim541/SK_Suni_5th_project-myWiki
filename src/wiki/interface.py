@@ -163,7 +163,8 @@ def publish_wiki_version(page_id: str, version_id: str) -> None:
     validation_status='passed' 이고 review_status='approved' 인 버전만 게시한다.
     wiki_pages.current_version_id 와 published_at 은 이 함수에서만 변경한다.
     """
-    raise NotImplementedError
+    from .service import publish_wiki_version as _impl
+    return _impl(page_id, version_id)
 
 
 def request_wiki_index(

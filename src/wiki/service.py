@@ -155,3 +155,19 @@ def review_wiki_version(
             "reviewed_at": datetime.datetime.utcnow().isoformat() + "Z",
         }
     ).eq("id", version_id).execute()
+
+
+def publish_wiki_version(page_id: str, version_id: str) -> None:
+    db = _get_client()
+    ver = db.table("wiki_page_versions").select("validation_status,review_status").eq("id", version_id).single().execute()
+    if ver.data["validation_status"] != "passed" or ver.data["review_status"] != "approved":
+        raise ValueError(
+            f"게시 조건 미충족: validation={ver.data['validation_status']}, review={ver.data['review_status']}"
+        )
+    db.table("wiki_pages").update(
+        {
+            "current_version_id": version_id,
+            "published_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "status": "published",
+        }
+    ).eq("id", page_id).execute()

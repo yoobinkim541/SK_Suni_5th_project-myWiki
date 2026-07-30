@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version
+from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version, publish_wiki_version
 from src.wiki.query import _get_client
 
 
@@ -141,3 +141,47 @@ def test_review_wiki_version(workspace_id, version_id):
     ver = db.table("wiki_page_versions").select("review_status,reviewed_by").eq("id", version_id).single().execute()
     assert ver.data["review_status"] == "approved"
     assert ver.data["reviewed_by"] == reviewer_id
+
+
+def test_publish_wiki_version_raises_if_not_validated(version_id):
+    db = _get_client()
+    ver = db.table("wiki_page_versions").select("page_id").eq("id", version_id).single().execute()
+    page_id = ver.data["page_id"]
+    with pytest.raises(ValueError):
+        publish_wiki_version(page_id, version_id)
+
+
+def test_publish_wiki_version_success(workspace_id):
+    slug = f"test-pub-{uuid.uuid4().hex[:8]}"
+    draft = WikiDraftInput(
+        workspace_id=workspace_id,
+        slug=slug,
+        title="게시 테스트",
+        page_type="term",
+        markdown="게시할 내용",
+        sources=[],
+    )
+    vid = create_wiki_version(draft)
+    db = _get_client()
+    ver = db.table("wiki_page_versions").select("page_id,markdown_object_key").eq("id", vid).single().execute()
+    page_id = ver.data["page_id"]
+    obj_key = ver.data["markdown_object_key"]
+
+    record_wiki_validation(vid, "passed", 0.95)
+    profile = db.table("profiles").select("id").limit(1).execute()
+    if not profile.data:
+        pytest.skip("profiles 데이터 없음")
+    review_wiki_version(vid, profile.data[0]["id"], "approved")
+
+    publish_wiki_version(page_id, vid)
+
+    page = db.table("wiki_pages").select("current_version_id,status,published_at").eq("id", page_id).single().execute()
+    assert page.data["current_version_id"] == vid
+    assert page.data["status"] == "published"
+    assert page.data["published_at"] is not None
+
+    # teardown
+    db.storage.from_("wiki").remove([obj_key])
+    db.table("wiki_page_sources").delete().eq("wiki_version_id", vid).execute()
+    db.table("wiki_page_versions").delete().eq("id", vid).execute()
+    db.table("wiki_pages").delete().eq("id", page_id).execute()
