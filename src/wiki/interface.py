@@ -115,6 +115,43 @@ class WikiPageContent:
 # 공개 command 함수 (구현: service.py)
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class WikiSource:
+    """Wiki 본문의 특정 주장과 그 원문 근거."""
+    document_version_id: str
+    citation_order: Optional[int]
+    claim_text: Optional[str]
+    support_type: Optional[str]
+    source_start_line: Optional[int]
+    source_end_line: Optional[int]
+
+
+@dataclass(frozen=True)
+class WikiPageContent:
+    """get_published_wiki_page() 상세 응답. 반드시 게시·승인·검증된 버전만 반환한다."""
+    page_id: str
+    slug: str
+    title: str
+    page_type: str
+    published_at: Optional[str]
+    version_id: str
+    version_no: int
+    markdown: str
+    change_summary: Optional[str]
+    confidence_score: Optional[float]
+    validation_status: str
+    review_status: str
+    generated_by: str
+    generator_model: Optional[str]
+    created_at: str
+    sources: tuple[WikiSource, ...]
+    versions: tuple[WikiVersionSummary, ...]
+
+
+# ---------------------------------------------------------------------------
+# 공개 command 함수 (구현: service.py)
+# ---------------------------------------------------------------------------
+
 def upsert_wiki_page(
     workspace_id: str,
     slug: str,
