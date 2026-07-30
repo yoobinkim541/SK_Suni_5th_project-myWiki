@@ -29,10 +29,9 @@ WIKI_BUCKET = "wiki"
 
 @lru_cache(maxsize=1)
 def _get_client() -> Client:
-    return create_client(
-        os.environ["SUPABASE_URL"],
-        os.environ["SUPABASE_SERVICE_ROLE_KEY"],
-    )
+    # SUPABASE_SERVICE_ROLE_KEY(구 명명) 또는 SUPABASE_SECRET_KEY(신 명명) 둘 다 지원
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_SECRET_KEY"]
+    return create_client(os.environ["SUPABASE_URL"], key)
 
 
 def list_published_wiki_pages(
@@ -72,10 +71,10 @@ def get_published_wiki_page(
         .maybe_single()
         .execute()
     )
-    if not page_res.data or not page_res.data.get("current_version_id"):
+    page = page_res.data if page_res else None
+    if not page or not page.get("current_version_id"):
         return None
 
-    page = page_res.data
     version_id = page["current_version_id"]
 
     version_res = (
@@ -90,10 +89,10 @@ def get_published_wiki_page(
         .maybe_single()
         .execute()
     )
-    if not version_res.data:
+    version = version_res.data if version_res else None
+    if not version:
         return None
 
-    version = version_res.data
     markdown_bytes = db.storage.from_(WIKI_BUCKET).download(version["markdown_object_key"])
     markdown = markdown_bytes.decode("utf-8")
 
@@ -152,7 +151,7 @@ def list_wiki_versions(
         .maybe_single()
         .execute()
     )
-    if not page_check.data:
+    if not page_check or not page_check.data:
         return []
 
     res = (
