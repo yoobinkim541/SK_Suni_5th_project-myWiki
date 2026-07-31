@@ -123,7 +123,8 @@ def upsert_wiki_page(
     parent_page_id: Optional[str] = None,
 ) -> str:
     """slug 기준으로 wiki_pages를 찾거나 새로 만들고 id를 반환한다."""
-    raise NotImplementedError
+    from .service import upsert_wiki_page as _impl
+    return _impl(workspace_id, slug, title, page_type, parent_page_id)
 
 
 def create_wiki_version(draft: WikiDraftInput) -> str:
@@ -133,7 +134,8 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
     - current_version_id 는 변경하지 않는다.
     반환값: 새 wiki_page_versions.id
     """
-    raise NotImplementedError
+    from .service import create_wiki_version as _impl
+    return _impl(draft)
 
 
 def record_wiki_validation(
@@ -142,7 +144,8 @@ def record_wiki_validation(
     confidence_score: Optional[float],
 ) -> None:
     """wiki_page_versions.validation_status / confidence_score 를 기록한다."""
-    raise NotImplementedError
+    from .service import record_wiki_validation as _impl
+    return _impl(version_id, validation_status, confidence_score)
 
 
 def review_wiki_version(
@@ -151,7 +154,8 @@ def review_wiki_version(
     decision: ReviewDecision,
 ) -> None:
     """검수 결과를 기록한다. current_version_id 는 변경하지 않는다."""
-    raise NotImplementedError
+    from .service import review_wiki_version as _impl
+    return _impl(version_id, reviewer_id, decision)
 
 
 def publish_wiki_version(page_id: str, version_id: str) -> None:
@@ -159,7 +163,8 @@ def publish_wiki_version(page_id: str, version_id: str) -> None:
     validation_status='passed' 이고 review_status='approved' 인 버전만 게시한다.
     wiki_pages.current_version_id 와 published_at 은 이 함수에서만 변경한다.
     """
-    raise NotImplementedError
+    from .service import publish_wiki_version as _impl
+    return _impl(page_id, version_id)
 
 
 def request_wiki_index(
@@ -168,7 +173,8 @@ def request_wiki_index(
     requested_by: Optional[str] = None,
 ) -> str:
     """QMD 색인 pipeline_job 을 생성하고 job_id 를 반환한다."""
-    raise NotImplementedError
+    from .service import request_wiki_index as _impl
+    return _impl(wiki_version_id, collection_name, requested_by)
 
 
 # ---------------------------------------------------------------------------
