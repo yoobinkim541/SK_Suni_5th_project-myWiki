@@ -1,5 +1,18 @@
 # src/preprocessing — 데이터 정제·검증 담당
 
+구현 근거: **데이터 파이프라인 인터페이스 명세 v1.1** (§3-3 ~ §3-7)
+
+## 스켈레톤 대비 변경 (명세 §2-2)
+
+| 스켈레톤 | 구현 | 사유 |
+|---|---|---|
+| `process_document(document_id) -> DocumentVersion` | `preprocess(document_id) -> ProcessedDocument \| None` | 실패를 예외 대신 `None` + `pipeline_jobs`로 알린다 |
+| `DocumentVersion` 6필드 | `ProcessedDocument` 14필드 | 하류가 `documents` 조인 없이 출처 메타를 쓸 수 있게 |
+| — | `get_markdown()` · `get_document_refs()` | `analysis`·프론트가 `document_version_id`만으로 본문·출처 라벨을 얻게 (§3-6, §3-7) |
+
+원문 경로는 `documents.raw_object_key`(존재하지 않는 컬럼, 지침 §9-D-8)가 아니라
+**collect가 남긴 문서 단위 job의 `result.raw_object_key`**에서 읽는다 (명세 §3-3).
+
 ## 담당 테이블
 - `document_versions` — 원문을 정제한 Markdown, 버전·중복 해시 관리
 - `pipeline_jobs` (`job_type='parse_document'`)

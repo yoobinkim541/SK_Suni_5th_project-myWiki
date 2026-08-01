@@ -5,3 +5,15 @@ supabase>=2.9
 pydantic>=2.9
 pyjwt>=2.9
 python-dotenv>=1.0
+
+# collectors · preprocessing (데이터 파이프라인)
+httpx>=0.27           # 외부 소스 HTTP 요청
+feedparser>=6.0       # RSS/Atom 파싱 (GeekNews·구글 RSS)
+beautifulsoup4>=4.12  # HTML 노이즈 제거 (표준 html.parser 사용 -> lxml 불필요)
+markdownify>=0.13     # HTML -> Markdown 변환
+# pypdf는 넣지 않는다. MVP 소스 3종(GeekNews·구글 RSS·네이버)에 PDF가 없고,
+# cryptography 의존성 때문에 환경에 따라 설치가 막힌다.
+# PDF 소스를 실제로 붙일 때 추가한다 (parsers._parse_pdf가 안내 메시지를 낸다).
+
+# 테스트
+pytest>=8.0
