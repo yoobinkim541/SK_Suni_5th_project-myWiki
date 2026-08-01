@@ -71,7 +71,7 @@ def test_get_page_found(client, monkeypatch):
         validation_status="passed",
         review_status="approved",
         generated_by="llm",
-        generator_model="claude",
+        generator_model="deepseek/deepseek-v4-flash",
         created_at="2026-07-24T00:00:00Z",
         sources=(),
         versions=(),

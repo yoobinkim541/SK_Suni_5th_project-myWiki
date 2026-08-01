@@ -1,6 +1,6 @@
 fastapi>=0.115
 uvicorn[standard]>=0.32
-anthropic>=0.40
+openai>=1.50  # OpenRouter는 OpenAI 호환 API — base_url만 교체해서 사용
 supabase>=2.9
 pydantic>=2.9
 pyjwt>=2.9
