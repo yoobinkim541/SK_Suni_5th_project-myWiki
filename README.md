@@ -208,8 +208,8 @@ data: 반도체 산업 키워드 목록 업데이트
 | Language | Python | 데이터 처리 및 서비스 개발 |
 | Data Collection | GeekNews, 구글 RSS, 네이버 검색 API | 뉴스·보고서·웹 데이터 수집 |
 | Data Processing | Pandas, NumPy | 데이터 정제 및 전처리 |
-| LLM / AI | Claude API (Anthropic) | 문서 요약, 분류, 신뢰도 평가, 답변 생성 |
-| Agent Framework | 별도 프레임워크 없이 Claude tool-use 직접 구현 | 위키 조회 → 근거 확인 → 답변/근거없음 판단 |
+| LLM / AI | DeepSeek V4 Flash (OpenRouter) | 문서 요약, 분류, 신뢰도 평가, 답변 생성 |
+| Agent Framework | 별도 프레임워크 없이 OpenAI 호환 tool-use 직접 구현 | 위키 조회 → 근거 확인 → 답변/근거없음 판단 |
 | Database | Supabase (PostgreSQL) | 사용자·문서·위키·보고서 데이터 저장, RLS로 workspace 격리 |
 | Vector Database | **미사용** | Karpathy LLM Wiki 패턴 채택 — 위키 index를 Agent가 직접 조회하는 방식으로 대체 (규모가 커지면 `qmd` 같은 로컬 검색 도구 도입 검토) |
 | Wiki / Documentation | Markdown + Supabase Storage | 위키 본문·리포트 산출물 저장 (버전별 object_key 관리) |
