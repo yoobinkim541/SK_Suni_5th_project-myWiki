@@ -1,32 +1,3 @@
-﻿CREATE INDEX IF NOT EXISTS idx_document_analysis_results_ranking_status
-ON public.document_analysis_results(
-    workspace_id,
-    ranking_status
-);
-
-CREATE INDEX IF NOT EXISTS idx_document_analysis_results_ranking_position
-ON public.document_analysis_results(
-    workspace_id,
-    ranking_batch_date,
-    ranking_position
-)
-WHERE ranking_status = 'completed';
-
-CREATE INDEX IF NOT EXISTS idx_document_analysis_results_report_selection
-ON public.document_analysis_results(
-    workspace_id,
-    ranking_batch_date,
-    report_selection_position
-)
-WHERE selected_for_report = true;
-
-CREATE INDEX IF NOT EXISTS idx_document_analysis_results_ranking_score
-ON public.document_analysis_results(
-    workspace_id,
-    ranking_score DESC
-)
-WHERE ranking_status = 'completed';
-
 ALTER TABLE public.document_analysis_results
 ADD COLUMN IF NOT EXISTS ranking_status character varying NOT NULL DEFAULT 'pending',
 ADD COLUMN IF NOT EXISTS ranking_score numeric(5, 2),
@@ -42,6 +13,7 @@ ADD COLUMN IF NOT EXISTS ranking_batch_date date,
 ADD COLUMN IF NOT EXISTS ranked_at timestamp with time zone,
 ADD COLUMN IF NOT EXISTS ranking_detail jsonb NOT NULL DEFAULT '{}'::jsonb,
 ADD COLUMN IF NOT EXISTS ranking_error_message text;
+
 
 DO $$
 BEGIN
@@ -171,3 +143,32 @@ BEGIN
         );
     END IF;
 END $$;
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_ranking_status
+ON public.document_analysis_results(
+    workspace_id,
+    ranking_status
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_ranking_position
+ON public.document_analysis_results(
+    workspace_id,
+    ranking_batch_date,
+    ranking_position
+)
+WHERE ranking_status = 'completed';
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_report_selection
+ON public.document_analysis_results(
+    workspace_id,
+    ranking_batch_date,
+    report_selection_position
+)
+WHERE selected_for_report = true;
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_ranking_score
+ON public.document_analysis_results(
+    workspace_id,
+    ranking_score DESC
+)
+WHERE ranking_status = 'completed';

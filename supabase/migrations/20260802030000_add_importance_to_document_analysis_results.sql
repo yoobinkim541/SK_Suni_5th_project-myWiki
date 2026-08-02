@@ -1,23 +1,3 @@
-﻿CREATE INDEX IF NOT EXISTS idx_document_analysis_results_importance_status
-ON public.document_analysis_results(
-    workspace_id,
-    importance_status
-);
-
-CREATE INDEX IF NOT EXISTS idx_document_analysis_results_importance_score
-ON public.document_analysis_results(
-    workspace_id,
-    importance_score DESC
-)
-WHERE importance_status = 'completed';
-
-CREATE INDEX IF NOT EXISTS idx_document_analysis_results_importance_level
-ON public.document_analysis_results(
-    workspace_id,
-    importance_level
-)
-WHERE importance_status = 'completed';
-
 ALTER TABLE public.document_analysis_results
 ADD COLUMN IF NOT EXISTS importance_status character varying NOT NULL DEFAULT 'pending',
 ADD COLUMN IF NOT EXISTS importance_score integer,
@@ -46,6 +26,7 @@ ADD COLUMN IF NOT EXISTS importance_model_name character varying,
 ADD COLUMN IF NOT EXISTS importance_prompt_version character varying,
 ADD COLUMN IF NOT EXISTS importance_evaluated_at timestamp with time zone,
 ADD COLUMN IF NOT EXISTS importance_error_message text;
+
 
 DO $$
 BEGIN
@@ -255,3 +236,22 @@ BEGIN
     END IF;
 END $$;
 
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_importance_status
+ON public.document_analysis_results(
+    workspace_id,
+    importance_status
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_importance_score
+ON public.document_analysis_results(
+    workspace_id,
+    importance_score DESC
+)
+WHERE importance_status = 'completed';
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_importance_level
+ON public.document_analysis_results(
+    workspace_id,
+    importance_level
+)
+WHERE importance_status = 'completed';
