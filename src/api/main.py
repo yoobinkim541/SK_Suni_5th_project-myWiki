@@ -19,10 +19,12 @@ from .schemas import (
     SendMessageRequest,
     SendMessageResponse,
 )
+from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
 from ..agent.wiki_tools import WikiTools
 
 app = FastAPI(title="myWiki Agent API")
+app.include_router(wiki_router)
 
 
 def _require_workspace(profile: dict) -> str:
@@ -73,7 +75,7 @@ def send_message(
         if m["id"] != user_message["id"]
     ]
 
-    wiki_tools = WikiTools(db.get_supabase(), workspace_id=workspace_id)
+    wiki_tools = WikiTools(workspace_id=workspace_id)
     agent = WikiAgent(wiki_tools)
     result = agent.answer(body.content, history=history)
 
