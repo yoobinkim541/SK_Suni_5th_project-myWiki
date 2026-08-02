@@ -381,3 +381,26 @@ def test_generate_wiki_drafts_for_sections_passes_matching_wiki_contexts(monkeyp
     )
 
     assert seen_contexts == [[wiki_context]]
+
+
+def test_archive_stale_wiki_pages_archives_each_stale_id(monkeypatch):
+    archived = []
+    monkeypatch.setattr(
+        generation, "find_stale_published_page_ids",
+        lambda workspace_id, *, staleness_days, supabase=None: ["page-1", "page-2"],
+    )
+    monkeypatch.setattr(generation, "archive_wiki_page", lambda page_id, supabase=None: archived.append(page_id))
+
+    result = generation.archive_stale_wiki_pages("ws-1", staleness_days=90)
+
+    assert result == ["page-1", "page-2"]
+    assert archived == ["page-1", "page-2"]
+
+
+def test_archive_stale_wiki_pages_returns_empty_when_none_stale(monkeypatch):
+    monkeypatch.setattr(
+        generation, "find_stale_published_page_ids",
+        lambda workspace_id, *, staleness_days, supabase=None: [],
+    )
+    result = generation.archive_stale_wiki_pages("ws-1")
+    assert result == []

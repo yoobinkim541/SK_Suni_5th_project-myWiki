@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 
+from supabase import Client
+
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
 from ..report.models import EnrichedIssueGroup, ReportSectionDraft, WikiContext
 from .generation_models import TopicPageCandidate, TopLevelTopicPage, WikiDraftGenerationResult, WikiPageIdentity, WikiTopicLLMResult
 from .generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_prompt
-from .generation_repository import get_wiki_page_identity, list_top_level_topic_pages
+from .generation_repository import archive_wiki_page, find_stale_published_page_ids, get_wiki_page_identity, list_top_level_topic_pages
 from .interface import (
     WikiDraftInput,
     WikiSourceInput,
@@ -252,3 +254,17 @@ def generate_wiki_drafts_for_sections(
         )
 
     return results
+
+
+def archive_stale_wiki_pages(
+    workspace_id: str,
+    *,
+    staleness_days: int = 90,
+    supabase: Client | None = None,
+) -> list[str]:
+    stale_page_ids = find_stale_published_page_ids(
+        workspace_id, staleness_days=staleness_days, supabase=supabase,
+    )
+    for page_id in stale_page_ids:
+        archive_wiki_page(page_id, supabase=supabase)
+    return stale_page_ids
