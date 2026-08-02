@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any, Sequence
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from supabase import Client
+
+from ..analysis.importance_models import AnalysisResultForReport
+from ..analysis.models import DOCUMENT_ANALYSIS_RESULTS_TABLE
+from ..analysis.repository import (
+    _row_has_report_summary,
+    _row_is_ranking_candidate_ready,
+    _select_analysis_row_for_ranking,
+    get_supabase,
+)
+from .models import ReportCandidate
+
+try:
+    REPORT_TIMEZONE = ZoneInfo("Asia/Seoul")
+except ZoneInfoNotFoundError:
+    REPORT_TIMEZONE = timezone(timedelta(hours=9))
+
+
+def get_report_time_range(report_date: date) -> tuple[datetime, datetime]:
+    start = datetime.combine(report_date, datetime.min.time(), tzinfo=REPORT_TIMEZONE)
+    end = start + timedelta(days=1)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def get_report_candidates(
+    *,
+    workspace_id: str,
+    report_date: date,
+    supabase: Client | None = None,
+) -> list[ReportCandidate]:
+    db = supabase or get_supabase()
+    published_from, published_to = get_report_time_range(report_date)
+    document_rows = (
+        db.table("documents")
+        .select("id, title, canonical_url, published_at, source_id")
+        .eq("workspace_id", workspace_id)
+        .gte("published_at", published_from.isoformat())
+        .lt("published_at", published_to.isoformat())
+        .execute()
+        .data
+    )
+    if not document_rows:
+        return []
+
+    documents_by_id = {row["id"]: row for row in document_rows}
+    document_ids = list(documents_by_id.keys())
+    version_rows = (
+        db.table("document_versions")
+        .select("id, document_id")
+        .in_("document_id", document_ids)
+        .execute()
+        .data
+    )
+    if not version_rows:
+        return []
+
+    version_to_document = {row["id"]: row["document_id"] for row in version_rows}
+    document_version_ids = list(version_to_document.keys())
+    analysis_rows = (
+        db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .in_("document_version_id", document_version_ids)
+        .eq("status", "completed")
+        .eq("reliability_status", "completed")
+        .eq("importance_status", "completed")
+        .eq("ranking_status", "completed")
+        .order("importance_evaluated_at", desc=True)
+        .order("reliability_evaluated_at", desc=True)
+        .order("classified_at", desc=True)
+        .order("id")
+        .execute()
+        .data
+    )
+    if not analysis_rows:
+        return []
+
+    source_ids = [row.get("source_id") for row in document_rows if row.get("source_id")]
+    source_rows = (
+        db.table("sources")
+        .select("id, name")
+        .in_("id", list(set(source_ids)) or [""])
+        .execute()
+        .data
+    ) if source_ids else []
+    sources_by_id = {row["id"]: row for row in source_rows}
+
+    rows_by_document_version: dict[str, list[dict[str, Any]]] = {}
+    for row in analysis_rows:
+        document_version_id = row.get("document_version_id")
+        if not document_version_id:
+            continue
+        rows_by_document_version.setdefault(document_version_id, []).append(row)
+
+    selected_results: list[tuple[AnalysisResultForReport, str]] = []
+    for document_version_id in document_version_ids:
+        document_id = version_to_document.get(document_version_id)
+        document = documents_by_id.get(document_id) if document_id else None
+        if document_id is None or document is None:
+            continue
+
+        ready_rows = [
+            row
+            for row in rows_by_document_version.get(document_version_id, [])
+            if _row_is_report_candidate_ready(row)
+        ]
+        selected_row = _select_analysis_row_for_ranking(
+            rows=ready_rows,
+            workspace_id=workspace_id,
+            document_version_id=document_version_id,
+        )
+        if selected_row is None:
+            continue
+
+        source = sources_by_id.get(document.get("source_id"), {}) if document.get("source_id") else {}
+        payload = dict(selected_row)
+        payload["analysis_result_id"] = payload.get("id")
+        payload["title"] = document.get("title") or ""
+        payload["canonical_url"] = document.get("canonical_url")
+        payload["published_at"] = document.get("published_at")
+        payload["source_name"] = source.get("name")
+        selected_results.append((AnalysisResultForReport.model_validate(payload), document_id))
+
+    candidates = [
+        to_report_candidate(result=result, document_id=document_id)
+        for result, document_id in selected_results
+    ]
+    return build_report_candidates(candidates)
+
+
+def to_report_candidate(*, result: AnalysisResultForReport, document_id: str) -> ReportCandidate:
+    return ReportCandidate(
+        analysis_result_id=result.analysis_result_id,
+        workspace_id=result.workspace_id,
+        document_id=document_id,
+        document_version_id=result.document_version_id,
+        category=result.primary_category,
+        title=result.title,
+        summary=result.core_summary,
+        reliability_score=result.reliability_score,
+        importance_score=result.importance_score,
+        ranking_score=Decimal(str(result.ranking_score)) if result.ranking_score is not None else None,
+        source_name=result.source_name,
+        canonical_url=result.canonical_url,
+        published_at=result.published_at,
+        impact_direction=result.impact_direction,
+        time_horizon=result.time_horizon,
+    )
+
+
+def build_report_candidates(candidates: Sequence[ReportCandidate]) -> list[ReportCandidate]:
+    ordered = list(candidates)
+    ordered.sort(key=lambda item: item.analysis_result_id, reverse=True)
+    ordered.sort(
+        key=lambda item: item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    ordered.sort(
+        key=lambda item: item.ranking_score if item.ranking_score is not None else Decimal("-1"),
+        reverse=True,
+    )
+    return ordered
+
+
+def _row_is_report_candidate_ready(row: dict[str, Any]) -> bool:
+    return bool(
+        row.get("ranking_status") == "completed"
+        and row.get("ranking_score") is not None
+        and _row_is_ranking_candidate_ready(row)
+        and _row_has_report_summary(row)
+    )
