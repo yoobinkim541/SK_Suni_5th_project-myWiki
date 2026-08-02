@@ -16,7 +16,8 @@ from src.report.models import (
 from src.wiki import generation
 
 
-def _section(issue_key: str = "issue-hbm4-supply") -> ReportSectionDraft:
+def _section(issue_key: str = "issue-hbm4-supply", evidence_text: str | None = None) -> ReportSectionDraft:
+    """composer는 evidence_text를 채우지 않으므로 기본값은 None(실제 파이프라인과 동일)."""
     return ReportSectionDraft(
         issue_key=issue_key,
         representative_analysis_result_id="analysis-1",
@@ -31,30 +32,41 @@ def _section(issue_key: str = "issue-hbm4-supply") -> ReportSectionDraft:
                 analysis_result_id="analysis-1",
                 document_version_id="doc-1",
                 citation_order=1,
-                evidence_text="HBM4 수요가 급증했다",
+                evidence_text=evidence_text,
             )
         ],
+    )
+
+
+def _patch_topic_candidates_filter(monkeypatch, allowed: set[str] | None = None) -> None:
+    """filter_to_topic_page_ids를 대체한다. allowed=None이면 전부 통과."""
+    monkeypatch.setattr(
+        generation,
+        "filter_to_topic_page_ids",
+        lambda page_ids, *, workspace_id, supabase=None: (
+            set(page_ids) if allowed is None else {pid for pid in page_ids if pid in allowed}
+        ),
     )
 
 
 def test_generate_issue_page_creates_and_auto_publishes(monkeypatch):
     calls = []
 
-    def fake_upsert_wiki_page(workspace_id, slug, title, page_type, parent_page_id=None):
+    def fake_upsert_wiki_page(workspace_id, slug, title, page_type, parent_page_id=None, *, supabase=None):
         calls.append(("upsert", slug, page_type, parent_page_id))
         return "page-1"
 
-    def fake_create_wiki_version(draft):
+    def fake_create_wiki_version(draft, *, supabase=None):
         calls.append(("create", draft.slug, draft.page_type, [s.document_version_id for s in draft.sources]))
         return "version-1"
 
-    def fake_record_wiki_validation(version_id, validation_status, confidence_score):
+    def fake_record_wiki_validation(version_id, validation_status, confidence_score, *, supabase=None):
         calls.append(("validate", version_id, validation_status, confidence_score))
 
-    def fake_review_wiki_version(version_id, reviewer_id, decision):
+    def fake_review_wiki_version(version_id, reviewer_id, decision, *, supabase=None):
         calls.append(("review", version_id, reviewer_id, decision))
 
-    def fake_publish_wiki_version(page_id, version_id):
+    def fake_publish_wiki_version(page_id, version_id, *, supabase=None):
         calls.append(("publish", page_id, version_id))
 
     monkeypatch.setattr(generation, "upsert_wiki_page", fake_upsert_wiki_page)
@@ -81,7 +93,7 @@ def test_generate_issue_page_creates_and_auto_publishes(monkeypatch):
 def test_generate_issue_page_defaults_parent_to_none(monkeypatch):
     calls = []
     monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-1")
-    monkeypatch.setattr(generation, "create_wiki_version", lambda draft: "version-1")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: "version-1")
     monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
     monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
     monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
@@ -100,6 +112,93 @@ def test_generate_issue_page_markdown_contains_all_sections():
     assert "SK하이닉스 협상력 강화" in markdown
     assert "경쟁사 증발 발표 여부" not in markdown  # 오탈자 없이 원문 그대로 들어가는지
     assert "경쟁사 증설 발표 여부" in markdown
+
+
+# ---------------------------------------------------------------------------
+# 근거 텍스트(evidence_text) 매핑
+# ---------------------------------------------------------------------------
+
+
+def test_build_evidence_text_map_uses_summary_then_title():
+    groups = [
+        _enriched_group("issue-1", candidate_summary="HBM4 수요가 급증했다"),
+        _enriched_group("issue-2", candidate_summary=None),
+    ]
+    mapping = generation.build_evidence_text_map(groups)
+    assert mapping["issue-1"]["doc-1"] == "HBM4 수요가 급증했다"
+    # summary가 없으면 title로 대체된다.
+    assert mapping["issue-2"]["doc-1"] == "HBM4 공급 부족 심화"
+
+
+def test_issue_page_markdown_uses_evidence_text_map():
+    markdown = generation._build_issue_page_markdown(
+        _section(), {"doc-1": "HBM4 수요가 급증했다"},
+    )
+    assert "- HBM4 수요가 급증했다 (document_version_id=doc-1)" in markdown
+
+
+def test_issue_page_sources_use_evidence_text_map():
+    sources = generation._build_issue_page_sources(
+        _section(), {"doc-1": "HBM4 수요가 급증했다"},
+    )
+    assert [source.claim_text for source in sources] == ["HBM4 수요가 급증했다"]
+
+
+def test_issue_page_sources_fall_back_to_empty_string_when_unmapped():
+    sources = generation._build_issue_page_sources(_section(), {"doc-other": "관련 없음"})
+    assert [source.claim_text for source in sources] == [""]
+
+
+def test_issue_page_sources_fall_back_to_citation_evidence_text():
+    sources = generation._build_issue_page_sources(_section(evidence_text="원문 근거"), None)
+    assert [source.claim_text for source in sources] == ["원문 근거"]
+
+
+def test_generate_wiki_drafts_threads_evidence_texts_into_both_pages(monkeypatch):
+    seen: dict[str, object] = {}
+
+    def fake_generate_topic_page(section, wiki_contexts, **kwargs):
+        seen["topic"] = kwargs["evidence_texts"]
+        return "skip", None, None
+
+    def fake_generate_issue_page(section, **kwargs):
+        seen["issue"] = kwargs["evidence_texts"]
+        return "page-1", "version-1"
+
+    monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+
+    generation.generate_wiki_drafts_for_sections(
+        [_section("issue-ok")],
+        [_enriched_group("issue-ok", candidate_summary="HBM4 수요가 급증했다")],
+        workspace_id="ws-1",
+    )
+
+    assert seen["topic"] == {"doc-1": "HBM4 수요가 급증했다"}
+    assert seen["issue"] == {"doc-1": "HBM4 수요가 급증했다"}
+
+
+def test_generate_topic_page_prompt_includes_mapped_evidence_text(monkeypatch):
+    prompts: list[str] = []
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+
+    def fake_completion(**kwargs):
+        prompts.append(kwargs["user_prompt"])
+        return json.dumps({"action": "skip", "claims": [], "confidence_score": 0.1})
+
+    monkeypatch.setattr(generation, "create_json_completion", fake_completion)
+
+    generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+        evidence_texts={"doc-1": "HBM4 수요가 급증했다"},
+    )
+
+    assert "document_version_id=doc-1 citation_order=1: HBM4 수요가 급증했다" in prompts[0]
+
+
+# ---------------------------------------------------------------------------
+# 주제 페이지 생성
+# ---------------------------------------------------------------------------
 
 
 def test_generate_topic_page_skips_when_llm_returns_skip(monkeypatch):
@@ -121,11 +220,12 @@ def test_generate_topic_page_skips_when_llm_returns_skip(monkeypatch):
 
 def test_generate_topic_page_updates_existing_when_confidence_high(monkeypatch):
     calls = []
+    _patch_topic_candidates_filter(monkeypatch)
     monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
     monkeypatch.setattr(
         generation,
         "get_wiki_page_identity",
-        lambda page_id, supabase=None: generation.WikiPageIdentity(
+        lambda page_id, *, workspace_id, supabase=None: generation.WikiPageIdentity(
             page_id="page-existing", slug="hbm4-supply", title="HBM4_수급현황",
             page_type="technology", parent_page_id="page-parent",
         ),
@@ -146,7 +246,7 @@ def test_generate_topic_page_updates_existing_when_confidence_high(monkeypatch):
     )
     monkeypatch.setattr(
         generation, "create_wiki_version",
-        lambda draft: calls.append(("create", draft.slug, draft.page_type, draft.parent_page_id)) or "version-2",
+        lambda draft, **k: calls.append(("create", draft.slug, draft.page_type, draft.parent_page_id)) or "version-2",
     )
     monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: calls.append(("validate", a)))
     monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: calls.append(("review", a)))
@@ -165,8 +265,9 @@ def test_generate_topic_page_updates_existing_when_confidence_high(monkeypatch):
 
 
 def test_generate_topic_page_skips_when_target_page_identity_missing(monkeypatch):
+    _patch_topic_candidates_filter(monkeypatch)
     monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
-    monkeypatch.setattr(generation, "get_wiki_page_identity", lambda page_id, supabase=None: None)
+    monkeypatch.setattr(generation, "get_wiki_page_identity", lambda page_id, *, workspace_id, supabase=None: None)
     monkeypatch.setattr(
         generation,
         "create_json_completion",
@@ -181,8 +282,9 @@ def test_generate_topic_page_skips_when_target_page_identity_missing(monkeypatch
         ),
     )
 
+    wiki_context = WikiContext(wiki_page_id="page-deleted", title="삭제된 페이지", content="본문")
     action, page_id, version_id = generation._generate_topic_page(
-        _section(), [], workspace_id="ws-1", requested_by=None,
+        _section(), [wiki_context], workspace_id="ws-1", requested_by=None,
     )
 
     assert action == "skip"
@@ -212,7 +314,7 @@ def test_generate_topic_page_creates_new_under_chosen_parent(monkeypatch):
         ),
     )
     monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-new")
-    monkeypatch.setattr(generation, "create_wiki_version", lambda draft: "version-4")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: "version-4")
     monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
     monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
     monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
@@ -227,7 +329,8 @@ def test_generate_topic_page_creates_new_under_chosen_parent(monkeypatch):
     assert upsert_call[1] == ("ws-1", "hbm4-supply", "HBM4_수급현황", "technology", "page-parent")
 
 
-def test_generate_topic_page_leaves_pending_when_confidence_low(monkeypatch):
+def test_generate_topic_page_marks_validation_passed_when_confidence_low(monkeypatch):
+    """설계 §5: validation은 항상 passed. 승인·게시만 신뢰도 게이트를 건다."""
     calls = []
     monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
     monkeypatch.setattr(
@@ -248,7 +351,7 @@ def test_generate_topic_page_leaves_pending_when_confidence_low(monkeypatch):
         ),
     )
     monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-new")
-    monkeypatch.setattr(generation, "create_wiki_version", lambda draft: "version-3")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: "version-3")
     monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: calls.append(("validate", a)))
     monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: calls.append(("review", a)))
     monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: calls.append(("publish", a)))
@@ -261,10 +364,342 @@ def test_generate_topic_page_leaves_pending_when_confidence_low(monkeypatch):
     assert page_id == "page-new"
     assert version_id == "version-3"
     assert not any(call[0] in ("review", "publish") for call in calls)
-    assert ("validate", ("version-3", "pending", 0.3)) in calls
+    assert ("validate", ("version-3", "passed", 0.3)) in calls
 
 
-def _enriched_group(issue_key: str, wiki_contexts=None) -> EnrichedIssueGroup:
+# ---------------------------------------------------------------------------
+# LLM이 돌려준 식별자 검증
+# ---------------------------------------------------------------------------
+
+
+def test_generate_topic_page_drops_issue_pages_from_candidates(monkeypatch):
+    """자동 발행된 이슈 페이지는 주제 후보로 LLM에 노출되지 않는다."""
+    prompts: list[str] = []
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    _patch_topic_candidates_filter(monkeypatch, allowed={"page-topic"})
+
+    def fake_completion(**kwargs):
+        prompts.append(kwargs["user_prompt"])
+        return json.dumps({"action": "skip", "claims": []})
+
+    monkeypatch.setattr(generation, "create_json_completion", fake_completion)
+
+    contexts = [
+        WikiContext(wiki_page_id="page-topic", title="HBM4_수급현황", content="주제 본문"),
+        WikiContext(wiki_page_id="page-issue", title="이슈 페이지", content="이슈 본문"),
+    ]
+    generation._generate_topic_page(_section(), contexts, workspace_id="ws-1", requested_by=None)
+
+    assert "wiki_page_id=page-topic" in prompts[0]
+    assert "wiki_page_id=page-issue" not in prompts[0]
+
+
+def test_generate_topic_page_skips_when_all_claims_reference_unknown_documents(monkeypatch):
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "create_new",
+                "slug": "new-topic",
+                "title": "새 주제",
+                "page_type": "technology",
+                "markdown": "# 새 주제",
+                "claims": [{"document_version_id": "doc-hallucinated", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.9,
+            }
+        ),
+    )
+
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "skip"
+    assert page_id is None
+    assert version_id is None
+
+
+def test_generate_topic_page_filters_unknown_document_ids_from_sources(monkeypatch):
+    drafts = []
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "create_new",
+                "slug": "new-topic",
+                "title": "새 주제",
+                "page_type": "technology",
+                "markdown": "# 새 주제",
+                "claims": [
+                    {"document_version_id": "doc-1", "claim_text": "실제 근거", "citation_order": 1},
+                    {"document_version_id": "doc-hallucinated", "claim_text": "허구", "citation_order": 2},
+                ],
+                "confidence_score": 0.9,
+            }
+        ),
+    )
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-new")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: drafts.append(draft) or "version-9")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    generation._generate_topic_page(_section(), [], workspace_id="ws-1", requested_by=None)
+
+    assert [source.document_version_id for source in drafts[0].sources] == ["doc-1"]
+
+
+def test_generate_topic_page_ignores_unknown_parent_page_id(monkeypatch):
+    calls = []
+    top_level = generation.TopLevelTopicPage(wiki_page_id="page-parent", title="SK하이닉스", page_type="company")
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [top_level])
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "create_new",
+                "slug": "new-topic",
+                "title": "새 주제",
+                "page_type": "technology",
+                "parent_page_id": "page-hallucinated",
+                "markdown": "# 새 주제",
+                "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.9,
+            }
+        ),
+    )
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-new")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: calls.append(("create", draft.parent_page_id)) or "version-5")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    generation._generate_topic_page(_section(), [], workspace_id="ws-1", requested_by=None)
+
+    upsert_call = next(call for call in calls if call[0] == "upsert")
+    assert upsert_call[1][4] is None
+    assert ("create", None) in calls
+
+
+def test_generate_topic_page_skips_when_target_page_not_in_candidates(monkeypatch):
+    """LLM이 후보로 보여주지 않은 페이지 id를 돌려주면 조회조차 하지 않는다."""
+    _patch_topic_candidates_filter(monkeypatch)
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+
+    def exploding_identity(page_id, *, workspace_id, supabase=None):  # pragma: no cover
+        raise AssertionError("후보 밖 페이지는 조회하면 안 된다.")
+
+    monkeypatch.setattr(generation, "get_wiki_page_identity", exploding_identity)
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "update_existing",
+                "target_wiki_page_id": "page-other-workspace",
+                "markdown": "# 갱신된 본문",
+                "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.9,
+            }
+        ),
+    )
+
+    wiki_context = WikiContext(wiki_page_id="page-known", title="알려진 주제", content="본문")
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [wiki_context], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "skip"
+    assert page_id is None
+    assert version_id is None
+
+
+def test_generate_topic_page_passes_workspace_id_to_identity_lookup(monkeypatch):
+    seen: dict[str, object] = {}
+    _patch_topic_candidates_filter(monkeypatch)
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+
+    def fake_identity(page_id, *, workspace_id, supabase=None):
+        seen["workspace_id"] = workspace_id
+        return None
+
+    monkeypatch.setattr(generation, "get_wiki_page_identity", fake_identity)
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "update_existing",
+                "target_wiki_page_id": "page-known",
+                "markdown": "# 갱신된 본문",
+                "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.9,
+            }
+        ),
+    )
+
+    wiki_context = WikiContext(wiki_page_id="page-known", title="알려진 주제", content="본문")
+    generation._generate_topic_page(
+        _section(), [wiki_context], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert seen["workspace_id"] == "ws-1"
+
+
+@pytest.mark.parametrize("markdown", [None, "", "   \n  "])
+def test_generate_topic_page_skips_when_markdown_is_blank(monkeypatch, markdown):
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+
+    def exploding_create(draft, **kwargs):  # pragma: no cover
+        raise AssertionError("빈 본문으로 버전을 만들면 안 된다.")
+
+    monkeypatch.setattr(generation, "create_wiki_version", exploding_create)
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "create_new",
+                "slug": "new-topic",
+                "title": "새 주제",
+                "page_type": "technology",
+                "markdown": markdown,
+                "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.9,
+            }
+        ),
+    )
+
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "skip"
+    assert page_id is None
+    assert version_id is None
+
+
+# ---------------------------------------------------------------------------
+# 의존성 주입 (supabase / llm_client)
+# ---------------------------------------------------------------------------
+
+
+def test_generate_topic_page_uses_injected_llm_client(monkeypatch):
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+
+    def exploding_completion(**kwargs):  # pragma: no cover
+        raise AssertionError("llm_client가 주입되면 실제 API를 부르면 안 된다.")
+
+    monkeypatch.setattr(generation, "create_json_completion", exploding_completion)
+
+    def fake_llm(system_prompt, user_prompt, model):
+        seen["system_prompt"] = system_prompt
+        return json.dumps({"action": "skip", "claims": []})
+
+    action, _page_id, _version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None, llm_client=fake_llm,
+    )
+
+    assert action == "skip"
+    assert seen["system_prompt"] == generation.WIKI_TOPIC_SYSTEM_PROMPT
+
+
+def test_generate_topic_page_threads_supabase_into_repository_and_writes(monkeypatch):
+    seen: list[object] = []
+    sentinel = object()
+
+    monkeypatch.setattr(
+        generation, "list_top_level_topic_pages",
+        lambda workspace_id, supabase=None: seen.append(supabase) or [],
+    )
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, supabase=None, **k: seen.append(supabase) or "page-new")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, supabase=None: seen.append(supabase) or "version-1")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, supabase=None: seen.append(supabase))
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, supabase=None: seen.append(supabase))
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, supabase=None: seen.append(supabase))
+
+    generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None, supabase=sentinel,
+        llm_client=lambda *_a: json.dumps(
+            {
+                "action": "create_new",
+                "slug": "new-topic",
+                "title": "새 주제",
+                "page_type": "technology",
+                "markdown": "# 새 주제",
+                "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.9,
+            }
+        ),
+    )
+
+    assert seen and all(item is sentinel for item in seen)
+
+
+def test_generate_issue_page_threads_supabase_into_writes(monkeypatch):
+    seen: list[object] = []
+    sentinel = object()
+
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, supabase=None, **k: seen.append(supabase) or "page-1")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, supabase=None: seen.append(supabase) or "version-1")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, supabase=None: seen.append(supabase))
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, supabase=None: seen.append(supabase))
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, supabase=None: seen.append(supabase))
+
+    generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None, supabase=sentinel,
+    )
+
+    assert len(seen) == 5
+    assert all(item is sentinel for item in seen)
+
+
+def test_generate_wiki_drafts_for_sections_threads_injected_clients(monkeypatch):
+    seen: dict[str, object] = {}
+    supabase = object()
+    llm_client = object()
+
+    def fake_generate_topic_page(section, wiki_contexts, **kwargs):
+        seen["topic_supabase"] = kwargs["supabase"]
+        seen["topic_llm_client"] = kwargs["llm_client"]
+        return "skip", None, None
+
+    def fake_generate_issue_page(section, **kwargs):
+        seen["issue_supabase"] = kwargs["supabase"]
+        return "page-1", "version-1"
+
+    monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+
+    generation.generate_wiki_drafts_for_sections(
+        [_section("issue-ok")],
+        [_enriched_group("issue-ok")],
+        workspace_id="ws-1",
+        supabase=supabase,
+        llm_client=llm_client,
+    )
+
+    assert seen["topic_supabase"] is supabase
+    assert seen["topic_llm_client"] is llm_client
+    assert seen["issue_supabase"] is supabase
+
+
+# ---------------------------------------------------------------------------
+# 오케스트레이션
+# ---------------------------------------------------------------------------
+
+
+def _enriched_group(
+    issue_key: str,
+    wiki_contexts=None,
+    candidate_summary: str | None = None,
+) -> EnrichedIssueGroup:
     candidate = ReportCandidate(
         analysis_result_id="analysis-1",
         workspace_id="ws-1",
@@ -272,6 +707,7 @@ def _enriched_group(issue_key: str, wiki_contexts=None) -> EnrichedIssueGroup:
         document_version_id="doc-1",
         category=Category.PRODUCT_TECHNOLOGY,
         title="HBM4 공급 부족 심화",
+        summary=candidate_summary,
         reliability_score=80,
         importance_score=85,
         ranking_score=90,
@@ -287,10 +723,10 @@ def test_generate_wiki_drafts_for_sections_isolates_issue_page_failures(monkeypa
     section_ok = _section("issue-ok")
     section_fail = _section("issue-fail")
 
-    def fake_generate_topic_page(section, wiki_contexts, *, workspace_id, requested_by):
+    def fake_generate_topic_page(section, wiki_contexts, **kwargs):
         return "skip", None, None
 
-    def fake_generate_issue_page(section, *, workspace_id, requested_by, parent_page_id=None):
+    def fake_generate_issue_page(section, **kwargs):
         if section.issue_key == "issue-fail":
             raise RuntimeError("Storage 업로드 실패")
         return "page-ok", "version-ok"
@@ -315,10 +751,10 @@ def test_generate_wiki_drafts_for_sections_isolates_issue_page_failures(monkeypa
 def test_generate_wiki_drafts_for_sections_isolates_topic_page_failures(monkeypatch):
     """토픽 생성이 LLM 오류로 실패해도 이슈 페이지는 정상 생성된다."""
 
-    def fake_generate_topic_page(section, wiki_contexts, *, workspace_id, requested_by):
+    def fake_generate_topic_page(section, wiki_contexts, **kwargs):
         raise RuntimeError("LLM JSON 파싱 실패")
 
-    def fake_generate_issue_page(section, *, workspace_id, requested_by, parent_page_id=None):
+    def fake_generate_issue_page(section, **kwargs):
         return "page-ok", "version-ok"
 
     monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
@@ -346,7 +782,7 @@ def test_generate_wiki_drafts_for_sections_links_issue_page_to_resolved_topic(mo
         lambda section, wiki_contexts, **kwargs: ("create_new", "page-topic", "version-topic"),
     )
 
-    def fake_generate_issue_page(section, *, workspace_id, requested_by, parent_page_id=None):
+    def fake_generate_issue_page(section, *, parent_page_id=None, **kwargs):
         seen_parent_ids.append(parent_page_id)
         return "page-issue", "version-issue"
 

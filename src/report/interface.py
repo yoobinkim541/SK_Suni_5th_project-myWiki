@@ -183,6 +183,8 @@ def generate_daily_report(
                 enriched_groups,
                 workspace_id=request.workspace_id,
                 requested_by=pipeline_config.requested_by,
+                supabase=supabase,
+                llm_client=llm_client,
             )
         except Exception:
             logger.exception(

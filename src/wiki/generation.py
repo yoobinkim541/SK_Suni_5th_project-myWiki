@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from supabase import Client
 
@@ -8,7 +9,13 @@ from ..analysis.classifier import create_json_completion, get_openrouter_setting
 from ..report.models import EnrichedIssueGroup, ReportSectionDraft, WikiContext
 from .generation_models import TopicPageCandidate, TopLevelTopicPage, WikiDraftGenerationResult, WikiPageIdentity, WikiTopicLLMResult
 from .generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_prompt
-from .generation_repository import archive_wiki_page, find_stale_published_page_ids, get_wiki_page_identity, list_top_level_topic_pages
+from .generation_repository import (
+    archive_wiki_page,
+    filter_to_topic_page_ids,
+    find_stale_published_page_ids,
+    get_wiki_page_identity,
+    list_top_level_topic_pages,
+)
 from .interface import (
     WikiDraftInput,
     WikiSourceInput,
@@ -23,8 +30,46 @@ logger = logging.getLogger(__name__)
 
 AUTO_PUBLISH_CONFIDENCE_THRESHOLD = 0.6
 
+# (system_prompt, user_prompt, model) -> raw JSON 문자열.
+# src/report/composer.py의 llm_client 주입 패턴과 같은 형태의 호출 가능 객체다.
+WikiTopicLLMClient = Callable[[str, str, str | None], str]
 
-def _build_issue_page_markdown(section: ReportSectionDraft) -> str:
+
+def build_evidence_text_map(enriched_groups: list[EnrichedIssueGroup]) -> dict[str, dict[str, str]]:
+    """issue_key -> {document_version_id: 근거 텍스트} 맵을 만든다.
+
+    `ReportCitationDraft.evidence_text`는 composer가 채우지 않으므로(항상 None),
+    실제로 채워져 있는 `ReportCandidate.summary`(없으면 `title`)를 근거 텍스트로 쓴다.
+    """
+    mapping: dict[str, dict[str, str]] = {}
+    for group in enriched_groups:
+        texts: dict[str, str] = {}
+        for candidate in group.issue_group.candidates:
+            text = (candidate.summary or candidate.title or "").strip()
+            if not text:
+                continue
+            texts.setdefault(candidate.document_version_id, text)
+        mapping[group.issue_group.issue_key] = texts
+    return mapping
+
+
+def _resolve_evidence_text(
+    evidence_texts: dict[str, str] | None,
+    document_version_id: str,
+    fallback: str | None = None,
+) -> str:
+    """근거 텍스트 조회. 맵에 없으면 fallback, 그것도 없으면 빈 문자열(예외 없음)."""
+    if evidence_texts:
+        text = evidence_texts.get(document_version_id)
+        if text:
+            return text
+    return fallback or ""
+
+
+def _build_issue_page_markdown(
+    section: ReportSectionDraft,
+    evidence_texts: dict[str, str] | None = None,
+) -> str:
     lines = [f"# {section.title}", "", "## 현재 상황", section.current_summary or "", ""]
     lines.append("## 핵심 사실")
     lines.extend(f"- {fact}" for fact in section.key_facts)
@@ -37,15 +82,23 @@ def _build_issue_page_markdown(section: ReportSectionDraft) -> str:
     lines.append("")
     lines.append("## 출처")
     for citation in section.news_citations:
-        lines.append(f"- {citation.evidence_text or ''} (document_version_id={citation.document_version_id})")
+        evidence = _resolve_evidence_text(
+            evidence_texts, citation.document_version_id, citation.evidence_text,
+        )
+        lines.append(f"- {evidence} (document_version_id={citation.document_version_id})")
     return "\n".join(lines)
 
 
-def _build_issue_page_sources(section: ReportSectionDraft) -> list[WikiSourceInput]:
+def _build_issue_page_sources(
+    section: ReportSectionDraft,
+    evidence_texts: dict[str, str] | None = None,
+) -> list[WikiSourceInput]:
     return [
         WikiSourceInput(
             document_version_id=citation.document_version_id,
-            claim_text=citation.evidence_text or "",
+            claim_text=_resolve_evidence_text(
+                evidence_texts, citation.document_version_id, citation.evidence_text,
+            ),
             source_start_line=citation.source_start_line,
             source_end_line=citation.source_end_line,
             citation_order=citation.citation_order,
@@ -60,6 +113,8 @@ def _generate_issue_page(
     workspace_id: str,
     requested_by: str | None,
     parent_page_id: str | None = None,
+    evidence_texts: dict[str, str] | None = None,
+    supabase: Client | None = None,
 ) -> tuple[str, str]:
     page_id = upsert_wiki_page(
         workspace_id,
@@ -67,6 +122,7 @@ def _generate_issue_page(
         section.title,
         "issue",
         parent_page_id,
+        supabase=supabase,
     )
     draft = WikiDraftInput(
         workspace_id=workspace_id,
@@ -74,20 +130,38 @@ def _generate_issue_page(
         title=section.title,
         page_type="issue",
         parent_page_id=parent_page_id,
-        markdown=_build_issue_page_markdown(section),
-        sources=_build_issue_page_sources(section),
+        markdown=_build_issue_page_markdown(section, evidence_texts),
+        sources=_build_issue_page_sources(section, evidence_texts),
         change_summary="리포트 파이프라인에서 자동 생성",
         created_by=requested_by,
         generated_by="llm",
     )
-    version_id = create_wiki_version(draft)
-    record_wiki_validation(version_id, "passed", None)
-    review_wiki_version(version_id, None, "approved")
-    publish_wiki_version(page_id, version_id)
+    version_id = create_wiki_version(draft, supabase=supabase)
+    record_wiki_validation(version_id, "passed", None, supabase=supabase)
+    review_wiki_version(version_id, None, "approved", supabase=supabase)
+    publish_wiki_version(page_id, version_id, supabase=supabase)
     return page_id, version_id
 
 
-def _wiki_contexts_to_candidates(wiki_contexts: list[WikiContext]) -> list[TopicPageCandidate]:
+def _wiki_contexts_to_candidates(
+    wiki_contexts: list[WikiContext],
+    *,
+    workspace_id: str,
+    supabase: Client | None = None,
+) -> list[TopicPageCandidate]:
+    """검색 결과를 주제 페이지 후보로 변환한다.
+
+    자동 발행된 이슈 페이지(page_type='issue')는 후보에서 제외한다. 제외하지 않으면
+    이전 회차에 자동 생성된 이슈 페이지가 다음 회차의 주제 후보로 다시 올라오는
+    자기 피드백 루프가 생긴다.
+    """
+    if not wiki_contexts:
+        return []
+    topic_page_ids = filter_to_topic_page_ids(
+        [context.wiki_page_id for context in wiki_contexts],
+        workspace_id=workspace_id,
+        supabase=supabase,
+    )
     return [
         TopicPageCandidate(
             wiki_page_id=context.wiki_page_id,
@@ -96,6 +170,7 @@ def _wiki_contexts_to_candidates(wiki_contexts: list[WikiContext]) -> list[Topic
             similarity_score=context.similarity_score,
         )
         for context in wiki_contexts
+        if context.wiki_page_id in topic_page_ids
     ]
 
 
@@ -105,22 +180,46 @@ def _generate_topic_page(
     *,
     workspace_id: str,
     requested_by: str | None,
+    evidence_texts: dict[str, str] | None = None,
+    supabase: Client | None = None,
+    llm_client: WikiTopicLLMClient | None = None,
 ) -> tuple[str, str | None, str | None]:
     settings = get_openrouter_settings()
-    candidates = _wiki_contexts_to_candidates(wiki_contexts)
-    top_level_pages = list_top_level_topic_pages(workspace_id)
-
-    response_text = create_json_completion(
-        system_prompt=WIKI_TOPIC_SYSTEM_PROMPT,
-        user_prompt=build_wiki_topic_user_prompt(
-            section=section, candidates=candidates, top_level_pages=top_level_pages,
-        ),
-        model=settings.model,
+    candidates = _wiki_contexts_to_candidates(
+        wiki_contexts, workspace_id=workspace_id, supabase=supabase,
     )
+    top_level_pages = list_top_level_topic_pages(workspace_id, supabase=supabase)
+
+    user_prompt = build_wiki_topic_user_prompt(
+        section=section,
+        candidates=candidates,
+        top_level_pages=top_level_pages,
+        evidence_texts=evidence_texts,
+    )
+    if llm_client is not None:
+        response_text = llm_client(WIKI_TOPIC_SYSTEM_PROMPT, user_prompt, settings.model)
+    else:
+        response_text = create_json_completion(
+            system_prompt=WIKI_TOPIC_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            model=settings.model,
+        )
     payload = parse_json_response(response_text)
     result = WikiTopicLLMResult.model_validate(payload)
 
-    if result.action == "skip" or not result.claims:
+    # LLM이 돌려준 식별자는 프롬프트에 보여준 값에서만 골라야 한다.
+    allowed_document_version_ids = {
+        citation.document_version_id for citation in section.news_citations
+    }
+    valid_claims = [
+        claim for claim in result.claims
+        if claim.document_version_id in allowed_document_version_ids
+    ]
+
+    if result.action == "skip" or not valid_claims:
+        return "skip", None, None
+    if not (result.markdown or "").strip():
+        # 본문이 비면 빈 페이지가 자동 발행되므로 근거 없음과 동일하게 취급한다.
         return "skip", None, None
 
     sources = [
@@ -129,16 +228,19 @@ def _generate_topic_page(
             claim_text=claim.claim_text,
             citation_order=claim.citation_order,
         )
-        for claim in result.claims
+        for claim in valid_claims
     ]
 
     if result.action == "update_existing":
-        if not result.target_wiki_page_id:
+        candidate_page_ids = {candidate.wiki_page_id for candidate in candidates}
+        if not result.target_wiki_page_id or result.target_wiki_page_id not in candidate_page_ids:
             return "skip", None, None
         # create_wiki_version()이 내부적으로 upsert_wiki_page()를 다시 실행하므로,
         # 기존 페이지의 실제 slug/title/page_type/parent_page_id를 그대로 넘겨
         # 같은 페이지로 멱등하게 귀결되도록 한다 (LLM은 update 시 이 값들을 안 줌).
-        identity = get_wiki_page_identity(result.target_wiki_page_id)
+        identity = get_wiki_page_identity(
+            result.target_wiki_page_id, workspace_id=workspace_id, supabase=supabase,
+        )
         if identity is None:
             return "skip", None, None
         page_id = identity.page_id
@@ -149,13 +251,20 @@ def _generate_topic_page(
     else:
         if not (result.slug and result.title and result.page_type):
             return "skip", None, None
+        allowed_parent_page_ids = {page.wiki_page_id for page in top_level_pages}
+        parent_page_id = (
+            result.parent_page_id
+            if result.parent_page_id in allowed_parent_page_ids
+            else None
+        )
         page_id = upsert_wiki_page(
-            workspace_id, result.slug, result.title, result.page_type, result.parent_page_id,
+            workspace_id, result.slug, result.title, result.page_type, parent_page_id,
+            supabase=supabase,
         )
         draft_slug = result.slug
         draft_title = result.title
         draft_page_type = result.page_type
-        draft_parent_page_id = result.parent_page_id
+        draft_parent_page_id = parent_page_id
 
     draft = WikiDraftInput(
         workspace_id=workspace_id,
@@ -169,15 +278,16 @@ def _generate_topic_page(
         created_by=requested_by,
         generated_by="llm",
     )
-    version_id = create_wiki_version(draft)
+    version_id = create_wiki_version(draft, supabase=supabase)
 
+    # 설계 §5: 검증 결과는 신뢰도와 무관하게 항상 'passed'로 기록하고,
+    # 승인·게시만 신뢰도 게이트를 건다. (그래야 나중에 사람이 review_wiki_version만
+    # 호출해도 게시가 가능하다.)
     confidence = result.confidence_score
+    record_wiki_validation(version_id, "passed", confidence, supabase=supabase)
     if confidence is not None and confidence >= AUTO_PUBLISH_CONFIDENCE_THRESHOLD:
-        record_wiki_validation(version_id, "passed", confidence)
-        review_wiki_version(version_id, None, "approved")
-        publish_wiki_version(page_id, version_id)
-    else:
-        record_wiki_validation(version_id, "pending", confidence)
+        review_wiki_version(version_id, None, "approved", supabase=supabase)
+        publish_wiki_version(page_id, version_id, supabase=supabase)
 
     return result.action, page_id, version_id
 
@@ -188,6 +298,8 @@ def generate_wiki_drafts_for_sections(
     *,
     workspace_id: str,
     requested_by: str | None = None,
+    supabase: Client | None = None,
+    llm_client: WikiTopicLLMClient | None = None,
 ) -> list[WikiDraftGenerationResult]:
     """
     섹션별로 주제 페이지(Topic)를 먼저 생성하고, 그 결과를 이슈 페이지(Issue)의 parent_page_id로 연결한다.
@@ -198,6 +310,7 @@ def generate_wiki_drafts_for_sections(
     wiki_contexts_by_issue_key = {
         group.issue_group.issue_key: group.wiki_contexts for group in enriched_groups
     }
+    evidence_texts_by_issue_key = build_evidence_text_map(enriched_groups)
 
     # 주제 페이지를 먼저 정해야 이슈 페이지의 parent_page_id로 연결할 수 있다.
     # (upsert_wiki_page는 ignore_duplicates=True라 기존 페이지의 parent_page_id를
@@ -205,6 +318,7 @@ def generate_wiki_drafts_for_sections(
     results: list[WikiDraftGenerationResult] = []
     for section in sections:
         wiki_contexts = wiki_contexts_by_issue_key.get(section.issue_key, [])
+        evidence_texts = evidence_texts_by_issue_key.get(section.issue_key, {})
 
         topic_action: str = "skip"
         topic_page_id: str | None = None
@@ -212,7 +326,13 @@ def generate_wiki_drafts_for_sections(
         topic_error: str | None = None
         try:
             topic_action, topic_page_id, topic_version_id = _generate_topic_page(
-                section, wiki_contexts, workspace_id=workspace_id, requested_by=requested_by,
+                section,
+                wiki_contexts,
+                workspace_id=workspace_id,
+                requested_by=requested_by,
+                evidence_texts=evidence_texts,
+                supabase=supabase,
+                llm_client=llm_client,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("wiki_topic_page_generation_failed", extra={"issue_key": section.issue_key})
@@ -225,6 +345,8 @@ def generate_wiki_drafts_for_sections(
                 workspace_id=workspace_id,
                 requested_by=requested_by,
                 parent_page_id=topic_page_id,
+                evidence_texts=evidence_texts,
+                supabase=supabase,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("wiki_issue_page_generation_failed", extra={"issue_key": section.issue_key})

@@ -6,7 +6,7 @@ from src.wiki.generation_models import TopicPageCandidate, TopLevelTopicPage
 from src.wiki.generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_prompt
 
 
-def _section() -> ReportSectionDraft:
+def _section(evidence_text: str | None = "HBM4 수요가 급증했다") -> ReportSectionDraft:
     return ReportSectionDraft(
         issue_key="issue-hbm4-supply",
         representative_analysis_result_id="analysis-1",
@@ -17,7 +17,7 @@ def _section() -> ReportSectionDraft:
         implications=["SK하이닉스 협상력 강화"],
         watch_points=["경쟁사 증설 발표 여부"],
         news_citations=[
-            ReportCitationDraft(analysis_result_id="analysis-1", document_version_id="doc-1", citation_order=1, evidence_text="HBM4 수요가 급증했다")
+            ReportCitationDraft(analysis_result_id="analysis-1", document_version_id="doc-1", citation_order=1, evidence_text=evidence_text)
         ],
     )
 
@@ -44,3 +44,25 @@ def test_user_prompt_handles_no_candidates():
     prompt = build_wiki_topic_user_prompt(section=_section(), candidates=[], top_level_pages=[])
     assert "HBM4 공급 부족 심화" in prompt
     assert "없음" in prompt
+
+
+def test_user_prompt_fills_evidence_from_map_when_citation_has_none():
+    """composer가 evidence_text를 안 채우므로 맵이 실제 근거 텍스트 출처가 된다."""
+    prompt = build_wiki_topic_user_prompt(
+        section=_section(evidence_text=None),
+        candidates=[],
+        top_level_pages=[],
+        evidence_texts={"doc-1": "HBM4 수요가 급증했다"},
+    )
+    assert "document_version_id=doc-1 citation_order=1: HBM4 수요가 급증했다" in prompt
+
+
+def test_user_prompt_leaves_evidence_blank_when_unmapped():
+    prompt = build_wiki_topic_user_prompt(
+        section=_section(evidence_text=None),
+        candidates=[],
+        top_level_pages=[],
+        evidence_texts={"doc-other": "관련 없음"},
+    )
+    assert "document_version_id=doc-1 citation_order=1: " in prompt
+    assert "관련 없음" not in prompt

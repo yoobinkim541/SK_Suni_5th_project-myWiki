@@ -148,7 +148,7 @@ def test_generate_daily_report_calls_wiki_draft_generation(monkeypatch: pytest.M
     _patch_pipeline_stages(monkeypatch, sections)
     monkeypatch.setattr(
         "src.report.interface.generate_wiki_drafts_for_sections",
-        lambda sections, enriched_groups, *, workspace_id, requested_by=None: calls.append(
+        lambda sections, enriched_groups, *, workspace_id, **kwargs: calls.append(
             (len(sections), len(enriched_groups), workspace_id)
         )
         or [],
@@ -158,6 +158,24 @@ def test_generate_daily_report_calls_wiki_draft_generation(monkeypatch: pytest.M
 
     assert len(calls) == 1
     assert calls[0] == (1, 1, "ws-1")
+
+
+def test_generate_daily_report_injects_clients_into_wiki_stage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """fake 주입 시 위키 단계도 실제 Supabase/OpenRouter를 부르지 않아야 한다."""
+    captured: dict[str, object] = {}
+    supabase = object()
+    llm_client = object()
+    sections = [_make_section("issue-1")]
+    _patch_pipeline_stages(monkeypatch, sections)
+    monkeypatch.setattr(
+        "src.report.interface.generate_wiki_drafts_for_sections",
+        lambda sections, enriched_groups, **kwargs: captured.update(kwargs) or [],
+    )
+
+    generate_daily_report(_make_request(), supabase=supabase, llm_client=llm_client)
+
+    assert captured["supabase"] is supabase
+    assert captured["llm_client"] is llm_client
 
 
 def test_generate_daily_report_survives_wiki_draft_generation_failure(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -39,7 +39,13 @@ def build_wiki_topic_user_prompt(
     section: ReportSectionDraft,
     candidates: list[TopicPageCandidate],
     top_level_pages: list[TopLevelTopicPage],
+    evidence_texts: dict[str, str] | None = None,
 ) -> str:
+    """evidence_texts: {document_version_id: 근거 본문} — 원문 후보(ReportCandidate)에서 만든 맵.
+
+    ReportCitationDraft.evidence_text는 현재 composer가 채우지 않으므로, 이 맵이
+    [근거 문서] 블록의 실제 근거 텍스트 출처가 된다.
+    """
     lines: list[str] = [
         "[이슈 정보]",
         f"제목: {section.title}",
@@ -57,9 +63,10 @@ def build_wiki_topic_user_prompt(
     lines.append("[근거 문서]")
     if section.news_citations:
         for citation in section.news_citations:
+            evidence = (evidence_texts or {}).get(citation.document_version_id) or citation.evidence_text or ""
             lines.append(
                 f"- document_version_id={citation.document_version_id} citation_order={citation.citation_order}: "
-                f"{citation.evidence_text or ''}"
+                f"{evidence}"
             )
     else:
         lines.append("없음")
