@@ -46,3 +46,61 @@ class SendMessageResponse(BaseModel):
     user_message: ChatMessageOut
     assistant_message: ChatMessageOut
     has_answer: bool
+
+
+# ---------------------------------------------------------------------------
+# Wiki 조회 — 프론트엔드 WikiPage 전용 (src/wiki/interface.py DTO를 그대로 반영)
+# ---------------------------------------------------------------------------
+
+class WikiPageSummaryOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    slug: str
+    title: str
+    page_type: str
+    status: str
+    parent_page_id: Optional[str]
+    published_at: Optional[str]
+
+
+class WikiVersionSummaryOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    version_no: int
+    change_summary: Optional[str]
+    created_at: str
+
+
+class WikiSourceOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    document_version_id: str
+    citation_order: Optional[int]
+    claim_text: Optional[str]
+    support_type: Optional[str]
+    source_start_line: Optional[int]
+    source_end_line: Optional[int]
+
+
+class WikiPageContentOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    page_id: str
+    slug: str
+    title: str
+    page_type: str
+    published_at: Optional[str]
+    version_id: str
+    version_no: int
+    markdown: str
+    change_summary: Optional[str]
+    confidence_score: Optional[float]
+    validation_status: str
+    review_status: str
+    generated_by: str
+    generator_model: Optional[str]
+    created_at: str
+    sources: list[WikiSourceOut]
+    versions: list[WikiVersionSummaryOut]
