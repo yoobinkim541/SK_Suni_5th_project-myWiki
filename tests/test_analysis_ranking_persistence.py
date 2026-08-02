@@ -320,6 +320,51 @@ def test_save_ranking_results_updates_only_selected_analysis_row(fake_supabase: 
     assert row_b["ranking_detail"] == {"untouched": True}
 
 
+class FakeTableNumericRoundTrip(FakeTable):
+    """PostgREST가 numeric 컬럼을 JSON number로 돌려줄 때처럼, update 후 저장된
+    ranking_score를 문자열이 아닌 float로 코어스해서 반환한다 (예: "85.00" -> 85.0)."""
+
+    def execute(self):
+        result = super().execute()
+        if self._action == "update":
+            for row in result.data:
+                if row.get("ranking_score") is not None:
+                    row["ranking_score"] = float(row["ranking_score"])
+        return result
+
+
+class FakeSupabaseNumericRoundTrip(FakeSupabase):
+    def table(self, name):
+        return FakeTableNumericRoundTrip(self, name)
+
+
+def test_save_ranking_results_tolerates_postgrest_numeric_round_trip() -> None:
+    fake_supabase = FakeSupabaseNumericRoundTrip()
+    ranked = RankedAnalysisResult(
+        analysis_result_id="analysis-1",
+        workspace_id="ws-1",
+        document_version_id="ver-1",
+        title="HBM ??",
+        primary_category="?????",
+        ranking_status="completed",
+        ranking_score=Decimal("85.00"),
+        recency_score=100,
+        ranking_position=1,
+        selected_for_report=True,
+        report_selection_position=1,
+        selection_reason="SELECTED",
+        ranking_formula_version="ranking-v1",
+        ranking_reference_time=datetime(2026, 8, 2, 0, 0, tzinfo=timezone.utc),
+        ranking_batch_date=date(2026, 8, 2),
+        ranked_at=datetime(2026, 8, 2, 0, 0, tzinfo=timezone.utc),
+        ranking_detail={"components": {"importance_score": 85, "reliability_score": 80, "recency_score": 100}},
+    )
+    # ranking_score="85.00"(str)로 보냈지만 응답은 85.0(float)로 오는 경우에도
+    # RANKING_RESULT_INCONSISTENT 없이 저장이 성공해야 한다.
+    saved = save_ranking_results(workspace_id="ws-1", results=[ranked], supabase=fake_supabase)
+    assert saved[0].ranking_score == Decimal("85.00")
+
+
 def test_save_ranking_results_missing_analysis_result_id_fails(fake_supabase: FakeSupabase) -> None:
     ranked = RankedAnalysisResult(
         analysis_result_id="missing-analysis",

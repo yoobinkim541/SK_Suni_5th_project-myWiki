@@ -215,6 +215,9 @@ def classify_document_version(
         return _runtime_failure_result(document_version_id, workspace_id, model_name, prompt_version, code, str(exc))
     except ValueError as exc:
         return _persisted_failure_result(document_version_id, workspace_id, model_name, prompt_version, "VALIDATION_ERROR", str(exc))
+    except Exception as exc:
+        logger.exception("classification failed: %s UNEXPECTED_ERROR", document_version_id)
+        return _runtime_failure_result(document_version_id, workspace_id, model_name, prompt_version, "UNEXPECTED_ERROR", str(exc))
 
 
 
