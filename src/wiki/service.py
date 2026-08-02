@@ -13,6 +13,8 @@ import datetime
 import hashlib
 from typing import Optional
 
+from supabase import Client
+
 from .query import WIKI_BUCKET, _get_client
 from .interface import PageType, WikiDraftInput, WikiSourceInput
 
@@ -23,8 +25,10 @@ def upsert_wiki_page(
     title: str,
     page_type: PageType,
     parent_page_id: Optional[str] = None,
+    *,
+    supabase: Client | None = None,
 ) -> str:
-    db = _get_client()
+    db = supabase or _get_client()
     data = {
         "workspace_id": workspace_id,
         "slug": slug,
@@ -53,8 +57,8 @@ def upsert_wiki_page(
     return existing.data["id"]
 
 
-def create_wiki_version(draft: WikiDraftInput) -> str:
-    db = _get_client()
+def create_wiki_version(draft: WikiDraftInput, *, supabase: Client | None = None) -> str:
+    db = supabase or _get_client()
 
     page_id = upsert_wiki_page(
         draft.workspace_id,
@@ -62,6 +66,7 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
         draft.title,
         draft.page_type,
         draft.parent_page_id,
+        supabase=db,
     )
 
     ver_res = (
@@ -154,8 +159,10 @@ def record_wiki_validation(
     version_id: str,
     validation_status: str,
     confidence_score: Optional[float],
+    *,
+    supabase: Client | None = None,
 ) -> None:
-    db = _get_client()
+    db = supabase or _get_client()
     db.table("wiki_page_versions").update(
         {"validation_status": validation_status, "confidence_score": confidence_score}
     ).eq("id", version_id).execute()
@@ -163,10 +170,12 @@ def record_wiki_validation(
 
 def review_wiki_version(
     version_id: str,
-    reviewer_id: str,
+    reviewer_id: Optional[str],
     decision: str,
+    *,
+    supabase: Client | None = None,
 ) -> None:
-    db = _get_client()
+    db = supabase or _get_client()
     db.table("wiki_page_versions").update(
         {
             "review_status": decision,
@@ -176,8 +185,8 @@ def review_wiki_version(
     ).eq("id", version_id).execute()
 
 
-def publish_wiki_version(page_id: str, version_id: str) -> None:
-    db = _get_client()
+def publish_wiki_version(page_id: str, version_id: str, *, supabase: Client | None = None) -> None:
+    db = supabase or _get_client()
     ver = db.table("wiki_page_versions").select("validation_status,review_status").eq("id", version_id).single().execute()
     if ver.data["validation_status"] != "passed" or ver.data["review_status"] != "approved":
         raise ValueError(

@@ -119,15 +119,17 @@ def upsert_wiki_page(
     title: str,
     page_type: PageType,
     parent_page_id: Optional[str] = None,
+    *,
+    supabase: Client | None = None,
 ) -> str:
     """Find or create a wiki page by slug and return its id."""
 
     from .service import upsert_wiki_page as _impl
 
-    return _impl(workspace_id, slug, title, page_type, parent_page_id)
+    return _impl(workspace_id, slug, title, page_type, parent_page_id, supabase=supabase)
 
 
-def create_wiki_version(draft: WikiDraftInput) -> str:
+def create_wiki_version(draft: WikiDraftInput, *, supabase: Client | None = None) -> str:
     """
     Create a new wiki version draft.
 
@@ -136,7 +138,7 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
 
     from .service import create_wiki_version as _impl
 
-    return _impl(draft)
+    return _impl(draft, supabase=supabase)
 
 
 def add_wiki_version(
@@ -161,32 +163,40 @@ def record_wiki_validation(
     version_id: str,
     validation_status: ValidationStatus,
     confidence_score: Optional[float],
+    *,
+    supabase: Client | None = None,
 ) -> None:
     """Record validation status and confidence score."""
 
     from .service import record_wiki_validation as _impl
 
-    return _impl(version_id, validation_status, confidence_score)
+    return _impl(version_id, validation_status, confidence_score, supabase=supabase)
 
 
 def review_wiki_version(
     version_id: str,
-    reviewer_id: str,
+    reviewer_id: Optional[str],
     decision: ReviewDecision,
+    *,
+    supabase: Client | None = None,
 ) -> None:
-    """Record the review result without publishing the version."""
+    """Record the review result without publishing the version.
+
+    reviewer_id=None means an automated (non-human) approval — used by the
+    wiki auto-generation pipeline. reviewed_by is stored as NULL in that case.
+    """
 
     from .service import review_wiki_version as _impl
 
-    return _impl(version_id, reviewer_id, decision)
+    return _impl(version_id, reviewer_id, decision, supabase=supabase)
 
 
-def publish_wiki_version(page_id: str, version_id: str) -> None:
+def publish_wiki_version(page_id: str, version_id: str, *, supabase: Client | None = None) -> None:
     """Publish an approved and validated wiki version."""
 
     from .service import publish_wiki_version as _impl
 
-    return _impl(page_id, version_id)
+    return _impl(page_id, version_id, supabase=supabase)
 
 
 def request_wiki_index(
