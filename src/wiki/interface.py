@@ -171,10 +171,14 @@ def record_wiki_validation(
 
 def review_wiki_version(
     version_id: str,
-    reviewer_id: str,
+    reviewer_id: Optional[str],
     decision: ReviewDecision,
 ) -> None:
-    """Record the review result without publishing the version."""
+    """Record the review result without publishing the version.
+
+    reviewer_id=None means an automated (non-human) approval — used by the
+    wiki auto-generation pipeline. reviewed_by is stored as NULL in that case.
+    """
 
     from .service import review_wiki_version as _impl
 

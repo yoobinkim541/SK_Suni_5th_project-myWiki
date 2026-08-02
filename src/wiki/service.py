@@ -163,7 +163,7 @@ def record_wiki_validation(
 
 def review_wiki_version(
     version_id: str,
-    reviewer_id: str,
+    reviewer_id: Optional[str],
     decision: str,
 ) -> None:
     db = _get_client()
