@@ -241,6 +241,9 @@ def evaluate_and_save_importance(*, workspace_id: str, document_version_id: str,
             str(exc),
             keep_existing_completed=force,
         )
+    except Exception as exc:
+        logger.exception("importance failed: %s UNEXPECTED_ERROR", document_version_id)
+        return _runtime_failure_result(document_version_id, workspace_id, model_name, prompt_version, "UNEXPECTED_ERROR", str(exc))
 
 
 def evaluate_and_save_importances(*, workspace_id: str, document_version_ids: list[str], force: bool = False) -> list[StoredImportanceResult]:

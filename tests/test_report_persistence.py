@@ -18,7 +18,9 @@ from src.report.repository import (
     create_report_version,
     get_latest_completed_report,
     mark_report_completed,
+    save_report_citations,
     save_report_sections,
+    save_report_wiki_references,
 )
 
 
@@ -36,6 +38,7 @@ class FakeTable:
         self.in_filters: list[tuple[str, set[object]]] = []
         self.insert_rows: list[dict[str, object]] | None = None
         self.update_payload: dict[str, object] | None = None
+        self.delete_requested = False
 
     def select(self, _fields: str) -> "FakeTable":
         return self
@@ -58,6 +61,10 @@ class FakeTable:
         self.update_payload = dict(payload)
         return self
 
+    def delete(self) -> "FakeTable":
+        self.delete_requested = True
+        return self
+
     def execute(self) -> FakeResult:
         if self.insert_rows is not None:
             if self.name in self.supabase.fail_on_insert_tables:
@@ -77,6 +84,12 @@ class FakeTable:
                 row.update(self.update_payload)
                 updated_rows.append(dict(row))
             return FakeResult(updated_rows)
+
+        if self.delete_requested:
+            to_delete = self._filtered_rows()
+            for row in to_delete:
+                self.rows.remove(row)
+            return FakeResult(to_delete)
 
         return FakeResult([dict(row) for row in self._filtered_rows()])
 
@@ -420,3 +433,135 @@ def test_save_report_sections_preserves_display_order_in_return_value() -> None:
         ("issue-b", 1),
         ("issue-a", 2),
     ]
+
+
+def _section_with_citations(
+    issue_key: str,
+    citations: list[ReportCitationDraft],
+    wiki_references: list[ReportWikiReferenceDraft] | None = None,
+) -> ReportSectionDraft:
+    section = make_section(issue_key)
+    return section.model_copy(update={"news_citations": citations, "wiki_references": wiki_references or []})
+
+
+def test_save_report_citations_inserts_new_rows() -> None:
+    supabase = FakeSupabase()
+    saved_sections = save_report_sections(report_id="report-1", sections=[make_section("issue-a")], supabase=supabase)
+
+    save_report_citations(
+        section_map=saved_sections,
+        sections=[
+            _section_with_citations(
+                "issue-a",
+                [ReportCitationDraft(analysis_result_id="a1", document_version_id="doc-1", citation_order=1)],
+            )
+        ],
+        supabase=supabase,
+    )
+
+    assert len(supabase.tables["report_citations"]) == 1
+    assert supabase.tables["report_citations"][0]["document_version_id"] == "doc-1"
+
+
+def test_save_report_citations_removes_stale_rows_on_regeneration() -> None:
+    supabase = FakeSupabase()
+    saved_sections = save_report_sections(report_id="report-1", sections=[make_section("issue-a")], supabase=supabase)
+    save_report_citations(
+        section_map=saved_sections,
+        sections=[
+            _section_with_citations(
+                "issue-a",
+                [
+                    ReportCitationDraft(analysis_result_id="a1", document_version_id="doc-1", citation_order=1),
+                    ReportCitationDraft(analysis_result_id="a1", document_version_id="doc-2", citation_order=2),
+                ],
+            )
+        ],
+        supabase=supabase,
+    )
+    assert len(supabase.tables["report_citations"]) == 2
+
+    # 재생성: doc-2는 더 이상 근거가 아니고, doc-3가 새로 추가됨
+    save_report_citations(
+        section_map=saved_sections,
+        sections=[
+            _section_with_citations(
+                "issue-a",
+                [
+                    ReportCitationDraft(analysis_result_id="a1", document_version_id="doc-1", citation_order=1),
+                    ReportCitationDraft(analysis_result_id="a1", document_version_id="doc-3", citation_order=2),
+                ],
+            )
+        ],
+        supabase=supabase,
+    )
+
+    remaining = {row["document_version_id"] for row in supabase.tables["report_citations"]}
+    assert remaining == {"doc-1", "doc-3"}
+
+
+def test_save_report_citations_keeps_two_citations_of_same_document() -> None:
+    supabase = FakeSupabase()
+    saved_sections = save_report_sections(report_id="report-1", sections=[make_section("issue-a")], supabase=supabase)
+
+    save_report_citations(
+        section_map=saved_sections,
+        sections=[
+            _section_with_citations(
+                "issue-a",
+                [
+                    ReportCitationDraft(
+                        analysis_result_id="a1", document_version_id="doc-1", citation_order=1, evidence_text="첫 번째 인용"
+                    ),
+                    ReportCitationDraft(
+                        analysis_result_id="a1", document_version_id="doc-1", citation_order=2, evidence_text="두 번째 인용"
+                    ),
+                ],
+            )
+        ],
+        supabase=supabase,
+    )
+
+    quoted_texts = {row["quoted_text"] for row in supabase.tables["report_citations"]}
+    assert quoted_texts == {"첫 번째 인용", "두 번째 인용"}
+
+
+def test_save_report_wiki_references_removes_stale_rows_on_regeneration() -> None:
+    supabase = FakeSupabase()
+    saved_sections = save_report_sections(report_id="report-1", sections=[make_section("issue-a")], supabase=supabase)
+    save_report_wiki_references(
+        section_map=saved_sections,
+        sections=[
+            _section_with_citations(
+                "issue-a",
+                [],
+                [
+                    ReportWikiReferenceDraft(
+                        wiki_page_id="wiki-1", wiki_version_id="wiki-ver-1", reference_order=1, similarity_score=0.9
+                    )
+                ],
+            )
+        ],
+        supabase=supabase,
+    )
+    assert len(supabase.tables["report_wiki_references"]) == 1
+
+    # 재생성: wiki-ver-1이 더 이상 근거가 아니고 wiki-ver-2로 교체됨
+    save_report_wiki_references(
+        section_map=saved_sections,
+        sections=[
+            _section_with_citations(
+                "issue-a",
+                [],
+                [
+                    ReportWikiReferenceDraft(
+                        wiki_page_id="wiki-2", wiki_version_id="wiki-ver-2", reference_order=1, similarity_score=0.7
+                    )
+                ],
+            )
+        ],
+        supabase=supabase,
+    )
+
+    remaining = {row["wiki_version_id"] for row in supabase.tables["report_wiki_references"]}
+    assert remaining == {"wiki-ver-2"}

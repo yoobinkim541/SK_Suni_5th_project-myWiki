@@ -31,10 +31,9 @@ from .repository import (
     save_classification_result,
     validate_document_workspace,
 )
+from ..pipeline_common.storage import download as download_object
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_STORAGE_BUCKET = "myWiki"
 
 
 @dataclass
@@ -141,13 +140,15 @@ def get_document_refs(*, workspace_id: str, document_version_ids: list[str]) -> 
 
 
 
-def get_markdown(*, workspace_id: str, document_version_id: str, storage_bucket: str = DEFAULT_STORAGE_BUCKET) -> str:
+def get_markdown(*, workspace_id: str, document_version_id: str) -> str:
     refs = get_document_refs(workspace_id=workspace_id, document_version_ids=[document_version_id])
     if not refs:
         raise DocumentVersionNotFoundError("DOCUMENT_VERSION_NOT_FOUND")
 
+    # object_key는 버킷 접두사를 포함한다(예: "processed/ws/doc/1.md").
+    # pipeline_common.storage.download()가 접두사를 분리해 올바른 버킷에서 내려받는다.
     object_key = refs[0].markdown_object_key
-    markdown_bytes = get_supabase().storage.from_(storage_bucket).download(object_key)
+    markdown_bytes = download_object(object_key)
     markdown = markdown_bytes.decode("utf-8").strip()
     if not markdown:
         raise MarkdownNotFoundError("MARKDOWN_NOT_FOUND")
@@ -215,6 +216,9 @@ def classify_document_version(
         return _runtime_failure_result(document_version_id, workspace_id, model_name, prompt_version, code, str(exc))
     except ValueError as exc:
         return _persisted_failure_result(document_version_id, workspace_id, model_name, prompt_version, "VALIDATION_ERROR", str(exc))
+    except Exception as exc:
+        logger.exception("classification failed: %s UNEXPECTED_ERROR", document_version_id)
+        return _runtime_failure_result(document_version_id, workspace_id, model_name, prompt_version, "UNEXPECTED_ERROR", str(exc))
 
 
 

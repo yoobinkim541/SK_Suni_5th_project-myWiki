@@ -19,7 +19,7 @@ from .repository import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_REPORT_ARTIFACT_BUCKET = "myWiki"
+DEFAULT_REPORT_ARTIFACT_BUCKET = "reports"
 MARKDOWN_CONTENT_TYPE = "text/markdown"
 
 

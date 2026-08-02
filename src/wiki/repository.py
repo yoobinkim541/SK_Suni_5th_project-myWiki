@@ -9,7 +9,9 @@ from supabase import Client
 from ..analysis.repository import get_supabase
 from .models import WikiSearchRequest, WikiSearchResult
 
-DEFAULT_STORAGE_BUCKET = "myWiki"
+# .query.WIKI_BUCKET과 같은 값이어야 한다("wiki"). .query를 여기서 import하면
+# interface -> repository -> query -> interface 순환 참조가 생기므로 값만 복제한다.
+DEFAULT_STORAGE_BUCKET = "wiki"
 DEFAULT_CANDIDATE_LIMIT_MULTIPLIER = 10
 DEFAULT_MAX_PAGE_SCAN = 30
 

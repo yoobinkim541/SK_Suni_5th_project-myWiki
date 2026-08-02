@@ -105,7 +105,7 @@ def make_artifact() -> SavedReportArtifact:
         mime_type="text/markdown",
         file_size=123,
         content_hash="abc123",
-        storage_bucket="myWiki",
+        storage_bucket="reports",
     )
 
 

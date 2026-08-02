@@ -1,7 +1,8 @@
 ﻿from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from functools import lru_cache
 from typing import Any
 
@@ -202,7 +203,7 @@ def save_reliability_result(*, workspace_id: str, document_version_id: str, resu
         "reliability_error_message": None,
         "updated_at": now,
     }
-    return _update_reliability_row(update_payload=update_payload, supabase=db)
+    return _update_reliability_row(update_payload=update_payload, supabase=db, workspace_id=workspace_id)
 
 
 def save_reliability_failure(*, workspace_id: str, document_version_id: str, model_name: str, prompt_version: str = DEFAULT_RELIABILITY_PROMPT_VERSION, error_code: str, error_message: str, supabase: Client | None = None) -> StoredReliabilityResult:
@@ -232,7 +233,7 @@ def save_reliability_failure(*, workspace_id: str, document_version_id: str, mod
         "reliability_error_message": _sanitize_error_message(error_message),
         "updated_at": now,
     }
-    stored = _update_reliability_row(update_payload=update_payload, supabase=db)
+    stored = _update_reliability_row(update_payload=update_payload, supabase=db, workspace_id=workspace_id)
     stored.error_code = error_code
     return stored
 
@@ -353,7 +354,7 @@ def save_importance_result(*, workspace_id: str, document_version_id: str, resul
         "importance_error_message": None,
         "updated_at": now,
     }
-    return _update_importance_row(update_payload=update_payload, supabase=db)
+    return _update_importance_row(update_payload=update_payload, supabase=db, workspace_id=workspace_id)
 
 
 def save_importance_failure(*, workspace_id: str, document_version_id: str, model_name: str, prompt_version: str = DEFAULT_IMPORTANCE_PROMPT_VERSION, error_code: str, error_message: str, supabase: Client | None = None) -> StoredImportanceResult:
@@ -396,7 +397,7 @@ def save_importance_failure(*, workspace_id: str, document_version_id: str, mode
         "importance_error_message": _sanitize_error_message(error_message),
         "updated_at": now,
     }
-    stored = _update_importance_row(update_payload=update_payload, supabase=db)
+    stored = _update_importance_row(update_payload=update_payload, supabase=db, workspace_id=workspace_id)
     stored.error_code = error_code
     return stored
 
@@ -582,15 +583,12 @@ def _get_analysis_row_for_importance(*, workspace_id: str, document_version_id: 
     return row
 
 
-def _update_reliability_row(*, update_payload: dict[str, Any], supabase: Client) -> StoredReliabilityResult:
+def _update_reliability_row(*, update_payload: dict[str, Any], supabase: Client, workspace_id: str | None = None) -> StoredReliabilityResult:
     try:
-        result_rows = (
-            supabase.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
-            .update(update_payload)
-            .eq("id", update_payload["id"])
-            .execute()
-            .data
-        )
+        query = supabase.table(DOCUMENT_ANALYSIS_RESULTS_TABLE).update(update_payload).eq("id", update_payload["id"])
+        if workspace_id is not None:
+            query = query.eq("workspace_id", workspace_id)
+        result_rows = query.execute().data
     except Exception as exc:
         raise ClassificationSaveFailedError("RELIABILITY_SAVE_FAILED") from exc
     if not result_rows:
@@ -598,15 +596,12 @@ def _update_reliability_row(*, update_payload: dict[str, Any], supabase: Client)
     return _row_to_stored_reliability_result(result_rows[0])
 
 
-def _update_importance_row(*, update_payload: dict[str, Any], supabase: Client) -> StoredImportanceResult:
+def _update_importance_row(*, update_payload: dict[str, Any], supabase: Client, workspace_id: str | None = None) -> StoredImportanceResult:
     try:
-        result_rows = (
-            supabase.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
-            .update(update_payload)
-            .eq("id", update_payload["id"])
-            .execute()
-            .data
-        )
+        query = supabase.table(DOCUMENT_ANALYSIS_RESULTS_TABLE).update(update_payload).eq("id", update_payload["id"])
+        if workspace_id is not None:
+            query = query.eq("workspace_id", workspace_id)
+        result_rows = query.execute().data
     except Exception as exc:
         raise ClassificationSaveFailedError("IMPORTANCE_SAVE_FAILED") from exc
     if not result_rows:
@@ -869,12 +864,20 @@ def save_ranking_results(*, workspace_id: str, results: list[RankedAnalysisResul
                 f"RANKING_RESULT_INCONSISTENT: analysis_result_id={result.analysis_result_id} workspace_id={workspace_id} document_version_id={result.document_version_id}"
             )
         updated_row = updated_rows[0]
+        updated_ranking_score = updated_row.get("ranking_score")
+        ranking_score_matches = (
+            updated_ranking_score is None and result.ranking_score is None
+        ) or (
+            updated_ranking_score is not None
+            and result.ranking_score is not None
+            and Decimal(str(updated_ranking_score)) == Decimal(str(result.ranking_score))
+        )
         if (
             str(updated_row.get("id")) != str(result.analysis_result_id)
             or str(updated_row.get("workspace_id")) != str(workspace_id)
             or str(updated_row.get("document_version_id")) != str(result.document_version_id)
             or str(updated_row.get("ranking_formula_version")) != str(result.ranking_formula_version)
-            or str(updated_row.get("ranking_score")) != str(result.ranking_score)
+            or not ranking_score_matches
         ):
             raise RankingSaveFailedError(
                 f"RANKING_RESULT_INCONSISTENT: analysis_result_id={result.analysis_result_id} workspace_id={workspace_id} document_version_id={result.document_version_id}"

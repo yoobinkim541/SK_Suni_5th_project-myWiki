@@ -280,24 +280,31 @@ def save_report_citations(
 ) -> None:
     db = supabase or get_supabase()
     section_by_issue_key = {section.issue_key: section for section in section_map}
+    section_ids = [item.section_id for item in section_map]
     existing_rows = (
         db.table("report_citations")
-        .select("section_id, document_version_id")
-        .in_("section_id", [item.section_id for item in section_map])
+        .select("id, section_id, document_version_id, citation_order")
+        .in_("section_id", section_ids)
         .execute()
         .data
     )
-    existing_pairs = {
-        (str(row["section_id"]), str(row["document_version_id"]))
+    # citation_order도 키에 포함한다 - 같은 문서를 두 번 인용하면
+    # (section_id, document_version_id)만으로는 두 번째 인용이 조용히 드롭된다.
+    existing_by_key = {
+        (str(row["section_id"]), str(row["document_version_id"]), row.get("citation_order")): row["id"]
         for row in existing_rows
     }
+    seen_keys: set[tuple[str, str, object]] = set()
 
     rows_to_insert: list[dict[str, object]] = []
     for section in sections:
         saved_section = section_by_issue_key[section.issue_key]
         for citation in section.news_citations:
-            pair = (saved_section.section_id, citation.document_version_id)
-            if pair in existing_pairs:
+            key = (saved_section.section_id, citation.document_version_id, citation.citation_order)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            if key in existing_by_key:
                 continue
             rows_to_insert.append(
                 {
@@ -310,7 +317,12 @@ def save_report_citations(
                     "citation_order": citation.citation_order,
                 }
             )
-            existing_pairs.add(pair)
+
+    # 이번 실행에서 더 이상 근거로 쓰이지 않는 기존 citation은 삭제한다.
+    # (재생성 시 빠진 근거가 테이블에 영구 잔존하는 것을 방지)
+    stale_ids = [row_id for key, row_id in existing_by_key.items() if key not in seen_keys]
+    if stale_ids:
+        db.table("report_citations").delete().in_("id", stale_ids).execute()
 
     if rows_to_insert:
         db.table("report_citations").insert(rows_to_insert).execute()
@@ -324,18 +336,20 @@ def save_report_wiki_references(
 ) -> None:
     db = supabase or get_supabase()
     section_by_issue_key = {section.issue_key: section for section in section_map}
+    section_ids = [item.section_id for item in section_map]
     existing_rows = (
         db.table("report_wiki_references")
-        .select("section_id, wiki_version_id")
-        .in_("section_id", [item.section_id for item in section_map])
+        .select("id, section_id, wiki_version_id")
+        .in_("section_id", section_ids)
         .execute()
         .data
     )
-    existing_pairs = {
-        (str(row["section_id"]), str(row["wiki_version_id"]))
+    existing_by_key = {
+        (str(row["section_id"]), str(row["wiki_version_id"])): row["id"]
         for row in existing_rows
         if row.get("wiki_version_id") is not None
     }
+    seen_keys: set[tuple[str, str]] = set()
 
     rows_to_insert: list[dict[str, object]] = []
     for section in sections:
@@ -343,8 +357,11 @@ def save_report_wiki_references(
         for reference in section.wiki_references:
             if reference.wiki_version_id is None:
                 raise ReportPersistenceError("wiki_version_id is required to persist a wiki reference.")
-            pair = (saved_section.section_id, reference.wiki_version_id)
-            if pair in existing_pairs:
+            key = (saved_section.section_id, reference.wiki_version_id)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            if key in existing_by_key:
                 continue
             rows_to_insert.append(
                 {
@@ -355,7 +372,11 @@ def save_report_wiki_references(
                     "relevance_score": reference.similarity_score,
                 }
             )
-            existing_pairs.add(pair)
+
+    # 이번 실행에서 더 이상 근거로 쓰이지 않는 기존 wiki reference는 삭제한다.
+    stale_ids = [row_id for key, row_id in existing_by_key.items() if key not in seen_keys]
+    if stale_ids:
+        db.table("report_wiki_references").delete().in_("id", stale_ids).execute()
 
     if rows_to_insert:
         db.table("report_wiki_references").insert(rows_to_insert).execute()
