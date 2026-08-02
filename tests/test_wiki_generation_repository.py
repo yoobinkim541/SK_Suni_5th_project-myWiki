@@ -123,6 +123,25 @@ def test_find_stale_published_page_ids_only_returns_pages_past_threshold():
     assert stale_ids == ["p1"]
 
 
+def test_find_stale_published_page_ids_excludes_other_workspaces():
+    now = datetime.now(timezone.utc)
+    stale_time = (now - timedelta(days=91)).isoformat()
+    supabase = FakeSupabase(
+        {
+            "wiki_pages": [
+                {"id": "p1", "workspace_id": "ws-1", "status": "published", "current_version_id": "v1"},
+                {"id": "p2", "workspace_id": "ws-2", "status": "published", "current_version_id": "v2"},
+            ],
+            "wiki_page_versions": [
+                {"id": "v1", "page_id": "p1", "created_at": stale_time},
+                {"id": "v2", "page_id": "p2", "created_at": stale_time},
+            ],
+        }
+    )
+    stale_ids = find_stale_published_page_ids("ws-1", staleness_days=90, supabase=supabase)
+    assert stale_ids == ["p1"]
+
+
 def test_archive_wiki_page_sets_status_archived():
     supabase = FakeSupabase(
         {"wiki_pages": [{"id": "p1", "workspace_id": "ws-1", "status": "published"}]}
