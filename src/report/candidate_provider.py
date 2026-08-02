@@ -176,3 +176,103 @@ def _row_is_report_candidate_ready(row: dict[str, Any]) -> bool:
         and _row_is_ranking_candidate_ready(row)
         and _row_has_report_summary(row)
     )
+
+
+def get_recently_analyzed_candidates(
+    *,
+    workspace_id: str,
+    since: datetime,
+    supabase: Client | None = None,
+) -> list[ReportCandidate]:
+    """report_date 하루 단위가 아니라 '최근 since 이후 분석 완료된 것' 기준으로
+    candidate를 가져온다 — 2시간 주기 위키 갱신 배치 전용."""
+    db = supabase or get_supabase()
+    analysis_rows = (
+        db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .eq("status", "completed")
+        .eq("reliability_status", "completed")
+        .eq("importance_status", "completed")
+        .eq("ranking_status", "completed")
+        .gte("importance_evaluated_at", since.isoformat())
+        .order("importance_evaluated_at", desc=True)
+        .execute()
+        .data
+    )
+    if not analysis_rows:
+        return []
+
+    document_version_ids = list({row["document_version_id"] for row in analysis_rows if row.get("document_version_id")})
+    version_rows = (
+        db.table("document_versions")
+        .select("id, document_id")
+        .in_("id", document_version_ids)
+        .execute()
+        .data
+    )
+    if not version_rows:
+        return []
+    version_to_document = {row["id"]: row["document_id"] for row in version_rows}
+
+    document_ids = list(set(version_to_document.values()))
+    document_rows = (
+        db.table("documents")
+        .select("id, title, canonical_url, published_at, source_id")
+        .in_("id", document_ids)
+        .execute()
+        .data
+    )
+    documents_by_id = {row["id"]: row for row in document_rows}
+
+    source_ids = [row.get("source_id") for row in document_rows if row.get("source_id")]
+    source_rows = (
+        db.table("sources")
+        .select("id, name")
+        .in_("id", list(set(source_ids)) or [""])
+        .execute()
+        .data
+    ) if source_ids else []
+    sources_by_id = {row["id"]: row for row in source_rows}
+
+    rows_by_document_version: dict[str, list[dict[str, Any]]] = {}
+    for row in analysis_rows:
+        document_version_id = row.get("document_version_id")
+        if not document_version_id:
+            continue
+        rows_by_document_version.setdefault(document_version_id, []).append(row)
+
+    selected_results: list[tuple[AnalysisResultForReport, str]] = []
+    for document_version_id in document_version_ids:
+        document_id = version_to_document.get(document_version_id)
+        document = documents_by_id.get(document_id) if document_id else None
+        if document_id is None or document is None:
+            continue
+
+        ready_rows = [
+            row
+            for row in rows_by_document_version.get(document_version_id, [])
+            if _row_is_report_candidate_ready(row)
+        ]
+        selected_row = _select_analysis_row_for_ranking(
+            rows=ready_rows,
+            workspace_id=workspace_id,
+            document_version_id=document_version_id,
+        )
+        if selected_row is None:
+            continue
+
+        source = sources_by_id.get(document.get("source_id"), {}) if document.get("source_id") else {}
+        payload = dict(selected_row)
+        payload["analysis_result_id"] = payload.get("id")
+        payload["title"] = document.get("title") or ""
+        payload["canonical_url"] = document.get("canonical_url")
+        payload["published_at"] = document.get("published_at")
+        payload["source_name"] = source.get("name")
+        selected_results.append((AnalysisResultForReport.model_validate(payload), document_id))
+
+    candidates = [
+        to_report_candidate(result=result, document_id=document_id)
+        for result, document_id in selected_results
+    ]
+    return build_report_candidates(candidates)
