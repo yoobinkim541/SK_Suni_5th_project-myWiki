@@ -46,7 +46,9 @@ def get_default_workspace_id(user_id: str) -> Optional[str]:
     return res.data["workspace_id"] if res.data else None
 
 
-def create_chat_session(workspace_id: str, user_id: str, title: Optional[str] = None) -> dict:
+def create_chat_session(
+    workspace_id: str, user_id: str, title: Optional[str] = None, visibility: str = "private"
+) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     res = (
         get_supabase()
@@ -55,6 +57,7 @@ def create_chat_session(workspace_id: str, user_id: str, title: Optional[str] = 
             "workspace_id": workspace_id,
             "user_id": user_id,
             "title": title,
+            "visibility": visibility,
             "created_at": now,
             "updated_at": now,
         })
@@ -63,7 +66,42 @@ def create_chat_session(workspace_id: str, user_id: str, title: Optional[str] = 
     return res.data[0]
 
 
-def get_chat_session(session_id: str, workspace_id: str) -> Optional[dict]:
+def list_chat_sessions(workspace_id: str, user_id: str, scope: str) -> list[dict]:
+    """scope='mine': 본인 소유 비공개 세션만. scope='team': workspace 전체 공유 세션."""
+    query = get_supabase().table("chat_sessions").select("*").eq("workspace_id", workspace_id)
+    if scope == "mine":
+        query = query.eq("visibility", "private").eq("user_id", user_id)
+    else:
+        query = query.eq("visibility", "team")
+    res = query.order("updated_at", desc=True).execute()
+    return res.data
+
+
+def get_or_create_team_session(workspace_id: str, user_id: str) -> dict:
+    """workspace의 팀 공유 세션을 찾고, 없으면 만든다(공유 대상은 항상 하나로 모은다)."""
+    res = (
+        get_supabase()
+        .table("chat_sessions")
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .eq("visibility", "team")
+        .order("created_at")
+        .limit(1)
+        .maybe_single()
+        .execute()
+    )
+    if res.data:
+        return res.data
+    return create_chat_session(workspace_id, user_id, title="팀 공유 에이전트", visibility="team")
+
+
+def get_chat_session(session_id: str, workspace_id: str, user_id: str) -> Optional[dict]:
+    """
+    visibility='private'인 세션은 소유자(user_id)만 접근 가능하다 — 워크스페이스 소속이라는
+    이유만으로 타인의 비공개 세션을 ID만 알면 읽을 수 있던 문제를 여기서 막는다.
+    visibility='team'인 세션은 같은 workspace 멤버 전원이 접근 가능하다.
+    권한이 없으면 존재 여부를 알려주지 않도록 조회 실패(None)와 동일하게 취급한다.
+    """
     res = (
         get_supabase()
         .table("chat_sessions")
@@ -73,7 +111,12 @@ def get_chat_session(session_id: str, workspace_id: str) -> Optional[dict]:
         .maybe_single()
         .execute()
     )
-    return res.data
+    session = res.data
+    if session is None:
+        return None
+    if session["visibility"] == "private" and session["user_id"] != user_id:
+        return None
+    return session
 
 
 def list_chat_messages(session_id: str) -> list[dict]:
@@ -144,13 +187,89 @@ def save_agent_message(session_id: str, result: AgentResult, prompt_version: str
     return message
 
 
+def _flatten_citation_source_url(row: dict) -> dict:
+    """document_versions(document_id) -> documents(canonical_url) 임베드 결과를 source_url로 펼친다."""
+    document_versions = row.pop("document_versions", None) or {}
+    documents = document_versions.get("documents") or {}
+    row["source_url"] = documents.get("canonical_url")
+    return row
+
+
 def list_message_citations(message_id: str) -> list[dict]:
     res = (
         get_supabase()
         .table("message_citations")
-        .select("*")
+        .select("*, document_versions(document_id, documents(canonical_url))")
         .eq("message_id", message_id)
         .order("citation_order")
         .execute()
     )
+    return [_flatten_citation_source_url(row) for row in res.data]
+
+
+def get_chat_message(message_id: str) -> Optional[dict]:
+    res = (
+        get_supabase()
+        .table("chat_messages")
+        .select("*")
+        .eq("id", message_id)
+        .maybe_single()
+        .execute()
+    )
     return res.data
+
+
+def get_preceding_user_message(session_id: str, before_created_at: str) -> Optional[dict]:
+    """assistant 메시지 바로 앞에 있던 user 질문을 찾는다 — 메시지 쌍을 명시적으로 연결하는
+    FK가 없어서, 같은 세션 안에서 시간순으로 바로 앞의 user 메시지를 그 짝으로 취급한다."""
+    res = (
+        get_supabase()
+        .table("chat_messages")
+        .select("*")
+        .eq("session_id", session_id)
+        .eq("role", "user")
+        .lt("created_at", before_created_at)
+        .order("created_at", desc=True)
+        .limit(1)
+        .maybe_single()
+        .execute()
+    )
+    return res.data
+
+
+def copy_chat_message(target_session_id: str, message: dict) -> dict:
+    res = (
+        get_supabase()
+        .table("chat_messages")
+        .insert({
+            "session_id": target_session_id,
+            "role": message["role"],
+            "content": message["content"],
+            "model_name": message.get("model_name"),
+            "prompt_version": message.get("prompt_version"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        .execute()
+    )
+    return res.data[0]
+
+
+def copy_message_citations(target_message_id: str, citations: list[dict]) -> None:
+    if not citations:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [
+        {
+            "message_id": target_message_id,
+            "document_version_id": c["document_version_id"],
+            "qmd_uri": c.get("qmd_uri"),
+            "source_start_line": c.get("source_start_line"),
+            "source_end_line": c.get("source_end_line"),
+            "quoted_text": c.get("quoted_text"),
+            "relevance_score": c.get("relevance_score"),
+            "citation_order": c.get("citation_order"),
+            "created_at": now,
+        }
+        for c in citations
+    ]
+    get_supabase().table("message_citations").insert(rows).execute()
