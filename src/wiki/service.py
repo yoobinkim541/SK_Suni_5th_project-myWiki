@@ -14,7 +14,7 @@ import hashlib
 from typing import Optional
 
 from .query import WIKI_BUCKET, _get_client
-from .interface import PageType, WikiDraftInput
+from .interface import PageType, WikiDraftInput, WikiSourceInput
 
 
 def upsert_wiki_page(
@@ -113,22 +113,41 @@ def create_wiki_version(draft: WikiDraftInput) -> str:
     )
     version_id = version_res.data[0]["id"]
 
-    if draft.sources:
-        sources_data = [
-            {
-                "wiki_version_id": version_id,
-                "document_version_id": s.document_version_id,
-                "claim_text": s.claim_text,
-                "support_type": s.support_type,
-                "source_start_line": s.source_start_line,
-                "source_end_line": s.source_end_line,
-                "citation_order": s.citation_order if s.citation_order is not None else idx + 1,
-            }
-            for idx, s in enumerate(draft.sources)
-        ]
+    sources_data = _build_source_rows(version_id, draft.sources)
+    if sources_data:
         db.table("wiki_page_sources").insert(sources_data).execute()
 
     return version_id
+
+
+def _build_source_rows(version_id: str, sources: list[WikiSourceInput]) -> list[dict[str, object]]:
+    """Deduplicate identical source rows so repeated save payloads do not accumulate."""
+
+    rows: list[dict[str, object]] = []
+    seen: set[tuple[object, ...]] = set()
+    for source in sources:
+        key = (
+            source.document_version_id,
+            source.claim_text,
+            source.support_type,
+            source.source_start_line,
+            source.source_end_line,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "wiki_version_id": version_id,
+                "document_version_id": source.document_version_id,
+                "claim_text": source.claim_text,
+                "support_type": source.support_type,
+                "source_start_line": source.source_start_line,
+                "source_end_line": source.source_end_line,
+                "citation_order": source.citation_order if source.citation_order is not None else len(rows) + 1,
+            }
+        )
+    return rows
 
 
 def record_wiki_validation(

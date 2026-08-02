@@ -29,7 +29,7 @@ def render_artifact(report_id: str, artifact_type: str, version: int) -> str:
     """
     report_sections를 모아 markdown/pdf 등으로 렌더링하고 Storage에 업로드한 뒤
     artifacts에 기록한다. object_key 규칙:
-    {workspace_id}/reports/{report_id}/{artifact_type}/v{version}.{ext}
+    {workspace_id}/{report_id}/{artifact_type}/v{version}.{ext} (bucket=reports)
     반환값은 생성된 object_key.
     """
     raise NotImplementedError

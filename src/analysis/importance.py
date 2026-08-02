@@ -44,7 +44,6 @@ from .repository import (
 )
 
 logger = logging.getLogger(__name__)
-CURRENT_DATE = datetime(2026, 8, 2)
 
 
 class ImportanceSummaryValidationError(ValueError):
@@ -516,7 +515,7 @@ def _is_already_ended(last_seen_at: str | None) -> bool:
         dt = datetime.fromisoformat(normalized)
     except ValueError:
         return False
-    return (CURRENT_DATE.date() - dt.date()).days > 180
+    return (datetime.now(dt.tzinfo).date() - dt.date()).days > 180
 
 
 def _is_official_source(source_type: str | None) -> bool:

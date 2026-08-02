@@ -683,7 +683,7 @@ CREATE TRIGGER trg_qmd_index_entries_updated_at BEFORE UPDATE ON qmd_index_entri
 -- ============================================================
 
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('raw', 'raw', false), ('processed', 'processed', false), ('wiki', 'wiki', false)
+VALUES ('raw', 'raw', false), ('processed', 'processed', false), ('wiki', 'wiki', false), ('reports', 'reports', false)
 ON CONFLICT (id) DO NOTHING;
 
 
