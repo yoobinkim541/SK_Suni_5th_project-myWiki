@@ -107,8 +107,8 @@ TOOLS = [
 @dataclass
 class Citation:
     document_version_id: str
-    wiki_slug: Optional[str]
     quote: str
+    wiki_slug: Optional[str] = None
     relevance_score: Optional[float] = None
 
 
@@ -133,6 +133,7 @@ class WikiAgent:
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages.extend(history or [])
         messages.append({"role": "user", "content": question})
+        seen_document_version_ids: set[str] = set()
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = self._call_model(messages)
@@ -160,6 +161,7 @@ class WikiAgent:
                     if page is None:
                         messages.append(self._tool_result(tool_call.id, {"error": "문서를 찾을 수 없음"}))
                     else:
+                        seen_document_version_ids.update(s.document_version_id for s in page.sources)
                         messages.append(self._tool_result(tool_call.id, {
                             "title": page.title,
                             "markdown": page.markdown,
@@ -168,9 +170,19 @@ class WikiAgent:
 
                 elif name == "submit_answer":
                     citations = [Citation(**c) for c in args.get("citations", [])]
-                    terminal_result = AgentResult(
-                        has_answer=True, answer=args["answer"], citations=citations,
-                    )
+                    if self._is_grounded(citations, seen_document_version_ids):
+                        terminal_result = AgentResult(
+                            has_answer=True, answer=args["answer"], citations=citations,
+                        )
+                    else:
+                        # citations가 비었거나, read_wiki_page로 실제 조회한 문서에 없는
+                        # document_version_id를 인용했거나(모델의 지어낸 근거), relevance_score가
+                        # CHECK 제약(0~1) 범위를 벗어남 — 이런 답변을 그대로 저장하면 message_citations
+                        # FK/CHECK 위반으로 API가 500을 내거나, 근거 없는 답이 저장된다.
+                        terminal_result = AgentResult(
+                            has_answer=False,
+                            no_answer_reason="인용 근거가 실제로 조회한 문서와 일치하지 않음",
+                        )
                     messages.append(self._tool_result(tool_call.id, {"status": "recorded"}))
 
                 elif name == "submit_no_answer":
@@ -183,6 +195,19 @@ class WikiAgent:
                 return terminal_result
 
         return AgentResult(has_answer=False, no_answer_reason="최대 조회 횟수 초과 — 근거 확정 실패")
+
+    @staticmethod
+    def _is_grounded(citations: list[Citation], seen_document_version_ids: set[str]) -> bool:
+        """citations가 비어있지 않고, 전부 실제로 read_wiki_page로 조회한 문서를
+        인용하며, relevance_score가 있다면 message_citations의 CHECK 제약(0~1) 범위 안인지."""
+        if not citations:
+            return False
+        for citation in citations:
+            if citation.document_version_id not in seen_document_version_ids:
+                return False
+            if citation.relevance_score is not None and not (0.0 <= citation.relevance_score <= 1.0):
+                return False
+        return True
 
     def _call_model(self, messages: list[dict]):
         return self.client.chat.completions.create(
