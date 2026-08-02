@@ -25,6 +25,7 @@ from .repository import (
 from .selector import select_report_candidates
 from .wiki_context import DEFAULT_WIKI_CONTEXT_LIMIT, enrich_issue_groups
 from ..analysis.models import Category
+from ..wiki.generation import generate_wiki_drafts_for_sections
 from ..wiki.interface import search_wiki_contexts
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,24 @@ def generate_daily_report(
             llm_client=llm_client,
         )
         _validate_section_drafts(section_drafts, expected_count=len(issue_groups))
+
+        stage = "generate_wiki_drafts"
+        try:
+            generate_wiki_drafts_for_sections(
+                section_drafts,
+                enriched_groups,
+                workspace_id=request.workspace_id,
+                requested_by=pipeline_config.requested_by,
+            )
+        except Exception:
+            logger.exception(
+                "wiki_draft_generation_failed",
+                extra={
+                    "stage": stage,
+                    "report_id": report.report_id,
+                    "workspace_id": request.workspace_id,
+                },
+            )
 
         stage = "assemble_report"
         assembled_report = assemble_generated_report(
