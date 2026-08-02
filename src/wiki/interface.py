@@ -1,11 +1,16 @@
 """
-src/agent/wiki_tools.py의 WikiTools.read_wiki_page()가 이 파트의 산출물을 그대로 소비한다.
-아래 dataclass 필드명은 agent 쪽 기대값과 맞춰뒀으니 임의로 이름을 바꾸지 않는다.
+`src/agent/wiki_tools.py` consumes this module's write-side contract directly.
+Keep the existing dataclass field names and write function signatures stable.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+
+from supabase import Client
+
+from .models import WikiSearchRequest, WikiSearchResult
+from .repository import search_wiki_contexts as _search_wiki_contexts
 
 
 @dataclass
@@ -14,13 +19,13 @@ class WikiSourceInput:
     claim_text: str
     source_start_line: Optional[int] = None
     source_end_line: Optional[int] = None
-    support_type: str = "supports"  # 'supports' | 'contradicts' | 'context'
+    support_type: str = "supports"
 
 
 def upsert_wiki_page(
     workspace_id: str, slug: str, title: str, page_type: str
 ) -> str:
-    """slug 기준으로 wiki_pages를 찾거나 새로 만들고 id를 반환한다."""
+    """Find or create a wiki page by slug and return its id."""
     raise NotImplementedError
 
 
@@ -32,10 +37,18 @@ def add_wiki_version(
     created_by: Optional[str] = None,
 ) -> str:
     """
-    새 wiki_page_versions를 추가한다 (기존 버전은 절대 수정/삭제하지 않는다).
-    - markdown을 Storage에 업로드하고 markdown_object_key를 채운다
-    - sources를 wiki_page_sources로 저장한다
-    - wiki_pages.current_version_id를 이 새 버전으로 갱신한다
-    반환값은 새 wiki_page_versions.id.
+    Add a new wiki_page_versions row without mutating historical versions.
+    - Upload markdown to Storage and persist markdown_object_key
+    - Persist sources to wiki_page_sources
+    - Update wiki_pages.current_version_id to the new version
+    Return the new wiki_page_versions.id.
     """
     raise NotImplementedError
+
+
+def search_wiki_contexts(
+    request: WikiSearchRequest,
+    *,
+    supabase: Client | None = None,
+) -> list[WikiSearchResult]:
+    return _search_wiki_contexts(request, supabase=supabase)
