@@ -1,7 +1,8 @@
-fastapi>=0.115
+﻿fastapi>=0.115
 uvicorn[standard]>=0.32
 anthropic>=0.40
 supabase>=2.9
 pydantic>=2.9
 pyjwt>=2.9
 python-dotenv>=1.0
+openai>=1.99
