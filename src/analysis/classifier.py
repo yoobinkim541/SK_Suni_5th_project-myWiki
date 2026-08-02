@@ -1,0 +1,165 @@
+﻿from __future__ import annotations
+
+import json
+import os
+from functools import lru_cache
+from typing import Any
+
+from dotenv import load_dotenv
+from pydantic import ValidationError
+
+from .exceptions import (
+    InvalidCategoryError,
+    InvalidJsonResponseError,
+    MissingApiKeyError,
+    OpenRouterApiError,
+    OpenRouterTimeoutError,
+)
+from .models import ALLOWED_CATEGORIES, ClassificationResult
+from .prompts import SYSTEM_PROMPT, build_user_prompt
+
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_OPENROUTER_MODEL = "openai/gpt-4.1-mini"
+DEFAULT_TEMPERATURE = 0
+DEFAULT_TIMEOUT = 30
+DEFAULT_MAX_RETRIES = 1
+
+
+class OpenRouterSettings:
+    def __init__(self) -> None:
+        load_dotenv()
+        self.api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        self.model = os.getenv("OPENROUTER_MODEL", "").strip() or DEFAULT_OPENROUTER_MODEL
+        self.base_url = os.getenv("OPENROUTER_BASE_URL", "").strip() or DEFAULT_OPENROUTER_BASE_URL
+
+
+def get_openrouter_settings() -> OpenRouterSettings:
+    return OpenRouterSettings()
+
+
+def classify_document(
+    *,
+    title: str,
+    markdown: str,
+    source_name: str | None = None,
+    published_at: str | None = None,
+) -> ClassificationResult:
+    settings = get_openrouter_settings()
+    if not settings.api_key:
+        raise MissingApiKeyError("OPENROUTER_API_KEY 환경변수가 설정되지 않았습니다.")
+
+    response = create_json_completion(
+        system_prompt=SYSTEM_PROMPT,
+        user_prompt=build_user_prompt(
+            title=title,
+            markdown=markdown,
+            source_name=source_name,
+            published_at=published_at,
+        ),
+        model=settings.model,
+    )
+    return parse_classification_response(response)
+
+
+def create_json_completion(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    model: str | None = None,
+    temperature: float = DEFAULT_TEMPERATURE,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> str:
+    settings = get_openrouter_settings()
+    if not settings.api_key:
+        raise MissingApiKeyError("OPENROUTER_API_KEY 환경변수가 설정되지 않았습니다.")
+
+    client = get_openrouter_client()
+
+    try:
+        response = client.chat.completions.create(
+            model=model or settings.model,
+            temperature=temperature,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            timeout=timeout,
+        )
+    except Exception as exc:  # pragma: no cover
+        timeout_error = _get_openai_exception("APITimeoutError")
+        api_error = _get_openai_exception("APIError")
+        if timeout_error is not None and isinstance(exc, timeout_error):
+            raise OpenRouterTimeoutError("OpenRouter API 요청이 제한 시간 내에 완료되지 않았습니다.") from exc
+        if api_error is not None and isinstance(exc, api_error):
+            raise OpenRouterApiError("OpenRouter API 호출 중 오류가 발생했습니다.") from exc
+        raise OpenRouterApiError("OpenRouter API 호출에 실패했습니다.") from exc
+
+    return extract_message_content(response)
+
+
+def parse_classification_response(raw_content: str) -> ClassificationResult:
+    payload = parse_json_response(raw_content)
+
+    try:
+        result = ClassificationResult.model_validate(payload)
+    except ValidationError as exc:
+        invalid_categories = [
+            value for value in payload.get("secondary_categories", [])
+            if value not in ALLOWED_CATEGORIES
+        ]
+        primary_category = payload.get("primary_category")
+        if primary_category not in ALLOWED_CATEGORIES or invalid_categories:
+            raise InvalidCategoryError("허용되지 않은 카테고리가 응답에 포함되었습니다.") from exc
+        raise ValueError(str(exc)) from exc
+
+    return result
+
+
+def parse_json_response(raw_content: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(raw_content)
+    except json.JSONDecodeError as exc:
+        raise InvalidJsonResponseError("OpenRouter 응답이 유효한 JSON이 아닙니다.") from exc
+    if not isinstance(payload, dict):
+        raise InvalidJsonResponseError("OpenRouter 응답 JSON 구조가 올바르지 않습니다.")
+    return payload
+
+
+def extract_message_content(response: Any) -> str:
+    choices = getattr(response, "choices", None) or []
+    if not choices:
+        raise InvalidJsonResponseError("OpenRouter 응답에 선택지가 없습니다.")
+
+    message = getattr(choices[0], "message", None)
+    content = getattr(message, "content", None)
+    if not content or not isinstance(content, str):
+        raise InvalidJsonResponseError("OpenRouter 응답 본문이 비어 있습니다.")
+    return content
+
+
+@lru_cache(maxsize=1)
+def _get_openai_constructor():
+    from openai import OpenAI
+
+    return OpenAI
+
+
+@lru_cache(maxsize=1)
+def get_openrouter_client():
+    settings = get_openrouter_settings()
+    constructor = _get_openai_constructor()
+    return constructor(
+        base_url=settings.base_url,
+        api_key=settings.api_key,
+        max_retries=DEFAULT_MAX_RETRIES,
+    )
+
+
+@lru_cache(maxsize=8)
+def _get_openai_exception(name: str):
+    try:
+        module = __import__("openai", fromlist=[name])
+    except ImportError:
+        return None
+    return getattr(module, name, None)

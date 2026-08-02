@@ -1,43 +1,45 @@
 """
-src/wiki/ 팀 간 공개 Python 계약 — DTO + 함수 시그니처.
+Public Wiki contracts shared by Agent and Report layers.
 
-command 함수: 생성·검증·검수·게시 (구현은 service.py, PR 2)
-query 함수:   게시된 Wiki 조회 (구현은 query.py, Agent·Report 공용)
+The command functions are implemented in `service.py`.
+The query functions are implemented in `query.py`.
+The report-side search port is implemented in `repository.py`.
 
-규칙:
-- 아래 dataclass 필드명은 src/agent/wiki_tools.py와 맞춰져 있으므로 임의로 변경하지 않는다.
-- current_version_id 변경은 publish_wiki_version() 에서만 허용한다.
-- 초안 생성만으로 current_version_id 를 바꾸지 않는다.
+Keep the existing DTO field names stable because other modules consume them
+directly.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-PageType = Literal['industry', 'company', 'technology', 'issue', 'term']
-SupportType = Literal['supports', 'contradicts', 'context']
-ValidationStatus = Literal['pending', 'passed', 'failed']
-ReviewDecision = Literal['approved', 'rejected']
+from supabase import Client
 
+from .models import WikiSearchRequest, WikiSearchResult
+from .repository import search_wiki_contexts as _search_wiki_contexts
 
-# ---------------------------------------------------------------------------
-# 입력 DTO
-# ---------------------------------------------------------------------------
+PageType = Literal["industry", "company", "technology", "issue", "term"]
+SupportType = Literal["supports", "contradicts", "context"]
+ValidationStatus = Literal["pending", "passed", "failed"]
+ReviewDecision = Literal["approved", "rejected"]
+
 
 @dataclass(frozen=True)
 class WikiSourceInput:
-    """wiki_page_sources 한 행 삽입용 입력."""
+    """Input row for `wiki_page_sources`."""
+
     document_version_id: str
     claim_text: str
     source_start_line: Optional[int] = None
     source_end_line: Optional[int] = None
-    support_type: SupportType = 'supports'
+    support_type: SupportType = "supports"
     citation_order: Optional[int] = None
 
 
 @dataclass(frozen=True)
 class WikiDraftInput:
-    """create_wiki_version() 단일 진입 DTO."""
+    """Single input DTO for creating a wiki version draft."""
+
     workspace_id: str
     slug: str
     title: str
@@ -47,19 +49,16 @@ class WikiDraftInput:
     change_summary: Optional[str] = None
     parent_page_id: Optional[str] = None
     created_by: Optional[str] = None
-    generated_by: Literal['human', 'llm'] = 'llm'
+    generated_by: Literal["human", "llm"] = "llm"
     generator_model: Optional[str] = None
     generator_prompt_version: Optional[str] = None
     generation_run_id: Optional[str] = None
 
 
-# ---------------------------------------------------------------------------
-# 출력 DTO
-# ---------------------------------------------------------------------------
-
 @dataclass(frozen=True)
 class WikiPageSummary:
-    """list_published_wiki_pages() 목록 항목."""
+    """Item returned from `list_published_wiki_pages()`."""
+
     id: str
     slug: str
     title: str
@@ -71,7 +70,8 @@ class WikiPageSummary:
 
 @dataclass(frozen=True)
 class WikiVersionSummary:
-    """버전 이력 목록 항목."""
+    """Item returned from the wiki version history list."""
+
     id: str
     version_no: int
     change_summary: Optional[str]
@@ -80,7 +80,8 @@ class WikiVersionSummary:
 
 @dataclass(frozen=True)
 class WikiSource:
-    """Wiki 본문의 특정 주장과 그 원문 근거."""
+    """Traceable source attached to a wiki claim."""
+
     document_version_id: str
     citation_order: Optional[int]
     claim_text: Optional[str]
@@ -91,7 +92,8 @@ class WikiSource:
 
 @dataclass(frozen=True)
 class WikiPageContent:
-    """get_published_wiki_page() 상세 응답. 반드시 게시·승인·검증된 버전만 반환한다."""
+    """Published wiki page detail payload."""
+
     page_id: str
     slug: str
     title: str
@@ -111,10 +113,6 @@ class WikiPageContent:
     versions: tuple[WikiVersionSummary, ...]
 
 
-# ---------------------------------------------------------------------------
-# 공개 command 함수 (구현: service.py)
-# ---------------------------------------------------------------------------
-
 def upsert_wiki_page(
     workspace_id: str,
     slug: str,
@@ -122,20 +120,41 @@ def upsert_wiki_page(
     page_type: PageType,
     parent_page_id: Optional[str] = None,
 ) -> str:
-    """slug 기준으로 wiki_pages를 찾거나 새로 만들고 id를 반환한다."""
+    """Find or create a wiki page by slug and return its id."""
+
     from .service import upsert_wiki_page as _impl
+
     return _impl(workspace_id, slug, title, page_type, parent_page_id)
 
 
 def create_wiki_version(draft: WikiDraftInput) -> str:
     """
-    새 wiki_page_versions 초안을 만든다.
-    - review_status='pending', validation_status='pending' 으로 삽입한다.
-    - current_version_id 는 변경하지 않는다.
-    반환값: 새 wiki_page_versions.id
+    Create a new wiki version draft.
+
+    This must not mutate `current_version_id`.
     """
+
     from .service import create_wiki_version as _impl
+
     return _impl(draft)
+
+
+def add_wiki_version(
+    page_id: str,
+    markdown: str,
+    change_summary: str,
+    sources: list[WikiSourceInput],
+    created_by: Optional[str] = None,
+) -> str:
+    """
+    Backward-compatible write entry point expected by existing Agent and tests.
+
+    The newer write contract uses `create_wiki_version()` with `WikiDraftInput`.
+    This legacy function remains exported so older callers fail predictably
+    instead of breaking at import time.
+    """
+
+    raise NotImplementedError
 
 
 def record_wiki_validation(
@@ -143,8 +162,10 @@ def record_wiki_validation(
     validation_status: ValidationStatus,
     confidence_score: Optional[float],
 ) -> None:
-    """wiki_page_versions.validation_status / confidence_score 를 기록한다."""
+    """Record validation status and confidence score."""
+
     from .service import record_wiki_validation as _impl
+
     return _impl(version_id, validation_status, confidence_score)
 
 
@@ -153,17 +174,18 @@ def review_wiki_version(
     reviewer_id: str,
     decision: ReviewDecision,
 ) -> None:
-    """검수 결과를 기록한다. current_version_id 는 변경하지 않는다."""
+    """Record the review result without publishing the version."""
+
     from .service import review_wiki_version as _impl
+
     return _impl(version_id, reviewer_id, decision)
 
 
 def publish_wiki_version(page_id: str, version_id: str) -> None:
-    """
-    validation_status='passed' 이고 review_status='approved' 인 버전만 게시한다.
-    wiki_pages.current_version_id 와 published_at 은 이 함수에서만 변경한다.
-    """
+    """Publish an approved and validated wiki version."""
+
     from .service import publish_wiki_version as _impl
+
     return _impl(page_id, version_id)
 
 
@@ -172,14 +194,12 @@ def request_wiki_index(
     collection_name: str,
     requested_by: Optional[str] = None,
 ) -> str:
-    """QMD 색인 pipeline_job 을 생성하고 job_id 를 반환한다."""
+    """Create a QMD indexing job and return the job id."""
+
     from .service import request_wiki_index as _impl
+
     return _impl(wiki_version_id, collection_name, requested_by)
 
-
-# ---------------------------------------------------------------------------
-# 공용 query 함수 — 구현은 query.py, Agent·Report 공용 진입점
-# ---------------------------------------------------------------------------
 
 def list_published_wiki_pages(
     workspace_id: str,
@@ -188,8 +208,10 @@ def list_published_wiki_pages(
     limit: int = 50,
     offset: int = 0,
 ) -> list[WikiPageSummary]:
-    """게시된 Wiki 페이지 목록을 반환한다."""
+    """Return published wiki pages for a workspace."""
+
     from .query import list_published_wiki_pages as _impl
+
     return _impl(workspace_id, page_type=page_type, query=query, limit=limit, offset=offset)
 
 
@@ -197,14 +219,10 @@ def get_published_wiki_page(
     workspace_id: str,
     slug: str,
 ) -> Optional[WikiPageContent]:
-    """
-    게시된 Wiki 페이지 상세를 반환한다.
-    wiki_pages.status='published'
-    AND wiki_page_versions.validation_status='passed'
-    AND wiki_page_versions.review_status='approved'
-    세 조건을 모두 확인한다.
-    """
+    """Return a published wiki page detail payload."""
+
     from .query import get_published_wiki_page as _impl
+
     return _impl(workspace_id, slug)
 
 
@@ -212,6 +230,18 @@ def list_wiki_versions(
     workspace_id: str,
     page_id: str,
 ) -> list[WikiVersionSummary]:
-    """특정 페이지의 버전 이력을 최신순으로 반환한다."""
+    """Return wiki version history for a page."""
+
     from .query import list_wiki_versions as _impl
+
     return _impl(workspace_id, page_id)
+
+
+def search_wiki_contexts(
+    request: WikiSearchRequest,
+    *,
+    supabase: Client | None = None,
+) -> list[WikiSearchResult]:
+    """Return report-side wiki search results."""
+
+    return _search_wiki_contexts(request, supabase=supabase)

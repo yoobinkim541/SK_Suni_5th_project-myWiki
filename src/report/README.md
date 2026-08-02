@@ -8,7 +8,7 @@
 ## 참고 자료
 - `docs/architecture/myWiki_v2_supabase.sql` — `reports`/`artifacts` UNIQUE·CHECK 제약 꼭 확인
 - `docs/architecture/myWiki_v2.sql` 하단 주석 — `object_key` 경로 네이밍 규칙:
-  `{workspace_id}/reports/{report_id}/{artifact_type}/v{version}.{ext}`
+  bucket=`reports`, object_key=`{workspace_id}/{report_id}/{artifact_type}/v{version}.{ext}`
 
 ## 이 파트가 해야 하는 일
 1. `analysis`가 만든 `SectionDraft` 중 `status='completed'`인 것만 모아서 `reports` + `report_sections`를 채운다.
@@ -17,3 +17,5 @@
    같은 `(report_id, artifact_type, version)` 조합은 만들 수 없다 (`UQ_ARTIFACTS_REPORT_TYPE_VERSION`).
 
 ## 인터페이스 (`interface.py` 참고)
+
+- ?? ??: `src/report/storage.py` ? `DEFAULT_REPORT_ARTIFACT_BUCKET = "reports"`

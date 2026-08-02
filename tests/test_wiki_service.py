@@ -1,3 +1,4 @@
+import os
 import uuid
 
 import pytest
@@ -6,11 +7,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version, publish_wiki_version, request_wiki_index
+from src.wiki.query import get_published_wiki_page
 from src.wiki.query import _get_client
 
 
 @pytest.fixture(scope="module")
 def workspace_id() -> str:
+    if not os.environ.get("SUPABASE_URL") or not (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SECRET_KEY")):
+        pytest.skip("Supabase service credentials are not configured for wiki integration tests.")
     db = _get_client()
     res = db.table("workspaces").select("id").eq("slug", "mywiki").single().execute()
     return res.data["id"]
@@ -58,6 +62,38 @@ def test_create_wiki_version_basic(workspace_id):
     assert content.decode("utf-8") == "# 테스트\n내용입니다."
 
     # teardown
+    db.storage.from_("wiki").remove([obj_key])
+    db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
+    db.table("wiki_page_versions").delete().eq("id", version_id).execute()
+    db.table("wiki_pages").delete().eq("slug", slug).eq("workspace_id", workspace_id).execute()
+
+
+def test_create_wiki_version_deduplicates_identical_sources(workspace_id):
+    slug = f"test-src-dedupe-{uuid.uuid4().hex[:8]}"
+    db = _get_client()
+    doc_ver = db.table("document_versions").select("id").limit(1).execute()
+    if not doc_ver.data:
+        pytest.skip("document_versions ???? ??")
+    doc_ver_id = doc_ver.data[0]["id"]
+
+    draft = WikiDraftInput(
+        workspace_id=workspace_id,
+        slug=slug,
+        title="?? ?? ?? ???",
+        page_type="term",
+        markdown="?? ?? ?? ???",
+        sources=[
+            WikiSourceInput(document_version_id=doc_ver_id, claim_text="?? ??", support_type="supports"),
+            WikiSourceInput(document_version_id=doc_ver_id, claim_text="?? ??", support_type="supports"),
+        ],
+    )
+    version_id = create_wiki_version(draft)
+
+    sources = db.table("wiki_page_sources").select("*").eq("wiki_version_id", version_id).execute()
+    assert len(sources.data) == 1
+
+    ver = db.table("wiki_page_versions").select("markdown_object_key").eq("id", version_id).single().execute()
+    obj_key = ver.data["markdown_object_key"]
     db.storage.from_("wiki").remove([obj_key])
     db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
     db.table("wiki_page_versions").delete().eq("id", version_id).execute()
@@ -149,6 +185,62 @@ def test_publish_wiki_version_raises_if_not_validated(version_id):
     page_id = ver.data["page_id"]
     with pytest.raises(ValueError):
         publish_wiki_version(page_id, version_id)
+
+
+def test_published_page_reads_only_latest_version_sources(workspace_id):
+    slug = f"test-latest-src-{uuid.uuid4().hex[:8]}"
+    db = _get_client()
+    doc_ver_rows = db.table("document_versions").select("id").limit(2).execute()
+    if len(doc_ver_rows.data) < 1:
+        pytest.skip("document_versions ???? ??")
+    first_doc_id = doc_ver_rows.data[0]["id"]
+    second_doc_id = doc_ver_rows.data[-1]["id"]
+
+    first_version_id = create_wiki_version(
+        WikiDraftInput(
+            workspace_id=workspace_id,
+            slug=slug,
+            title="?? ?? ?? ???",
+            page_type="term",
+            markdown="? ?? ??",
+            sources=[WikiSourceInput(document_version_id=first_doc_id, claim_text="? ??")],
+        )
+    )
+    first_version = db.table("wiki_page_versions").select("page_id,markdown_object_key").eq("id", first_version_id).single().execute()
+    page_id = first_version.data["page_id"]
+    first_obj_key = first_version.data["markdown_object_key"]
+
+    second_version_id = create_wiki_version(
+        WikiDraftInput(
+            workspace_id=workspace_id,
+            slug=slug,
+            title="?? ?? ?? ???",
+            page_type="term",
+            markdown="? ?? ??",
+            sources=[WikiSourceInput(document_version_id=second_doc_id, claim_text="?? ??")],
+        )
+    )
+    second_version = db.table("wiki_page_versions").select("markdown_object_key").eq("id", second_version_id).single().execute()
+    second_obj_key = second_version.data["markdown_object_key"]
+
+    record_wiki_validation(second_version_id, "passed", 0.95)
+    profile = db.table("profiles").select("id").limit(1).execute()
+    if not profile.data:
+        pytest.skip("profiles ???? ??")
+    review_wiki_version(second_version_id, profile.data[0]["id"], "approved")
+    publish_wiki_version(page_id, second_version_id)
+
+    published = get_published_wiki_page(workspace_id, slug)
+    assert published is not None
+    assert [source.document_version_id for source in published.sources] == [str(second_doc_id)]
+
+    db.table("wiki_pages").update({"current_version_id": None}).eq("id", page_id).execute()
+    db.storage.from_("wiki").remove([first_obj_key, second_obj_key])
+    db.table("wiki_page_sources").delete().eq("wiki_version_id", first_version_id).execute()
+    db.table("wiki_page_sources").delete().eq("wiki_version_id", second_version_id).execute()
+    db.table("wiki_page_versions").delete().eq("id", first_version_id).execute()
+    db.table("wiki_page_versions").delete().eq("id", second_version_id).execute()
+    db.table("wiki_pages").delete().eq("id", page_id).execute()
 
 
 def test_publish_wiki_version_success(workspace_id):
