@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
-from ..report.models import ReportSectionDraft, WikiContext
-from .generation_models import TopicPageCandidate, TopLevelTopicPage, WikiPageIdentity, WikiTopicLLMResult
+from ..report.models import EnrichedIssueGroup, ReportSectionDraft, WikiContext
+from .generation_models import TopicPageCandidate, TopLevelTopicPage, WikiDraftGenerationResult, WikiPageIdentity, WikiTopicLLMResult
 from .generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_prompt
 from .generation_repository import get_wiki_page_identity, list_top_level_topic_pages
 from .interface import (
@@ -178,3 +178,77 @@ def _generate_topic_page(
         record_wiki_validation(version_id, "pending", confidence)
 
     return result.action, page_id, version_id
+
+
+def generate_wiki_drafts_for_sections(
+    sections: list[ReportSectionDraft],
+    enriched_groups: list[EnrichedIssueGroup],
+    *,
+    workspace_id: str,
+    requested_by: str | None = None,
+) -> list[WikiDraftGenerationResult]:
+    """
+    섹션별로 주제 페이지(Topic)를 먼저 생성하고, 그 결과를 이슈 페이지(Issue)의 parent_page_id로 연결한다.
+
+    주제 페이지 생성 실패가 이슈 페이지 생성을 막지 않으며, 이슈 페이지 생성 실패도 다른 섹션 처리를 막지 않는다.
+    (단계별 실패 격리)
+    """
+    wiki_contexts_by_issue_key = {
+        group.issue_group.issue_key: group.wiki_contexts for group in enriched_groups
+    }
+
+    # 주제 페이지를 먼저 정해야 이슈 페이지의 parent_page_id로 연결할 수 있다.
+    # (upsert_wiki_page는 ignore_duplicates=True라 기존 페이지의 parent_page_id를
+    #  나중에 수정할 방법이 없으므로, 이슈 페이지를 처음 만들 때 값을 넣어야 한다.)
+    results: list[WikiDraftGenerationResult] = []
+    for section in sections:
+        wiki_contexts = wiki_contexts_by_issue_key.get(section.issue_key, [])
+
+        topic_action: str = "skip"
+        topic_page_id: str | None = None
+        topic_version_id: str | None = None
+        topic_error: str | None = None
+        try:
+            topic_action, topic_page_id, topic_version_id = _generate_topic_page(
+                section, wiki_contexts, workspace_id=workspace_id, requested_by=requested_by,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("wiki_topic_page_generation_failed", extra={"issue_key": section.issue_key})
+            topic_action, topic_page_id, topic_version_id = "failed", None, None
+            topic_error = str(exc)
+
+        try:
+            issue_page_id, issue_version_id = _generate_issue_page(
+                section,
+                workspace_id=workspace_id,
+                requested_by=requested_by,
+                parent_page_id=topic_page_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("wiki_issue_page_generation_failed", extra={"issue_key": section.issue_key})
+            results.append(
+                WikiDraftGenerationResult(
+                    issue_key=section.issue_key,
+                    issue_page_id="",
+                    issue_version_id="",
+                    topic_action=topic_action,
+                    topic_page_id=topic_page_id,
+                    topic_version_id=topic_version_id,
+                    error_message=str(exc) if topic_error is None else f"{topic_error}; {exc}",
+                )
+            )
+            continue
+
+        results.append(
+            WikiDraftGenerationResult(
+                issue_key=section.issue_key,
+                issue_page_id=issue_page_id,
+                issue_version_id=issue_version_id,
+                topic_action=topic_action,
+                topic_page_id=topic_page_id,
+                topic_version_id=topic_version_id,
+                error_message=topic_error,
+            )
+        )
+
+    return results

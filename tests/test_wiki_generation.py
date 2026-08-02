@@ -5,7 +5,14 @@ import json
 import pytest
 
 from src.analysis.models import Category
-from src.report.models import ReportCitationDraft, ReportSectionDraft, WikiContext
+from src.report.models import (
+    EnrichedIssueGroup,
+    IssueGroup,
+    ReportCandidate,
+    ReportCitationDraft,
+    ReportSectionDraft,
+    WikiContext,
+)
 from src.wiki import generation
 
 
@@ -255,3 +262,122 @@ def test_generate_topic_page_leaves_pending_when_confidence_low(monkeypatch):
     assert version_id == "version-3"
     assert not any(call[0] in ("review", "publish") for call in calls)
     assert ("validate", ("version-3", "pending", 0.3)) in calls
+
+
+def _enriched_group(issue_key: str, wiki_contexts=None) -> EnrichedIssueGroup:
+    candidate = ReportCandidate(
+        analysis_result_id="analysis-1",
+        workspace_id="ws-1",
+        document_id="doc-1",
+        document_version_id="doc-1",
+        category=Category.PRODUCT_TECHNOLOGY,
+        title="HBM4 공급 부족 심화",
+        reliability_score=80,
+        importance_score=85,
+        ranking_score=90,
+    )
+    return EnrichedIssueGroup(
+        issue_group=IssueGroup(issue_key=issue_key, category=Category.PRODUCT_TECHNOLOGY, candidates=[candidate]),
+        wiki_contexts=wiki_contexts or [],
+    )
+
+
+def test_generate_wiki_drafts_for_sections_isolates_issue_page_failures(monkeypatch):
+    """토픽 생성은 성공했는데 이슈 페이지 생성이 실패해도, 다른 이슈 처리는 막지 않는다."""
+    section_ok = _section("issue-ok")
+    section_fail = _section("issue-fail")
+
+    def fake_generate_topic_page(section, wiki_contexts, *, workspace_id, requested_by):
+        return "skip", None, None
+
+    def fake_generate_issue_page(section, *, workspace_id, requested_by, parent_page_id=None):
+        if section.issue_key == "issue-fail":
+            raise RuntimeError("Storage 업로드 실패")
+        return "page-ok", "version-ok"
+
+    monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+
+    results = generation.generate_wiki_drafts_for_sections(
+        [section_ok, section_fail],
+        [_enriched_group("issue-ok"), _enriched_group("issue-fail")],
+        workspace_id="ws-1",
+    )
+
+    assert len(results) == 2
+    ok_result = next(r for r in results if r.issue_key == "issue-ok")
+    fail_result = next(r for r in results if r.issue_key == "issue-fail")
+    assert ok_result.issue_page_id == "page-ok"
+    assert fail_result.issue_page_id == ""
+    assert fail_result.error_message is not None
+
+
+def test_generate_wiki_drafts_for_sections_isolates_topic_page_failures(monkeypatch):
+    """토픽 생성이 LLM 오류로 실패해도 이슈 페이지는 정상 생성된다."""
+
+    def fake_generate_topic_page(section, wiki_contexts, *, workspace_id, requested_by):
+        raise RuntimeError("LLM JSON 파싱 실패")
+
+    def fake_generate_issue_page(section, *, workspace_id, requested_by, parent_page_id=None):
+        return "page-ok", "version-ok"
+
+    monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+
+    results = generation.generate_wiki_drafts_for_sections(
+        [_section("issue-ok")],
+        [_enriched_group("issue-ok")],
+        workspace_id="ws-1",
+    )
+
+    assert len(results) == 1
+    assert results[0].issue_page_id == "page-ok"
+    assert results[0].topic_action == "failed"
+    assert results[0].error_message is not None
+
+
+def test_generate_wiki_drafts_for_sections_links_issue_page_to_resolved_topic(monkeypatch):
+    """토픽 페이지가 만들어지면, 이슈 페이지의 parent_page_id로 그 id가 전달된다."""
+    seen_parent_ids = []
+
+    monkeypatch.setattr(
+        generation,
+        "_generate_topic_page",
+        lambda section, wiki_contexts, **kwargs: ("create_new", "page-topic", "version-topic"),
+    )
+
+    def fake_generate_issue_page(section, *, workspace_id, requested_by, parent_page_id=None):
+        seen_parent_ids.append(parent_page_id)
+        return "page-issue", "version-issue"
+
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+
+    generation.generate_wiki_drafts_for_sections(
+        [_section("issue-ok")],
+        [_enriched_group("issue-ok")],
+        workspace_id="ws-1",
+    )
+
+    assert seen_parent_ids == ["page-topic"]
+
+
+def test_generate_wiki_drafts_for_sections_passes_matching_wiki_contexts(monkeypatch):
+    seen_contexts = []
+
+    def fake_generate_topic_page(section, wiki_contexts, **kwargs):
+        seen_contexts.append(wiki_contexts)
+        return "skip", None, None
+
+    monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
+    monkeypatch.setattr(
+        generation, "_generate_issue_page", lambda section, **kwargs: ("page-1", "version-1")
+    )
+
+    wiki_context = WikiContext(wiki_page_id="page-existing", title="HBM4_수급현황", content="본문")
+    generation.generate_wiki_drafts_for_sections(
+        [_section("issue-ok")],
+        [_enriched_group("issue-ok", wiki_contexts=[wiki_context])],
+        workspace_id="ws-1",
+    )
+
+    assert seen_contexts == [[wiki_context]]
