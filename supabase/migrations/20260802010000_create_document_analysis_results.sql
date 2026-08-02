@@ -1,4 +1,4 @@
-﻿CREATE TABLE public.document_analysis_results (
+CREATE TABLE IF NOT EXISTS public.document_analysis_results (
     id uuid NOT NULL DEFAULT gen_random_uuid(),
     workspace_id uuid NOT NULL,
     document_version_id uuid NOT NULL,
@@ -15,8 +15,8 @@
     updated_at timestamp with time zone NOT NULL DEFAULT now(),
 
     CONSTRAINT document_analysis_results_pkey PRIMARY KEY (id),
-    CONSTRAINT fk_dar_workspace FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id),
-    CONSTRAINT fk_dar_document_version FOREIGN KEY (document_version_id) REFERENCES public.document_versions(id),
+    CONSTRAINT fk_dar_workspace FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE,
+    CONSTRAINT fk_dar_document_version FOREIGN KEY (document_version_id) REFERENCES public.document_versions(id) ON DELETE CASCADE,
     CONSTRAINT document_analysis_results_status_check CHECK (
         status::text = ANY (
             ARRAY[
@@ -78,21 +78,22 @@
     )
 );
 
-CREATE INDEX idx_document_analysis_results_workspace
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_workspace
 ON public.document_analysis_results(workspace_id);
 
-CREATE INDEX idx_document_analysis_results_document_version
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_document_version
 ON public.document_analysis_results(document_version_id);
 
-CREATE INDEX idx_document_analysis_results_category
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_category
 ON public.document_analysis_results(primary_category);
 
-CREATE INDEX idx_document_analysis_results_completed
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_completed
 ON public.document_analysis_results(workspace_id, status, classified_at DESC)
 WHERE status = 'completed';
 
+DROP TRIGGER IF EXISTS trg_document_analysis_results_updated_at ON public.document_analysis_results;
 CREATE TRIGGER trg_document_analysis_results_updated_at
 BEFORE UPDATE ON public.document_analysis_results
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- RLS는 기존 workspace 기반 정책 패턴을 확인한 뒤 별도 migration에서 적용하는 것이 안전하다.
+-- RLS는 20260802070000_enable_rls_analysis_report_tables.sql 에서 적용한다.

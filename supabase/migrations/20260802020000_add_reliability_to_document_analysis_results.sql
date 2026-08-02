@@ -1,23 +1,3 @@
-﻿CREATE INDEX IF NOT EXISTS idx_document_analysis_results_reliability_status
-ON public.document_analysis_results(
-    workspace_id,
-    reliability_status
-);
-
-CREATE INDEX IF NOT EXISTS idx_document_analysis_results_reliability_score
-ON public.document_analysis_results(
-    workspace_id,
-    reliability_score DESC
-)
-WHERE reliability_status = 'completed';
-
-CREATE INDEX IF NOT EXISTS idx_document_analysis_results_reliability_level
-ON public.document_analysis_results(
-    workspace_id,
-    reliability_level
-)
-WHERE reliability_status = 'completed';
-
 ALTER TABLE public.document_analysis_results
 ADD COLUMN IF NOT EXISTS reliability_status character varying NOT NULL DEFAULT 'pending',
 ADD COLUMN IF NOT EXISTS reliability_score integer,
@@ -33,6 +13,7 @@ ADD COLUMN IF NOT EXISTS reliability_model_name character varying,
 ADD COLUMN IF NOT EXISTS reliability_prompt_version character varying,
 ADD COLUMN IF NOT EXISTS reliability_evaluated_at timestamp with time zone,
 ADD COLUMN IF NOT EXISTS reliability_error_message text;
+
 
 DO $$
 BEGIN
@@ -183,3 +164,23 @@ BEGIN
 END $$;
 
 -- RLS는 기존 workspace 기반 정책 확인 후 별도 적용 권장
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_reliability_status
+ON public.document_analysis_results(
+    workspace_id,
+    reliability_status
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_reliability_score
+ON public.document_analysis_results(
+    workspace_id,
+    reliability_score DESC
+)
+WHERE reliability_status = 'completed';
+
+CREATE INDEX IF NOT EXISTS idx_document_analysis_results_reliability_level
+ON public.document_analysis_results(
+    workspace_id,
+    reliability_level
+)
+WHERE reliability_status = 'completed';
