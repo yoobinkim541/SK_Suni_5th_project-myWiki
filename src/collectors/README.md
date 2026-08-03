@@ -102,6 +102,45 @@ register_source(ws, name="GNews - semiconductor", source_type="news",
                 config={"provider": "gnews", "query": "semiconductor", "lang": "en"})
 ```
 
+### 네이버 호출 경로 (`config.api_variant`)
+
+네이버 검색 API는 제공 경로가 두 개다. 응답 바디 구조가 같아서 `fetchers.py`는
+호스트·경로·헤더 이름만 가르고 items 파싱은 한 벌을 공유한다.
+
+| `api_variant` | 엔드포인트 | 인증 헤더 |
+|---|---|---|
+| `apihub` (기본) | `https://naverapihub.apigw.ntruss.com/search/v1/news` | `X-NCP-APIGW-API-KEY-ID` · `X-NCP-APIGW-API-KEY` |
+| `legacy` | `https://openapi.naver.com/v1/search/news.json` | `X-Naver-Client-Id` · `X-Naver-Client-Secret` |
+
+```python
+register_source(ws, name="네이버 - HBM", source_type="news",
+                config={"provider": "naver", "query": "HBM", "api_variant": "apihub"})
+```
+
+**구 개발자센터(`legacy`)는 2026-07-31부로 신규 발급이 막혔고 2027-06-30에 종료된다.**
+그래서 기본값이 `apihub`다. 개발자센터에서 받은 기존 키가 아직 살아 있는 소스만
+`api_variant: "legacy"`를 명시해서 쓴다. NCP에서 발급한 키를 구 주소로 보내면
+(또는 그 반대) 401 `NID AUTH Result Invalid`가 난다.
+
+키는 어느 쪽이든 환경변수 `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET`로 읽는다.
+API HUB 콘솔도 이 값을 Client ID / Client Secret이라고 부른다.
+
+> **발급 위치** — NCP 콘솔 > All Services > Application Services >
+> NAVER API HUB > Application > 「인증 정보」
+> NCP 계정의 **Access Key ID / Secret Key와는 다른 값이다.** 혼동해서 넣으면 똑같이 401이 난다.
+
+오류는 계층에 따라 응답 구조가 다르다. 둘 다 읽어야 원인이 보여서
+`_naver_error_reason()`이 양쪽을 처리한다.
+
+```
+게이트웨이 (인증·라우팅)  {"error": {"errorCode": "200", "message": ..., "details": ...}}
+검색 API (파라미터 검증)  {"errorCode": "SE02", "errorMessage": ...}
+```
+
+401은 키 값 오류 / 헤더 미설정 / 애플리케이션에 API 권한 없음 셋 중 하나이고,
+429는 하루 호출 한도(25,000회/일) 초과라 다음 날 재시도하면 풀린다.
+둘 다 `FetchError`로 올려 `pipeline_jobs`에 남긴다 — 조용히 0건으로 넘어가지 않는다.
+
 ### 제공자 선택 근거 (2026-08-03 실측)
 
 | | 실시간성 | 무료 한도 | 한국어 | 영문 |
@@ -126,7 +165,7 @@ register_source(ws, name="GNews - semiconductor", source_type="news",
 | 변수 | 용도 |
 |---|---|
 | `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` | 배치 접속 (위 "DB 접속" 절) |
-| `NAVER_CLIENT_ID` · `NAVER_CLIENT_SECRET` | `config.provider='naver'`인 소스를 쓸 때만 |
+| `NAVER_CLIENT_ID` · `NAVER_CLIENT_SECRET` | `config.provider='naver'`인 소스를 쓸 때만. NAVER API HUB 「인증 정보」의 Client ID/Secret (NCP Access Key와 다름) |
 | `GNEWS_API_KEY` | `config.provider='gnews'`인 소스를 쓸 때만 |
 
 키 값은 `.env`에만 두고 코드·문서·대화·커밋 어디에도 적지 않는다.

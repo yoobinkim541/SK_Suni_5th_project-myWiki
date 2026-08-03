@@ -19,6 +19,7 @@ from . import db
 from .constants import (
     DOC_STATUS_ACTIVE,
     JOB_TYPE_COLLECT,
+    JOB_TYPE_PARSE_DOCUMENT,
     STATUS_COMPLETED,
     TARGET_TYPE_DOCUMENT,
 )
@@ -90,6 +91,19 @@ def insert_source(
     # TODO(미확정): 지침 §9-A-6 / 명세 §8 잔류 6번
     res = db.get_client().table("sources").insert(row).execute()
     return _rows(res)[0]
+
+
+def list_enabled_sources(workspace_id: UUID) -> list[dict]:
+    """워크스페이스의 enabled=true 출처 전체. 배치 진입점이 소스 목록을 도는 데 쓴다."""
+    res = (
+        db.get_client()
+        .table("sources")
+        .select("*")
+        .eq("workspace_id", str(workspace_id))
+        .eq("enabled", True)
+        .execute()
+    )
+    return _rows(res)
 
 
 def get_sources_by_ids(source_ids: list[UUID], workspace_id: UUID) -> dict[str, dict]:
@@ -204,9 +218,103 @@ def set_document_status(document_id: UUID, workspace_id: UUID, status: str) -> d
     return _first(res)
 
 
+def list_active_documents(workspace_id: UUID) -> list[dict]:
+    """워크스페이스의 status='active' 문서 전체. 정제 대기 목록 산출의 1단계다."""
+    res = (
+        db.get_client()
+        .table("documents")
+        .select("*")
+        .eq("workspace_id", str(workspace_id))
+        .eq("status", DOC_STATUS_ACTIVE)
+        .execute()
+    )
+    return _rows(res)
+
+
 # ------------------------------------------------------------
 # document_versions
 # ------------------------------------------------------------
+
+
+def latest_versions_by_document(document_ids: list[UUID | str]) -> dict[str, dict]:
+    """document_id -> 가장 최근 version_no 행. 버전이 없는 문서는 키가 없다.
+
+    정제 대기 목록을 만들 때 문서마다 latest_version()을 부르면 N+1이 된다.
+    한 번에 받아 파이썬에서 문서별 최댓값을 고른다.
+
+    workspace 필터가 없다 — document_versions에는 workspace_id 컬럼이 없으므로
+    (명세 §4-3) 호출자가 workspace로 걸러낸 document_ids를 넘겨야 한다.
+    """
+    if not document_ids:
+        return {}
+    res = (
+        db.get_client()
+        .table("document_versions")
+        .select("*")
+        .in_("document_id", [str(did) for did in document_ids])
+        .execute()
+    )
+    latest: dict[str, dict] = {}
+    for row in _rows(res):
+        key = str(row["document_id"])
+        current = latest.get(key)
+        if current is None or int(row["version_no"]) > int(current["version_no"]):
+            latest[key] = row
+    return latest
+
+
+def latest_completed_parse_jobs_by_document(
+    workspace_id: UUID, document_ids: list[UUID | str]
+) -> dict[str, dict]:
+    """document_id -> 가장 최근 완료된 parse_document job.
+
+    "언제 마지막으로 정제했는가"를 document_versions.created_at만으로는 알 수 없다.
+    내용이 그대로면 preprocess()가 기존 버전을 재사용해 새 행을 만들지 않으므로
+    (명세 §3-3) 버전 시각이 갱신되지 않고, 그 문서는 재수집될 때마다 영원히
+    재정제 대상으로 남는다. 실제로 정제를 돌린 시각은 이 job에 남는다.
+    """
+    return _latest_jobs_by_target(workspace_id, JOB_TYPE_PARSE_DOCUMENT, document_ids)
+
+
+def latest_completed_collect_jobs_by_document(
+    workspace_id: UUID, document_ids: list[UUID | str]
+) -> dict[str, dict]:
+    """document_id -> 가장 최근 완료된 문서 단위 collect job.
+
+    latest_completed_collect_job()의 목록 판이다. 정제 대기 목록을 만들 때
+    문서마다 그 함수를 부르면 N+1이 된다.
+
+    최신 판정은 latest_completed_collect_job()과 같게 created_at 기준이다.
+    """
+    return _latest_jobs_by_target(workspace_id, JOB_TYPE_COLLECT, document_ids)
+
+
+def _latest_jobs_by_target(
+    workspace_id: UUID, job_type: str, document_ids: list[UUID | str]
+) -> dict[str, dict]:
+    """target_id -> 해당 job_type의 가장 최근 완료 job. 목록 단위 1회 조회 (N+1 금지)."""
+    if not document_ids:
+        return {}
+    res = (
+        db.get_client()
+        .table("pipeline_jobs")
+        .select("*")
+        .eq("workspace_id", str(workspace_id))
+        .eq("job_type", job_type)
+        .eq("target_type", TARGET_TYPE_DOCUMENT)
+        .eq("status", STATUS_COMPLETED)
+        .in_("target_id", [str(did) for did in document_ids])
+        .execute()
+    )
+    latest: dict[str, dict] = {}
+    for row in _rows(res):
+        key = str(row["target_id"])
+        current = latest.get(key)
+        if current is None or str(row.get("created_at") or "") > str(
+            current.get("created_at") or ""
+        ):
+            latest[key] = row
+    return latest
 
 
 def find_version_by_hash(document_id: UUID, content_hash: str) -> dict | None:

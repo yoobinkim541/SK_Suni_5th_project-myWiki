@@ -34,12 +34,19 @@ PARSER_VERSIONS = {
 
 # 정제 대상에서 통째로 걷어내는 태그
 _NOISE_TAGS = (
-    "script", "style", "noscript", "iframe", "form", "svg",
+    "script", "style", "noscript", "iframe", "svg",
     "nav", "header", "footer", "aside",
 )
 
-# 본문일 가능성이 높은 순서
-_MAIN_SELECTORS = ("article", "main", "[role=main]", "#content", ".article-body")
+# 내용은 남기고 태그만 벗기는 태그. ASP.NET WebForms 계열 국내 언론사(예: 뉴스토마토)는
+# 페이지 전체를 <form id="aspnetForm">으로 감싸므로, form을 _NOISE_TAGS처럼 decompose()하면
+# 본문까지 통째로 사라져 "정제 결과가 비어 있다"로 실패한다.
+_UNWRAP_TAGS = ("form",)
+
+# 본문일 가능성이 높은 순서. class/id 기반 선택자를 태그 선택자보다 먼저 둔다 —
+# 일부 언론사(예: 한경)는 <article>이 광고·메뉴까지 포함하는 바깥 wrapper라서
+# <article>을 먼저 매칭하면 본문 대신 그 wrapper 전체가 뽑힌다.
+_MAIN_SELECTORS = (".article-body", "#content", "[role=main]", "article", "main")
 
 _BLANK_LINES = re.compile(r"\n{4,}")
 _HANGUL = re.compile(r"[가-힣]")
@@ -147,6 +154,8 @@ def _parse_html(body: bytes, content_type: str) -> tuple[str, str | None, str | 
 
     for tag in soup(list(_NOISE_TAGS)):
         tag.decompose()
+    for tag in soup(list(_UNWRAP_TAGS)):
+        tag.unwrap()
 
     node = None
     for selector in _MAIN_SELECTORS:
