@@ -54,5 +54,5 @@ class WikiPageIdentity(BaseModel):
     page_id: str
     slug: str
     title: str
-    page_type: TopicPageType
+    page_type: TopicPageType | Literal["issue"]
     parent_page_id: str | None = None
