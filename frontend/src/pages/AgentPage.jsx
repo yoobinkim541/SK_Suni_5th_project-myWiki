@@ -7,63 +7,140 @@
 //  · "+ 새 대화"를 누르면 빈 대화가 하나 생기고 바로 그 대화로 들어갑니다.
 //  · 입력창에서 보낸 질문은 그 대화에만 쌓입니다(탭을 옮겨도 유지).
 //
-// 답변은 아직 백엔드가 없어 services/wikiApi.js의 고정 응답(MOCK_AGENT_REPLY)을 씁니다.
+// 데이터는 services/agentApi.js를 통해서만 가져옵니다.
+// VITE_USE_MOCK=true면 목업, false면 실제 백엔드(api/agent.js)를 호출합니다.
 
-import { useState } from 'react';
-import { MOCK_AGENT_PANES, MOCK_AGENT_REPLY } from '../data/mockWiki';
+import { useEffect, useState } from 'react';
 import { getSource } from '../services/wikiApi';
+import {
+  fetchAgentPanes,
+  fetchConversation,
+  createConversation,
+  askAgent,
+} from '../services/agentApi';
 import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
 
 const PANE_KEYS = ['team', 'mine'];
 
+// 출처 key가 없을 때 쓰는 기본값.
+// 백엔드 citations에는 document_version_id만 있고 출처 종류(공시/뉴스)가 없습니다.
+// 임의로 지어내면 잘못된 근거를 표시하게 되므로, 확인 불가임을 그대로 드러냅니다.
+const UNKNOWN_SOURCE = { name: '출처 확인 중', url: null, title: '출처 정보 없음' };
+
 export default function AgentPage() {
-  const [panes, setPanes] = useState(MOCK_AGENT_PANES);
+  const [panes, setPanes] = useState(null);
   const [activePane, setActivePane] = useState('team');
-  const [currentIds, setCurrentIds] = useState({
-    team: MOCK_AGENT_PANES.team.conversations[0].id,
-    mine: MOCK_AGENT_PANES.mine.conversations[0].id,
-  });
+  const [currentIds, setCurrentIds] = useState({ team: null, mine: null });
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(null);
 
-  const pane = panes[activePane];
+  // 최초 진입 시 대화 목록을 불러옵니다.
+  useEffect(() => {
+    let alive = true;
+    fetchAgentPanes()
+      .then((data) => {
+        if (!alive) return;
+        setPanes(data);
+        setCurrentIds({
+          team: data.team.conversations[0]?.id ?? null,
+          mine: data.mine.conversations[0]?.id ?? null,
+        });
+      })
+      .catch((e) => alive && setError(e.message || '대화 목록을 불러오지 못했습니다.'));
+    return () => { alive = false; };
+  }, []);
+
+  const pane = panes?.[activePane];
   const current =
-    pane.conversations.find((c) => c.id === currentIds[activePane]) || pane.conversations[0];
+    pane?.conversations.find((c) => c.id === currentIds[activePane]) ||
+    pane?.conversations[0] ||
+    null;
 
-  function handleSend(text) {
+  // 대화방을 바꿀 때 아직 메시지를 안 불러왔으면 여기서 채웁니다.
+  useEffect(() => {
+    if (!current || current._loaded === undefined || current._loaded) return;
+    let alive = true;
+    fetchConversation(current.id)
+      .then(({ messages, evidence }) => {
+        if (!alive) return;
+        updateConversation(current.id, (c) => ({ ...c, messages, evidence, _loaded: true }));
+      })
+      .catch((e) => alive && setError(e.message || '대화를 불러오지 못했습니다.'));
+    return () => { alive = false; };
+  }, [current?.id]);
+
+  // 현재 pane의 대화 하나만 바꾸는 공용 헬퍼.
+  function updateConversation(id, fn) {
     setPanes((prev) => ({
       ...prev,
       [activePane]: {
         ...prev[activePane],
-        conversations: prev[activePane].conversations.map((c) =>
-          c.id !== current.id
-            ? c
-            : {
-                ...c,
-                messages: [
-                  ...c.messages,
-                  { role: 'me', text, ...(activePane === 'team' ? { author: { initial: 'J', name: '김주현' } } : {}) },
-                  { role: 'ai', ...MOCK_AGENT_REPLY },
-                ],
-              }
-        ),
+        conversations: prev[activePane].conversations.map((c) => (c.id !== id ? c : fn(c))),
       },
     }));
   }
 
-  function handleNewConversation() {
+  async function handleSend(text) {
+    if (!current || sending) return;
+    setSending(true);
+    setError(null);
+
+    // 보낸 질문을 먼저 화면에 올려 응답을 기다리는 동안 비어 보이지 않게 합니다.
+    const optimistic = {
+      role: 'me',
+      text,
+      ...(activePane === 'team' ? { author: { initial: 'J', name: '김주현' } } : {}),
+    };
+    updateConversation(current.id, (c) => ({ ...c, messages: [...c.messages, optimistic] }));
+
+    try {
+      const { aiMessage, evidence } = await askAgent(current.id, text);
+      updateConversation(current.id, (c) => ({
+        ...c,
+        messages: [...c.messages, aiMessage],
+        evidence: evidence.length ? evidence : c.evidence,
+      }));
+    } catch (e) {
+      setError(e.message || '답변을 가져오지 못했습니다.');
+      // 실패한 질문은 되돌립니다.
+      updateConversation(current.id, (c) => ({ ...c, messages: c.messages.slice(0, -1) }));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleNewConversation() {
     const n = pane.conversations.length + 1;
-    const id = `${activePane}-new-${n}`;
-    setPanes((prev) => ({
-      ...prev,
-      [activePane]: {
-        ...prev[activePane],
-        conversations: [
-          ...prev[activePane].conversations,
-          { id, title: `새 대화 ${n}`, meta: '방금', messages: [], evidence: [] },
-        ],
-      },
-    }));
-    setCurrentIds((prev) => ({ ...prev, [activePane]: id }));
+    try {
+      const conv = await createConversation(`새 대화 ${n}`);
+      setPanes((prev) => ({
+        ...prev,
+        [activePane]: {
+          ...prev[activePane],
+          conversations: [...prev[activePane].conversations, { ...conv, _loaded: true }],
+        },
+      }));
+      setCurrentIds((prev) => ({ ...prev, [activePane]: conv.id }));
+    } catch (e) {
+      setError(e.message || '새 대화를 만들지 못했습니다.');
+    }
+  }
+
+  if (error && !panes) {
+    return (
+      <section className="view on" id="v-agent">
+        <div className="empty-conv">{error}</div>
+      </section>
+    );
+  }
+
+  if (!panes || !current) {
+    return (
+      <section className="view on" id="v-agent">
+        <div className="empty-conv">불러오는 중…</div>
+      </section>
+    );
   }
 
   return (
@@ -132,10 +209,13 @@ export default function AgentPage() {
               </div>
             ) : (
               current.messages.map((m, i) => (
-                <ChatMessage key={i} message={m} flag={pane.flag} flagPriv={pane.flagPriv} />
+                <ChatMessage key={m._id ?? i} message={m} flag={pane.flag} flagPriv={pane.flagPriv} />
               ))
             )}
+            {sending && <div className="empty-conv">근거를 확인하는 중…</div>}
           </div>
+
+          {error && <div className="empty-conv">{error}</div>}
 
           <ChatComposer
             placeholder={pane.placeholder}
@@ -152,7 +232,8 @@ export default function AgentPage() {
         <div className="col">
           <h5>근거 원문<span className="c">{current.evidence.length}</span></h5>
           {current.evidence.map((e) => {
-            const src = getSource(e.key);
+            // e.key가 null일 수 있습니다(백엔드가 출처 종류를 주지 않는 경우).
+            const src = (e.key && getSource(e.key)) || UNKNOWN_SOURCE;
             const isDoc = src.name.includes('공시') || src.name.includes('IR');
             return (
               <div className="ev" key={e.no}>
@@ -163,9 +244,11 @@ export default function AgentPage() {
                 <h6>{e.title}</h6>
                 <div className="x">{e.excerpt}</div>
                 <div className="f">{e.foot}</div>
-                <a className="lk" href={src.url} target="_blank" rel="noopener">
-                  {isDoc ? 'DART 원문 열기 ↗' : '원문 열기 ↗'}
-                </a>
+                {src.url && (
+                  <a className="lk" href={src.url} target="_blank" rel="noopener">
+                    {isDoc ? 'DART 원문 열기 ↗' : '원문 열기 ↗'}
+                  </a>
+                )}
               </div>
             );
           })}
