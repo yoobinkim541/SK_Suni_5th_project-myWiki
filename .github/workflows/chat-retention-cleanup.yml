@@ -1,0 +1,26 @@
+name: Chat Retention Cleanup
+
+on:
+  schedule:
+    - cron: "13 3 * * *" # 매일 새벽 3시 13분(부하 회피), 하루 1회면 충분
+  workflow_dispatch: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run chat retention cleanup
+        run: python scripts/cleanup_old_chats.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

@@ -1,0 +1,27 @@
+name: Wiki Refresh Gate
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # 30분마다 — 실제 갱신 여부는 스크립트 안에서 주기 설정을 보고 판단
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run wiki refresh gate
+        run: python scripts/refresh_wiki_scheduled.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
