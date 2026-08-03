@@ -19,7 +19,7 @@ SYSTEM_PROMPT = """당신은 SK하이닉스와 반도체 산업 동향을 분석
 분류 기준:
 
 제품·기술:
-반도체 제품, 공정, 성능, 연구개발, 신기술, 메모리 기술, 패키징 기술이 핵심인 기사
+반도체 제품, 공정, 성능, 연구개발, 신기술, 메모리 기술, 패키징 기술과 HBM, DRAM, NAND, DDR, LPDDR, 메모리, AI 메모리 이슈가 핵심인 기사
 
 경쟁사:
 삼성전자, 마이크론, TSMC, 인텔, 키옥시아 등 SK하이닉스 경쟁사의 전략, 투자, 실적, 제품 및 시장 행동이 핵심인 기사
@@ -117,3 +117,4 @@ def _select_article_excerpt(markdown: str) -> str:
 
     logging.info("article truncated from %s to %s chars", len(normalized), len(excerpt))
     return excerpt[:MAX_ARTICLE_CHARS]
+
