@@ -25,8 +25,8 @@
 //      프로필 쪽은 실제로 연결된 컴포넌트가 없었어서 이번에 처음 붙였습니다.
 //    - 알림 상태(notiReport/notiWiki)는 다크모드처럼 여기서 들고 SettingsPage에도 그대로
 //      내려줘서, 상단 드롭다운과 설정 페이지가 항상 같은 값을 보게 했습니다.
-//    - authed는 백엔드 인증이 없어서 로컬 상태입니다. 로그인/로그아웃 버튼을 눌러도
-//      이 상태만 토글될 뿐 실제 세션은 만들어지지 않습니다(README "다음 작업" 참고).
+//    - authed/profile은 실제 Supabase 세션(api/auth.js, api/supabaseClient.js)을 따라갑니다.
+//      로그인 버튼은 signInWithOAuth로 리다이렉트하고, onAuthStateChange가 돌아온 세션을 반영합니다.
 // ────────────────────────────────────────────────────────────────────
 //
 // 다크모드 :root 처리 / localStorage 저장은 기존 그대로입니다.
@@ -39,7 +39,8 @@ import SideNav from './components/common/SideNav';
 import { BottomNav, Drawer, MoreSheet } from './components/common/MobileNav';
 import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
-import { ACCOUNT } from './data/mockAccount';
+import { signInWithProvider, signOut, getCurrentSession } from './api/auth';
+import { supabase } from './api/supabaseClient';
 
 import OnboardingPage from './pages/OnboardingPage';
 import DashboardPage from './pages/DashboardPage';
@@ -86,7 +87,8 @@ export default function App() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [authed, setAuthed] = useState(true);
+  const [authed, setAuthed] = useState(false);
+  const [profile, setProfile] = useState(null);
   const [notiReport, setNotiReport] = useState(true);
   const [notiWiki, setNotiWiki] = useState(true);
   const [dark, setDark] = useState(() => getInitial('mywiki-theme', 'light') === 'dark');
@@ -116,6 +118,20 @@ export default function App() {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('appinstalled', handleInstalled);
     };
+  }, []);
+
+  // 실제 Supabase 세션 동기화 — 첫 진입 시 기존 세션을 읽고, 이후 로그인/로그아웃/OAuth
+  // 리다이렉트 복귀는 onAuthStateChange가 알려주는 대로 authed/profile을 갱신한다.
+  useEffect(() => {
+    getCurrentSession().then((session) => {
+      setAuthed(!!session);
+      setProfile(session?.user ?? null);
+    });
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthed(!!session);
+      setProfile(session?.user ?? null);
+    });
+    return () => subscription?.subscription?.unsubscribe();
   }, []);
 
   function handlePwaInstallClick() {
@@ -205,14 +221,15 @@ export default function App() {
     setSettingsOpen(false);
     setProfileOpen((o) => !o);
   }
-  // 백엔드 인증이 없어서 로컬 상태만 토글합니다 — 어떤 소셜 버튼을 눌러도 데모 계정으로 로그인됩니다.
-  function handleLogin() {
-    setAuthed(true);
+  // provider: 'google' | 'github' | 'kakao' — 브라우저가 OAuth 제공자로 리다이렉트된다.
+  // 돌아온 뒤의 상태 반영은 위 onAuthStateChange가 처리한다.
+  function handleLogin(provider) {
     setProfileOpen(false);
+    signInWithProvider(provider);
   }
   function handleLogout() {
-    setAuthed(false);
     setProfileOpen(false);
+    signOut();
   }
 
   // 첫 진입 — 선호 조사 화면. 앱 뼈대(상단바/내비)를 띄우지 않고 이 화면만 보여줍니다.
@@ -231,7 +248,7 @@ export default function App() {
         onProfileClick={handleProfileClick}
         profileOpen={profileOpen}
         authed={authed}
-        avatarInitial={ACCOUNT.name.charAt(0)}
+        avatarInitial={(profile?.user_metadata?.full_name || profile?.email || '?').charAt(0).toUpperCase()}
         onLogoClick={handleLogoClick}
       />
 
@@ -261,6 +278,7 @@ export default function App() {
             onToggleNotiReport={setNotiReport}
             notiWiki={notiWiki}
             onToggleNotiWiki={setNotiWiki}
+            profile={profile}
             onLogout={handleLogout}
             onResetInterests={resetOnboarding}
           />
@@ -303,6 +321,7 @@ export default function App() {
       <ProfilePanel
         isOpen={profileOpen}
         authed={authed}
+        profile={profile}
         onLogin={handleLogin}
         onLogout={handleLogout}
       />
