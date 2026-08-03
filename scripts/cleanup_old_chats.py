@@ -34,30 +34,42 @@ def get_workspace_id() -> str:
     return str(rows[0]["id"])
 
 
+_PAGE_SIZE = 1000
+
+
+def _select_all(query_builder, *, page_size: int = _PAGE_SIZE) -> list[dict]:
+    """query_builder는 .select()까지만 걸려 있고 아직 .execute() 안 한 PostgREST 쿼리 —
+    range()로 전부 받을 때까지 반복한다. 1000행 기본 응답 상한 때문에, 한 번만 조회하면
+    그 상한을 넘는 워크스페이스에서 최근 활동이 잘려나가 세션이 잘못 만료 판정될 수 있다."""
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        page = query_builder.range(offset, offset + page_size - 1).execute().data
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+    return rows
+
+
 def find_expired_session_ids(workspace_id: str, *, retention_days: int | None) -> list[str]:
     """retention_days가 None(영구 보관)이면 빈 리스트."""
     if retention_days is None:
         return []
 
     db = get_client()
-    sessions = (
-        db.table("chat_sessions")
-        .select("id, created_at")
-        .eq("workspace_id", workspace_id)
-        .execute()
-        .data
+    sessions = _select_all(
+        db.table("chat_sessions").select("id, created_at").eq("workspace_id", workspace_id)
     )
     if not sessions:
         return []
 
     session_ids = [s["id"] for s in sessions]
-    messages = (
+    messages = _select_all(
         db.table("chat_messages")
         .select("session_id, created_at")
         .in_("session_id", session_ids)
         .order("created_at", desc=True)
-        .execute()
-        .data
     )
     last_message_at: dict[str, str] = {}
     for m in messages:
@@ -86,7 +98,7 @@ def delete_expired_sessions(workspace_id: str, *, retention_days: int | None) ->
     if message_ids:
         db.table("message_citations").delete().in_("message_id", message_ids).execute()
     db.table("chat_messages").delete().in_("session_id", expired_ids).execute()
-    db.table("chat_sessions").delete().in_("id", expired_ids).execute()
+    db.table("chat_sessions").delete().eq("workspace_id", workspace_id).in_("id", expired_ids).execute()
     return len(expired_ids)
 
 

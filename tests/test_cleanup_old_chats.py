@@ -80,14 +80,27 @@ def test_find_expired_session_ids_uses_last_message_time(workspace_id, user_id):
 
 
 def test_delete_expired_sessions_removes_messages_and_session(workspace_id, user_id):
+    db = _get_client()
+    ids_before = {
+        row["id"]
+        for row in db.table("chat_sessions").select("id").eq("workspace_id", workspace_id).execute().data
+    }
+
     old_session_id = _make_session(workspace_id, user_id, last_message_days_ago=100)
     try:
         deleted_count = delete_expired_sessions(workspace_id, retention_days=90)
+
+        ids_after = {
+            row["id"]
+            for row in db.table("chat_sessions").select("id").eq("workspace_id", workspace_id).execute().data
+        }
+        removed = ids_before.union({old_session_id}) - ids_after
+        assert removed == {old_session_id}, (
+            f"삭제 대상이 fixture 세션 하나만이어야 하는데 실제로는 {removed}가 삭제됨 — "
+            "실제 팀 데이터가 같이 지워졌을 가능성"
+        )
         assert deleted_count >= 1
 
-        db = _get_client()
-        remaining = db.table("chat_sessions").select("id").eq("id", old_session_id).execute().data
-        assert remaining == []
         remaining_messages = (
             db.table("chat_messages").select("id").eq("session_id", old_session_id).execute().data
         )
