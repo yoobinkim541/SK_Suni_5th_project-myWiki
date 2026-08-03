@@ -6,7 +6,7 @@ GNEWS_SEARCH_RESPONSE / GNEWS_EMPTY_RESPONSE는 2026-08-03에 실제 GNews API�
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -325,12 +325,22 @@ def naver_source() -> dict:
     }
 
 
-def _stub_naver_api(monkeypatch: pytest.MonkeyPatch, payload: dict, status_code: int = 200) -> None:
+def _stub_naver_api(monkeypatch: pytest.MonkeyPatch, payload: dict, status_code: int = 200) -> dict:
+    """httpx.get을 가로채 네이버 응답을 대신 준다. 요청 URL·헤더·파라미터를 남긴다."""
     import httpx
 
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResponse(payload, status_code))
+    captured: dict = {}
+
+    def fake_get(url: str, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params", {})
+        captured["headers"] = kwargs.get("headers", {})
+        return _FakeResponse(payload, status_code)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
     monkeypatch.setenv("NAVER_CLIENT_ID", "test-id-not-real")
     monkeypatch.setenv("NAVER_CLIENT_SECRET", "test-secret-not-real")
+    return captured
 
 
 def test_fetch_naver_news_raises_on_auth_failure(
@@ -357,6 +367,247 @@ def test_fetch_naver_news_succeeds_on_valid_response(
 
     assert len(outcome.items) == 1
     assert outcome.items[0].url == "https://www.segye.com/newsView/20260803511351"
+
+
+# ------------------------------------------------------------
+# NAVER API HUB 전환 (api_variant)
+#
+# 아래 응답·오류 예시는 공식 문서에 실린 형태를 그대로 옮긴 것이다.
+# 실제 API는 호출하지 않는다.
+# ------------------------------------------------------------
+
+APIHUB_URL = "https://naverapihub.apigw.ntruss.com/search/v1/news"
+LEGACY_URL = "https://openapi.naver.com/v1/search/news.json"
+
+# 검색어와 일치하는 부분이 <b>로 감싸여 오고, 엔티티도 그대로 온다 (문서 명시).
+NAVER_MARKUP_RESPONSE = {
+    "lastBuildDate": "Thu, 11 Jun 2026 18:34:00 +0900",
+    "total": 1039917,
+    "start": 1,
+    "display": 1,
+    "items": [
+        {
+            "title": "<b>SK하이닉스</b>, HBM4 &quot;양산&quot; 채비…삼성 &amp; 마이크론 추격",
+            "originallink": "https://www.segye.com/newsView/20260803511351",
+            "link": "https://n.news.naver.com/mnews/article/022/0004147996",
+            "description": "<b>SK하이닉스</b>가 HBM4 양산을 &quot;앞당긴다&quot;고 밝혔다.",
+            "pubDate": "Thu, 11 Jun 2026 18:34:00 +0900",
+        }
+    ],
+}
+
+# 게이트웨이 계층 오류 — error 객체로 감싸져 온다. errorCode는 HTTP 상태 코드가 아니다.
+APIGW_AUTH_ERROR_RESPONSE = {
+    "error": {
+        "errorCode": "200",
+        "message": "Authentication Failed",
+        "details": "Authentication information are missing.",
+    }
+}
+
+# 검색 API 계층 오류 — 평면 구조
+SEARCH_API_ERROR_RESPONSE = {
+    "errorCode": "SE02",
+    "errorMessage": "Invalid display value (부적절한 display 값입니다.)",
+}
+
+APIGW_QUOTA_ERROR_RESPONSE = {
+    "error": {
+        "errorCode": "429",
+        "message": "Quota Exceeded",
+        "details": "Rate limit exceeded.",
+    }
+}
+
+
+def test_naver_apihub_variant_uses_ncp_host_and_headers(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest, stub_article
+) -> None:
+    """apihub는 NCP 게이트웨이 주소로 가고 X-NCP-* 헤더를 쓴다."""
+    naver_source["config"]["api_variant"] = "apihub"
+    captured = _stub_naver_api(monkeypatch, NAVER_SEARCH_RESPONSE)
+    stub_article()
+
+    fetchers.fetch_naver_news(naver_source, request_obj)
+
+    assert captured["url"] == APIHUB_URL
+    assert captured["headers"]["X-NCP-APIGW-API-KEY-ID"] == "test-id-not-real"
+    assert captured["headers"]["X-NCP-APIGW-API-KEY"] == "test-secret-not-real"
+    # 구 개발자센터 헤더가 같이 나가면 안 된다
+    assert "X-Naver-Client-Id" not in captured["headers"]
+
+
+def test_naver_legacy_variant_uses_developers_host_and_headers(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest, stub_article
+) -> None:
+    """legacy는 구 개발자센터 주소·헤더를 그대로 쓴다 (2027-06-30 종료 전까지)."""
+    naver_source["config"]["api_variant"] = "legacy"
+    captured = _stub_naver_api(monkeypatch, NAVER_SEARCH_RESPONSE)
+    stub_article()
+
+    fetchers.fetch_naver_news(naver_source, request_obj)
+
+    assert captured["url"] == LEGACY_URL
+    assert captured["headers"]["X-Naver-Client-Id"] == "test-id-not-real"
+    assert captured["headers"]["X-Naver-Client-Secret"] == "test-secret-not-real"
+    assert "X-NCP-APIGW-API-KEY-ID" not in captured["headers"]
+
+
+def test_naver_api_variant_defaults_to_apihub(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest, stub_article
+) -> None:
+    """api_variant를 안 적으면 apihub로 간다. 개발자센터는 신규 발급이 막혔다."""
+    naver_source["config"].pop("api_variant", None)
+    captured = _stub_naver_api(monkeypatch, NAVER_SEARCH_RESPONSE)
+    stub_article()
+
+    fetchers.fetch_naver_news(naver_source, request_obj)
+
+    assert captured["url"] == APIHUB_URL
+    assert "X-NCP-APIGW-API-KEY-ID" in captured["headers"]
+
+
+def test_naver_rejects_unknown_api_variant(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest
+) -> None:
+    naver_source["config"]["api_variant"] = "v3"
+    _stub_naver_api(monkeypatch, NAVER_SEARCH_RESPONSE)
+
+    with pytest.raises(fetchers.FetchError, match="알 수 없는 naver api_variant"):
+        fetchers.fetch_naver_news(naver_source, request_obj)
+
+
+def test_naver_extracts_nested_gateway_error(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest
+) -> None:
+    """
+    게이트웨이 오류는 error 객체 안에 중첩돼 있다. payload.get("errorCode")만
+    보면 사유가 비어 FetchError 메시지에 원인이 안 남는다.
+    """
+    _stub_naver_api(monkeypatch, APIGW_AUTH_ERROR_RESPONSE, status_code=401)
+
+    with pytest.raises(fetchers.FetchError) as excinfo:
+        fetchers.fetch_naver_news(naver_source, request_obj)
+
+    message = str(excinfo.value)
+    assert "Authentication Failed" in message
+    assert "Authentication information are missing." in message
+
+
+def test_naver_extracts_flat_search_api_error(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest
+) -> None:
+    """검색 API 계층 오류는 평면 구조다. 이쪽도 사유가 드러나야 한다."""
+    _stub_naver_api(monkeypatch, SEARCH_API_ERROR_RESPONSE, status_code=400)
+
+    with pytest.raises(fetchers.FetchError) as excinfo:
+        fetchers.fetch_naver_news(naver_source, request_obj)
+
+    message = str(excinfo.value)
+    assert "SE02" in message
+    assert "Invalid display value" in message
+
+
+def test_naver_quota_exceeded_is_identifiable(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest
+) -> None:
+    """429는 다른 실패와 구분돼야 "다음 날 재시도"라는 판단을 할 수 있다."""
+    _stub_naver_api(monkeypatch, APIGW_QUOTA_ERROR_RESPONSE, status_code=429)
+
+    with pytest.raises(fetchers.FetchError) as excinfo:
+        fetchers.fetch_naver_news(naver_source, request_obj)
+
+    assert "하루 호출 한도 초과" in str(excinfo.value)
+
+
+def test_naver_auth_failure_hints_three_causes(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest
+) -> None:
+    """401 원인 세 가지가 메시지에 남아야 콘솔에서 어디를 볼지 알 수 있다."""
+    _stub_naver_api(monkeypatch, APIGW_AUTH_ERROR_RESPONSE, status_code=401)
+
+    with pytest.raises(fetchers.FetchError) as excinfo:
+        fetchers.fetch_naver_news(naver_source, request_obj)
+
+    message = str(excinfo.value)
+    assert "키 값" in message
+    assert "헤더" in message
+    assert "권한" in message
+
+
+def test_naver_strips_markup_from_title(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest, stub_article
+) -> None:
+    """<b> 강조 태그와 HTML 엔티티가 documents.title로 새어 들어가면 안 된다."""
+    _stub_naver_api(monkeypatch, NAVER_MARKUP_RESPONSE)
+    stub_article()
+
+    outcome = fetchers.fetch_naver_news(naver_source, request_obj)
+
+    assert outcome.items[0].title_hint == 'SK하이닉스, HBM4 "양산" 채비…삼성 & 마이크론 추격'
+
+
+def test_strip_html_handles_tags_and_entities() -> None:
+    assert fetchers.strip_html("<b>HBM</b> 양산") == "HBM 양산"
+    assert fetchers.strip_html("&quot;A&quot; &amp; &lt;B&gt; &#39;C&#39;") == "\"A\" & <B> 'C'"
+    assert fetchers.strip_html(None) is None
+    assert fetchers.strip_html("") == ""
+
+
+@pytest.mark.parametrize(
+    ("limit", "expected_display"),
+    [(0, 1), (200, 100), (3, 3)],
+)
+def test_naver_display_is_clamped_to_documented_range(
+    monkeypatch: pytest.MonkeyPatch,
+    naver_source: dict,
+    stub_article,
+    limit: int,
+    expected_display: int,
+) -> None:
+    """display는 1~100이다. --limit 0이면 display=0이 나가 SE02가 났다."""
+    captured = _stub_naver_api(monkeypatch, NAVER_SEARCH_RESPONSE)
+    stub_article()
+
+    fetchers.fetch_naver_news(
+        naver_source,
+        CollectRequest(workspace_id=uuid4(), source_id=uuid4(), limit=limit),
+    )
+
+    assert captured["params"]["display"] == expected_display
+
+
+def test_naver_limit_zero_collects_nothing_despite_display_floor(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, stub_article
+) -> None:
+    """display를 1로 올려도 수집 건수는 limit이 막는다."""
+    _stub_naver_api(monkeypatch, NAVER_SEARCH_RESPONSE)
+    stub_article()
+
+    outcome = fetchers.fetch_naver_news(
+        naver_source, CollectRequest(workspace_id=uuid4(), source_id=uuid4(), limit=0)
+    )
+
+    assert outcome.items == []
+
+
+def test_naver_maps_items_with_originallink_and_rfc822_date(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest, stub_article
+) -> None:
+    """
+    originallink(기사 원문)를 link(네이버 뉴스)보다 우선하고,
+    RFC 822 pubDate를 datetime으로 옮긴다. 응답 구조는 두 variant가 같다.
+    """
+    _stub_naver_api(monkeypatch, NAVER_MARKUP_RESPONSE)
+    stub_article()
+
+    outcome = fetchers.fetch_naver_news(naver_source, request_obj)
+
+    item = outcome.items[0]
+    assert item.url == "https://www.segye.com/newsView/20260803511351"
+    assert item.published_at_hint == datetime(
+        2026, 6, 11, 18, 34, 0, tzinfo=timezone(timedelta(hours=9))
+    )
 
 
 # ------------------------------------------------------------

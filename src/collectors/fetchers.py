@@ -7,6 +7,7 @@ collect()는 어느 소스를 어떻게 긁는지 몰라도 되게, 이 모듈�
 sources.config(JSONB)에서 읽는 키
     feed_url          RSS 피드 주소 (없으면 sources.base_url)
     provider          news 소스의 제공자 'naver' | 'gnews' (기본 naver)
+    api_variant       naver 소스의 호출 경로 'apihub' | 'legacy' (기본 apihub)
     query             검색어 (news 소스)
     lang              gnews 검색 언어 (기본 en)
     country           gnews 매체 국가 (선택)
@@ -24,7 +25,9 @@ TODO(미확정): config 스키마·수집 주기·요청 간격은 지침 §9-A-
 """
 from __future__ import annotations
 
+import html
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -40,6 +43,32 @@ DEFAULT_MAX_ITEMS = 30
 
 # 응답이 이 코드면 수집 대상이 아니라고 보고 건너뛴다 (robots·저작권·차단).
 _BLOCKED_STATUS = {401, 403, 429, 451}
+
+# 네이버 검색 API 호출 경로. 응답 바디 구조는 두 경로가 같고, 호스트·경로·헤더
+# 이름만 다르다. 그래서 items 파싱 로직은 공유하고 여기서 차이만 갈라둔다.
+#
+#   apihub  NAVER API HUB(NCP). 지금 발급되는 키는 이쪽으로만 인증된다
+#   legacy  구 개발자센터. 2026-07-31 신규 발급 중단, 2027-06-30 서비스 종료
+NAVER_API_VARIANTS: dict[str, dict[str, str]] = {
+    "apihub": {
+        "url": "https://naverapihub.apigw.ntruss.com/search/v1/news",
+        "id_header": "X-NCP-APIGW-API-KEY-ID",
+        "secret_header": "X-NCP-APIGW-API-KEY",
+    },
+    "legacy": {
+        "url": "https://openapi.naver.com/v1/search/news.json",
+        "id_header": "X-Naver-Client-Id",
+        "secret_header": "X-Naver-Client-Secret",
+    },
+}
+DEFAULT_NAVER_API_VARIANT = "apihub"
+
+# 검색 API 문서상 display 허용 범위. 벗어나면 SE02로 거절된다.
+NAVER_DISPLAY_MIN = 1
+NAVER_DISPLAY_MAX = 100
+
+# 검색 API는 검색어와 일치하는 부분을 <b> 태그로 감싸 돌려준다.
+_HTML_TAG = re.compile(r"<[^>]+>")
 
 
 class FetchError(Exception):
@@ -252,12 +281,104 @@ def fetch_website(source: dict, request: CollectRequest) -> FetchOutcome:
     return outcome
 
 
+def strip_html(text: str | None) -> str | None:
+    """
+    검색 API가 돌려주는 <b> 강조 태그와 HTML 엔티티를 걷어낸다.
+
+    문서상 "검색어와 일치하는 부분은 <b> 태그로 감쌈"이라 title·description에
+    태그가 섞여 온다. 그대로 두면 documents.title에 마크업이 들어간다.
+
+    태그 제거 -> 엔티티 해제 순서다. 반대로 하면 원문에 있던 &lt;b&gt; 같은
+    "escape된 글자로서의 꺾쇠"까지 태그로 오인해 지운다.
+    """
+    if not text:
+        return text
+    return html.unescape(_HTML_TAG.sub("", text)).strip()
+
+
+def _naver_display(limit: int) -> int:
+    """
+    display는 문서상 1~100이다.
+
+    클램프하지 않으면 --limit 0으로 돌릴 때 display=0이 나가 SE02로 거절된다.
+    수집 건수 자체는 호출부의 limit 루프가 따로 막으므로 여기서 1로 올려도
+    0건 수집이라는 의도는 그대로 지켜진다.
+    """
+    return max(NAVER_DISPLAY_MIN, min(NAVER_DISPLAY_MAX, int(limit)))
+
+
+def _naver_error_reason(payload: Any) -> str:
+    """
+    오류 사유를 뽑는다. 계층에 따라 응답 구조가 달라 둘 다 봐야 한다.
+
+    게이트웨이 계층 (인증·라우팅 실패) — error 객체로 감싸져 온다
+        {"error": {"errorCode": "200", "message": "Authentication Failed",
+                   "details": "Authentication information are missing."}}
+        여기 errorCode는 HTTP 상태 코드가 아니라 게이트웨이 자체 코드다.
+    검색 API 계층 (파라미터 검증) — 평면 구조
+        {"errorCode": "SE02", "errorMessage": "Invalid display value (...)"}
+
+    payload.get("errorCode")만 보면 게이트웨이 오류는 중첩돼 있어 사유가 비고,
+    FetchError 메시지에 상태 코드만 남아 원인을 못 찾는다.
+    """
+    if not isinstance(payload, dict):
+        return ""
+    nested = payload.get("error")
+    if isinstance(nested, dict):
+        source_dict, keys = nested, ("errorCode", "message", "details")
+    else:
+        source_dict, keys = payload, ("errorCode", "errorMessage")
+    return " / ".join(str(source_dict[key]) for key in keys if source_dict.get(key))
+
+
+def _naver_status_hint(status_code: int, variant_name: str) -> str:
+    """상태 코드별 조치 힌트. 재시도로 풀릴 실패인지 아닌지를 여기서 가른다."""
+    if status_code == 429:
+        return "하루 호출 한도 초과 (검색 API 한도 25,000회/일) — 다음 날 재시도하면 된다"
+    if status_code == 401:
+        return (
+            "인증 실패 — ① 키 값이 틀렸거나 ② 인증 헤더가 빠졌거나 "
+            "③ 애플리케이션에 검색 API 이용 권한이 없다. "
+            f"현재 api_variant={variant_name!r}이므로 키도 같은 쪽에서 발급한 값이어야 한다"
+        )
+    if status_code == 403:
+        return "HTTPS가 아닌 HTTP로 호출했거나 필수 변수가 누락됐다"
+    if status_code == 404:
+        return "요청 URL이 틀렸다 (SE05)"
+    return ""
+
+
+def _raise_for_naver_error(status_code: int, payload: Any, variant_name: str) -> None:
+    """
+    오류면 FetchError로 올린다.
+
+    status_code를 확인 안 하면 인증 실패(401) 같은 에러 응답도 payload.get("items", [])가
+    빈 리스트를 돌려줘서 "정상 호출인데 0건 수집"으로 조용히 넘어간다 (명세 §1-3).
+    """
+    reason = _naver_error_reason(payload)
+    if status_code < 400 and not reason:
+        return
+    message = f"네이버 검색 API 응답 오류 {status_code}"
+    if reason:
+        message += f": {reason}"
+    hint = _naver_status_hint(status_code, variant_name)
+    if hint:
+        message += f" — {hint}"
+    raise FetchError(message)
+
+
 def fetch_naver_news(source: dict, request: CollectRequest) -> FetchOutcome:
     """
     네이버 검색 API(뉴스) -> 각 기사 원문 페이지.
 
     자격증명은 환경변수 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET에서 읽는다.
-    값을 코드·설정 파일에 적지 않는다 (프로젝트 지침 §2-7).
+    NCP 콘솔 > All Services > Application Services > NAVER API HUB > Application >
+    「인증 정보」에서 발급받는 Client ID / Client Secret이다.
+    NCP 계정의 Access Key ID / Secret Key와는 다른 값이다 — 혼동해서 넣으면
+    똑같이 401이 난다. 값을 코드·설정 파일에 적지 않는다 (프로젝트 지침 §2-7).
+
+    config.api_variant로 호출 경로를 고른다 (기본 'apihub').
+    응답 바디 구조는 두 경로가 같으므로 items 파싱은 아래 한 벌만 쓴다.
     """
     import httpx
 
@@ -272,44 +393,56 @@ def fetch_naver_news(source: dict, request: CollectRequest) -> FetchOutcome:
         # TODO(미확정): 수집 키워드 셋 확정 전까지 소스별 config.query를 필수로 둔다 (지침 §9-A-2)
         raise FetchError("news 소스에 config.query가 없다")
 
+    variant_name = (conf.get("api_variant") or DEFAULT_NAVER_API_VARIANT).lower()
+    variant = NAVER_API_VARIANTS.get(variant_name)
+    if variant is None:
+        raise FetchError(
+            f"알 수 없는 naver api_variant: {variant_name!r} "
+            f"(가능: {sorted(NAVER_API_VARIANTS)})"
+        )
+
     limit = _max_items(source, request)
     try:
         response = httpx.get(
-            "https://openapi.naver.com/v1/search/news.json",
-            params={"query": query, "display": min(limit, 100), "sort": "date"},
+            variant["url"],
+            # GET 검색 API에는 Content-Type을 쓰지 않는다.
+            params={"query": query, "display": _naver_display(limit), "sort": "date"},
             headers={
-                "X-Naver-Client-Id": client_id,
-                "X-Naver-Client-Secret": client_secret,
+                variant["id_header"]: client_id,
+                variant["secret_header"]: client_secret,
             },
             timeout=_conf_number(source, "timeout_sec", DEFAULT_TIMEOUT_SEC),
         )
-        payload = response.json()
     except Exception as exc:  # noqa: BLE001
         raise FetchError(f"네이버 검색 API 호출 실패: {exc}") from exc
 
-    if response.status_code >= 400 or payload.get("errorCode"):
-        # status_code를 확인 안 하면 인증 실패(401) 같은 에러 응답도 payload.get("items", [])가
-        # 빈 리스트를 돌려줘서 "정상 호출인데 0건 수집"으로 조용히 넘어간다.
+    try:
+        payload = response.json()
+    except Exception as exc:  # noqa: BLE001 - 게이트웨이가 JSON 아닌 오류 페이지를 줄 수 있다
         raise FetchError(
-            f"네이버 검색 API 응답 오류 {response.status_code}: "
-            f"{payload.get('errorMessage') or payload.get('errorCode')}"
-        )
+            f"네이버 검색 API 응답을 JSON으로 읽을 수 없다 (HTTP {response.status_code}): {exc}"
+        ) from exc
+
+    _raise_for_naver_error(response.status_code, payload, variant_name)
 
     outcome = FetchOutcome()
     for entry in payload.get("items", []):
         if len(outcome.items) >= limit:
             break
+        # originallink가 기사 원문, link는 네이버 뉴스 주소다. 원문을 우선한다.
         url = (entry.get("originallink") or entry.get("link") or "").strip()
         if not url:
             outcome.skip("no_canonical_url")
             continue
-        published_at = timeutil.parse_datetime(entry.get("pubDate"))
+        published_at = timeutil.parse_datetime(entry.get("pubDate"))  # RFC 822
         if request.since and published_at and published_at < request.since:
             outcome.skip("older_than_since")
             continue
         _sleep_between_requests(source)
         try:
-            item = _fetch_article(source, url, entry.get("title"), published_at)
+            # description은 RawFetchResult로 넘기지 않아 정제 대상이 아니다.
+            # 넘기게 되면 title과 같이 strip_html()을 거쳐야 한다.
+            item = _fetch_article(source, url, strip_html(entry.get("title")), published_at)
         except FetchError:
             outcome.skip("fetch_failed")
             continue
