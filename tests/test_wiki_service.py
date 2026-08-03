@@ -342,3 +342,59 @@ def test_review_wiki_version_accepts_none_reviewer_for_auto_approval(workspace_i
     page = db.table("wiki_pages").select("id").eq("workspace_id", workspace_id).eq("slug", slug).single().execute()
     db.table("wiki_page_versions").delete().eq("id", version_id).execute()
     db.table("wiki_pages").delete().eq("id", page.data["id"]).execute()
+
+
+def test_published_page_sources_include_document_metadata(workspace_id):
+    """
+    WikiPage 화면(mockWiki.js)이 기대하는 출처 표시(매체명·문서 제목·게시일·신뢰도)는
+    wiki_page_sources가 document_version_id만 줘서는 못 채운다 — document_versions/
+    documents/sources/document_analysis_results 조인 결과가 실려 오는지 확인한다.
+    """
+    db = _get_client()
+    analyzed = (
+        db.table("document_analysis_results")
+        .select("document_version_id")
+        .eq("workspace_id", workspace_id)
+        .not_.is_("reliability_score", "null")
+        .limit(1)
+        .execute()
+    )
+    if not analyzed.data:
+        pytest.skip("신뢰도 점수가 있는 document_analysis_results 데이터 없음")
+    doc_ver_id = analyzed.data[0]["document_version_id"]
+
+    slug = f"test-src-meta-{uuid.uuid4().hex[:8]}"
+    draft = WikiDraftInput(
+        workspace_id=workspace_id,
+        slug=slug,
+        title="출처 메타데이터 테스트",
+        page_type="term",
+        markdown="근거 있는 내용",
+        sources=[WikiSourceInput(document_version_id=doc_ver_id, claim_text="근거 주장")],
+    )
+    version_id = create_wiki_version(draft)
+    ver = db.table("wiki_page_versions").select("page_id,markdown_object_key").eq("id", version_id).single().execute()
+    page_id = ver.data["page_id"]
+    obj_key = ver.data["markdown_object_key"]
+
+    record_wiki_validation(version_id, "passed", 0.95)
+    profile = db.table("profiles").select("id").limit(1).execute()
+    if not profile.data:
+        pytest.skip("profiles 데이터 없음")
+    review_wiki_version(version_id, profile.data[0]["id"], "approved")
+    publish_wiki_version(page_id, version_id)
+
+    published = get_published_wiki_page(workspace_id, slug)
+    assert published is not None
+    assert len(published.sources) == 1
+    source = published.sources[0]
+    assert source.document_version_id == str(doc_ver_id)
+    assert source.document_title is not None
+    assert source.reliability_score is not None
+
+    # teardown
+    db.table("wiki_pages").update({"current_version_id": None}).eq("id", page_id).execute()
+    db.storage.from_("wiki").remove([obj_key])
+    db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
+    db.table("wiki_page_versions").delete().eq("id", version_id).execute()
+    db.table("wiki_pages").delete().eq("id", page_id).execute()

@@ -56,6 +56,89 @@ def list_published_wiki_pages(
     return [WikiPageSummary(**row) for row in res.data]
 
 
+def _enrich_sources(db: Client, workspace_id: str, rows: list[dict]) -> tuple[WikiSource, ...]:
+    """
+    wiki_page_sources 원본 행에 문서 제목·매체명·게시일·개별 신뢰도를 붙인다.
+
+    PostgREST embedded join 대신 순차 조회를 쓴다(이 모듈·generation_repository.py의
+    기존 관례) — document_version_id -> document_versions.document_id -> documents
+    (title/canonical_url/published_at/source_id) -> sources.name, 그리고 별도로
+    document_analysis_results.reliability_score. 화면의 "평균 신뢰도"는 여기서
+    평균 내지 않고 개별 점수만 내려준다 — "근거 문서 건수"처럼 프론트에서
+    배열 기준으로 계산하게 둔다(집계 로직이 백엔드/프론트 두 곳에 흩어지지 않게).
+    """
+    if not rows:
+        return tuple()
+
+    document_version_ids = list({row["document_version_id"] for row in rows})
+
+    versions_res = (
+        db.table("document_versions")
+        .select("id, document_id")
+        .in_("id", document_version_ids)
+        .execute()
+    )
+    document_id_by_version = {row["id"]: row["document_id"] for row in versions_res.data}
+
+    document_ids = list({doc_id for doc_id in document_id_by_version.values() if doc_id})
+    documents_by_id: dict[str, dict] = {}
+    if document_ids:
+        documents_res = (
+            db.table("documents")
+            .select("id, title, canonical_url, published_at, source_id")
+            .eq("workspace_id", workspace_id)
+            .in_("id", document_ids)
+            .execute()
+        )
+        documents_by_id = {row["id"]: row for row in documents_res.data}
+
+    source_ids = list({row["source_id"] for row in documents_by_id.values() if row.get("source_id")})
+    source_name_by_id: dict[str, str] = {}
+    if source_ids:
+        sources_res = (
+            db.table("sources")
+            .select("id, name")
+            .eq("workspace_id", workspace_id)
+            .in_("id", source_ids)
+            .execute()
+        )
+        source_name_by_id = {row["id"]: row["name"] for row in sources_res.data}
+
+    analysis_res = (
+        db.table("document_analysis_results")
+        .select("document_version_id, reliability_score")
+        .eq("workspace_id", workspace_id)
+        .in_("document_version_id", document_version_ids)
+        .execute()
+    )
+    reliability_by_version = {
+        row["document_version_id"]: row["reliability_score"]
+        for row in analysis_res.data
+        if row.get("reliability_score") is not None
+    }
+
+    enriched = []
+    for row in rows:
+        document_id = document_id_by_version.get(row["document_version_id"])
+        document = documents_by_id.get(document_id) if document_id else None
+        enriched.append(
+            WikiSource(
+                document_version_id=row["document_version_id"],
+                citation_order=row.get("citation_order"),
+                claim_text=row.get("claim_text"),
+                support_type=row.get("support_type"),
+                source_start_line=row.get("source_start_line"),
+                source_end_line=row.get("source_end_line"),
+                document_title=document.get("title") if document else None,
+                canonical_url=document.get("canonical_url") if document else None,
+                published_at=document.get("published_at") if document else None,
+                source_name=source_name_by_id.get(document.get("source_id")) if document else None,
+                reliability_score=reliability_by_version.get(row["document_version_id"]),
+            )
+        )
+    return tuple(enriched)
+
+
 def get_published_wiki_page(
     workspace_id: str,
     slug: str,
@@ -106,7 +189,7 @@ def get_published_wiki_page(
         .order("citation_order")
         .execute()
     )
-    sources = tuple(WikiSource(**row) for row in sources_res.data)
+    sources = _enrich_sources(db, workspace_id, sources_res.data)
 
     versions_res = (
         db.table("wiki_page_versions")

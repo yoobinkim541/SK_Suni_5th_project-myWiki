@@ -88,6 +88,11 @@ class WikiSource:
     support_type: Optional[str]
     source_start_line: Optional[int]
     source_end_line: Optional[int]
+    document_title: Optional[str] = None
+    source_name: Optional[str] = None
+    canonical_url: Optional[str] = None
+    published_at: Optional[str] = None
+    reliability_score: Optional[int] = None
 
 
 @dataclass(frozen=True)
