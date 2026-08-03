@@ -1,8 +1,9 @@
 // [LIVE] Supabase Auth 자체는 바로 연결 가능 — src/api/auth.py가 이 세션의 JWT를 검증한다.
-// LoginScreen.jsx의 handleLogin 주석("실제 연동 시: supabase.auth.signInWithOAuth")을 그대로 구현.
+// App.jsx handleLogin/handleLogout이 이 함수들을 실제로 호출한다(2026-08-04부터 — 이전엔
+// App.jsx가 로컬 상태만 토글해서 이 파일이 만들어져 있어도 어디서도 쓰이지 않았다).
 import { supabase } from './supabaseClient';
 
-/** provider: 'google' | 'github' | 'kakao' — LoginScreen.jsx OAUTH_PROVIDERS.key와 맞춤 */
+/** provider: 'google' | 'github' | 'kakao' — ProfilePanel.jsx OAUTH_PROVIDERS.key와 맞춤 */
 export function signInWithProvider(provider) {
   return supabase.auth.signInWithOAuth({ provider });
 }

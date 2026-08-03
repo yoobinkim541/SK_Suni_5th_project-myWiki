@@ -25,8 +25,17 @@
 //      프로필 쪽은 실제로 연결된 컴포넌트가 없었어서 이번에 처음 붙였습니다.
 //    - 알림 상태(notiReport/notiWiki)는 다크모드처럼 여기서 들고 SettingsPage에도 그대로
 //      내려줘서, 상단 드롭다운과 설정 페이지가 항상 같은 값을 보게 했습니다.
-//    - authed는 백엔드 인증이 없어서 로컬 상태입니다. 로그인/로그아웃 버튼을 눌러도
-//      이 상태만 토글될 뿐 실제 세션은 만들어지지 않습니다(README "다음 작업" 참고).
+//
+// 4) [이번 수정] authed를 실제 Supabase Auth 세션에 연결했습니다.
+//    - 예전엔 로그인/로그아웃 버튼이 로컬 상태만 토글하고 실제 세션은 만들지 않았습니다
+//      (api/auth.js에 signInWithProvider/signOut이 이미 구현돼 있었는데 어디서도 안 쓰이고
+//      있었습니다). 그 상태에서는 apiFetch가 세션 토큰을 못 구해서 위키·에이전트·설정
+//      화면이 전부 "missing bearer token"으로 실패합니다.
+//    - 이제 getCurrentSession()으로 초기 세션을 읽고, onAuthStateChange로 로그인/로그아웃/
+//      토큰 갱신을 계속 구독합니다. OAuth 리다이렉트로 돌아왔을 때도 이 구독이 세션을
+//      잡아서 authed·account를 자동으로 갱신합니다.
+//    - account(표시 이름·이메일)도 더 이상 mockAccount 목업이 아니라 세션의 user 정보에서
+//      뽑습니다. 로그아웃 상태에서는 null입니다.
 // ────────────────────────────────────────────────────────────────────
 //
 // 다크모드 :root 처리 / localStorage 저장은 기존 그대로입니다.
@@ -39,7 +48,8 @@ import SideNav from './components/common/SideNav';
 import { BottomNav, Drawer, MoreSheet } from './components/common/MobileNav';
 import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
-import { ACCOUNT } from './data/mockAccount';
+import { signInWithProvider, signOut, getCurrentSession } from './api/auth';
+import { supabase } from './api/supabaseClient';
 
 import OnboardingPage from './pages/OnboardingPage';
 import DashboardPage from './pages/DashboardPage';
@@ -78,6 +88,17 @@ function readPrefs() {
   }
 }
 
+// Supabase session.user -> ProfilePanel/SettingsPage가 쓰는 { name, email } 모양으로 변환.
+// full_name/name은 OAuth 프로바이더(Google 등)가 채워주는 user_metadata 값이고,
+// 없으면 이메일 아이디 부분을 이름으로 씁니다(카카오 등은 이메일 동의를 안 받을 수도 있음).
+function toAccount(session) {
+  const user = session?.user;
+  if (!user) return null;
+  const meta = user.user_metadata || {};
+  const name = meta.full_name || meta.name || user.email?.split('@')[0] || '사용자';
+  return { name, email: user.email || '' };
+}
+
 export default function App() {
   const isMobile = useIsMobile();
   const [view, setView] = useState('dash');
@@ -86,7 +107,10 @@ export default function App() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [authed, setAuthed] = useState(true);
+  // authed/account는 실제 Supabase Auth 세션에서 옵니다(아래 useEffect). 세션 확인이
+  // 끝나기 전까지는 로그아웃 상태로 취급합니다 — 아주 짧은 순간이라 로딩 UI는 따로 두지 않습니다.
+  const [authed, setAuthed] = useState(false);
+  const [account, setAccount] = useState(null);
   const [notiReport, setNotiReport] = useState(true);
   const [notiWiki, setNotiWiki] = useState(true);
   const [dark, setDark] = useState(() => getInitial('mywiki-theme', 'light') === 'dark');
@@ -126,6 +150,45 @@ export default function App() {
       setPwaStateLabel('브라우저 메뉴 → 홈 화면에 추가');
     }
   }
+
+  // 실제 로그인 상태 연결. 초기 세션을 한 번 읽고, 이후 로그인/로그아웃/토큰 갱신은
+  // onAuthStateChange 구독으로 계속 반영합니다 — 소셜 로그인은 OAuth 제공자 화면으로
+  // 리다이렉트됐다가 돌아오는 흐름이라, 버튼 클릭 시점이 아니라 이 구독이 실제 로그인
+  // 완료 시점을 알려줍니다.
+  useEffect(() => {
+    let alive = true;
+    let unsubscribe = () => {};
+
+    getCurrentSession()
+      .then((session) => {
+        if (!alive) return;
+        setAuthed(!!session);
+        setAccount(toAccount(session));
+      })
+      .catch(() => {
+        // Supabase 환경변수가 없는 등 초기화 실패 — 로그아웃 상태로 둡니다.
+        if (alive) {
+          setAuthed(false);
+          setAccount(null);
+        }
+      });
+
+    try {
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!alive) return;
+        setAuthed(!!session);
+        setAccount(toAccount(session));
+      });
+      unsubscribe = () => data.subscription.unsubscribe();
+    } catch {
+      // getCurrentSession()의 catch와 동일한 사유(환경변수 없음) — 구독을 그냥 건너뜁니다.
+    }
+
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, []);
 
   // 다크모드는 :root(<html>)에 data-theme을 설정해야 CSS가 먹습니다.
   useEffect(() => {
@@ -205,14 +268,33 @@ export default function App() {
     setSettingsOpen(false);
     setProfileOpen((o) => !o);
   }
-  // 백엔드 인증이 없어서 로컬 상태만 토글합니다 — 어떤 소셜 버튼을 눌러도 데모 계정으로 로그인됩니다.
-  function handleLogin() {
-    setAuthed(true);
+  // 소셜 로그인 — provider는 ProfilePanel의 OAUTH_PROVIDERS.key ('google' | 'github' | 'kakao').
+  // signInWithOAuth는 성공하면 그 자리에서 브라우저를 OAuth 제공자 화면으로 이동시키므로
+  // (Promise가 풀리기 전에 리다이렉트) 여기서 authed를 직접 set하지 않습니다 — 로그인
+  // 완료 후 이 앱으로 돌아오면 위 useEffect의 onAuthStateChange 구독이 세션을 잡습니다.
+  // 리다이렉트 전에 에러(예: 프로바이더 비활성화)가 나면 콘솔에 남기고 패널만 닫습니다.
+  function handleLogin(provider) {
     setProfileOpen(false);
+    try {
+      // supabaseClient.js가 Supabase 환경변수 없을 때 동기적으로 throw할 수 있어서
+      // (Promise reject가 아니라) .catch만으론 못 잡습니다 — try/catch로 감쌉니다.
+      signInWithProvider(provider).catch((e) => {
+        console.error(`[auth] ${provider} 로그인 실패`, e);
+      });
+    } catch (e) {
+      console.error(`[auth] ${provider} 로그인 실패`, e);
+    }
   }
   function handleLogout() {
-    setAuthed(false);
     setProfileOpen(false);
+    try {
+      signOut().catch((e) => console.error('[auth] 로그아웃 실패', e));
+    } catch (e) {
+      console.error('[auth] 로그아웃 실패', e);
+    }
+    // onAuthStateChange가 곧 SIGNED_OUT을 알려주지만, 버튼 누른 즉시 반응하도록 먼저 반영합니다.
+    setAuthed(false);
+    setAccount(null);
   }
 
   // 첫 진입 — 선호 조사 화면. 앱 뼈대(상단바/내비)를 띄우지 않고 이 화면만 보여줍니다.
@@ -231,7 +313,7 @@ export default function App() {
         onProfileClick={handleProfileClick}
         profileOpen={profileOpen}
         authed={authed}
-        avatarInitial={ACCOUNT.name.charAt(0)}
+        avatarInitial={account?.name?.charAt(0) || ''}
         onLogoClick={handleLogoClick}
       />
 
@@ -263,6 +345,7 @@ export default function App() {
             onToggleNotiWiki={setNotiWiki}
             onLogout={handleLogout}
             onResetInterests={resetOnboarding}
+            account={account}
           />
         )}
       </main>
@@ -280,10 +363,7 @@ export default function App() {
             onNavigate={navigateTo}
             onPwaInstallClick={handlePwaInstallClick}
             pwaStateLabel={pwaStateLabel}
-            onLogoutClick={() => {
-              // TODO: 실제 로그아웃 로직 연결 (인증 API 붙을 때)
-              alert('로그아웃 (구현 예정)');
-            }}
+            onLogoutClick={handleLogout}
           />
         </>
       )}
@@ -303,6 +383,7 @@ export default function App() {
       <ProfilePanel
         isOpen={profileOpen}
         authed={authed}
+        account={account}
         onLogin={handleLogin}
         onLogout={handleLogout}
       />
