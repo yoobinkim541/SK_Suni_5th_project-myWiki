@@ -1,0 +1,10 @@
+services:
+  api:
+    build: .
+    image: mywiki-api:latest
+    container_name: mywiki-api
+    restart: unless-stopped
+    ports:
+      - "8010:8000"
+    env_file:
+      - .env
