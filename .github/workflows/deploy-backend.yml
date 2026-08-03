@@ -1,0 +1,43 @@
+name: Deploy Backend
+
+# hermes-server(오라클 VM, ~/projects/myWiki)에 FastAPI 백엔드를 배포한다.
+# 배치(뉴스 수집·위키 갱신·채팅 정리)는 이미 scheduled-collection.yml 등 별도 워크플로우가
+# 담당하므로 이 배포엔 Celery/Redis를 포함하지 않는다.
+# VM의 .env(SUPABASE_*, OPENROUTER_*)는 이 워크플로우가 아니라 VM에 수동으로 준비돼 있다.
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "src/api/**"
+      - "src/wiki/**"
+      - "src/agent/**"
+      - "src/settings/**"
+      - "src/analysis/**"
+      - "src/report/**"
+      - "requirements.txt"
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Pull latest develop and restart container
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" '
+            set -e
+            cd ~/projects/myWiki
+            git fetch origin develop
+            git reset --hard origin/develop
+            docker compose up -d --build --remove-orphans
+          '

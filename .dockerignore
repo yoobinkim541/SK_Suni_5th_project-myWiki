@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+frontend
+tests
+docs
+database
+supabase
+scripts
+deploy
+*.md
+__pycache__
+*.pyc
+.env
+.venv
+node_modules
