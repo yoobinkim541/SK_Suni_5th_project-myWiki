@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 import pytest
 
@@ -840,3 +841,60 @@ def test_archive_stale_wiki_pages_returns_empty_when_none_stale(monkeypatch):
     )
     result = generation.archive_stale_wiki_pages("ws-1")
     assert result == []
+
+
+# ---------------------------------------------------------------------------
+# 리포트와 별개의 위키 갱신 오케스트레이션
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta, timezone
+
+
+def test_refresh_wiki_from_recent_analysis_runs_pipeline_and_skips_report_persistence(monkeypatch):
+    calls = []
+
+    candidate = ReportCandidate(
+        analysis_result_id="analysis-1",
+        workspace_id="ws-1",
+        document_id="doc-1",
+        document_version_id="doc-ver-1",
+        category=Category.PRODUCT_TECHNOLOGY,
+        title="HBM4 공급 부족 심화",
+        reliability_score=80,
+        importance_score=85,
+        ranking_score=Decimal("90"),
+    )
+    issue_group = IssueGroup(issue_key="issue-1", category=Category.PRODUCT_TECHNOLOGY, candidates=[candidate])
+    enriched_group = EnrichedIssueGroup(issue_group=issue_group, wiki_contexts=[])
+    section = _section("issue-1")
+
+    monkeypatch.setattr(generation, "get_recently_analyzed_candidates", lambda *, workspace_id, since, supabase=None: calls.append(("candidates", workspace_id, since)) or [candidate])
+    monkeypatch.setattr(generation, "select_report_candidates", lambda candidates, **kwargs: calls.append(("select", len(candidates))) or candidates)
+    monkeypatch.setattr(generation, "group_report_candidates", lambda candidates, **kwargs: calls.append(("group", len(candidates))) or [issue_group])
+    monkeypatch.setattr(generation, "enrich_issue_groups", lambda groups, **kwargs: calls.append(("enrich", len(groups))) or [enriched_group])
+    monkeypatch.setattr(generation, "compose_report_sections", lambda groups, **kwargs: calls.append(("compose", len(groups))) or [section])
+    monkeypatch.setattr(generation, "generate_wiki_drafts_for_sections", lambda sections, groups, **kwargs: calls.append(("wiki", len(sections), kwargs.get("workspace_id"))) or [])
+
+    result = generation.refresh_wiki_from_recent_analysis("ws-1", since_hours=2)
+
+    assert result == []
+    call_names = [c[0] for c in calls]
+    assert call_names == ["candidates", "select", "group", "enrich", "compose", "wiki"]
+    assert calls[0][1] == "ws-1"
+    assert calls[5][2] == "ws-1"
+
+
+def test_refresh_wiki_from_recent_analysis_stops_early_when_no_candidates(monkeypatch):
+    calls = []
+    monkeypatch.setattr(generation, "get_recently_analyzed_candidates", lambda **kwargs: [])
+    monkeypatch.setattr(generation, "select_report_candidates", lambda *a, **k: calls.append("select") or [])
+    monkeypatch.setattr(generation, "group_report_candidates", lambda *a, **k: calls.append("group") or [])
+    monkeypatch.setattr(generation, "enrich_issue_groups", lambda *a, **k: calls.append("enrich") or [])
+    monkeypatch.setattr(generation, "compose_report_sections", lambda *a, **k: calls.append("compose") or [])
+    monkeypatch.setattr(generation, "generate_wiki_drafts_for_sections", lambda *a, **k: calls.append("wiki") or [])
+
+    result = generation.refresh_wiki_from_recent_analysis("ws-1")
+
+    assert result == []
+    # 후보가 없어도 나머지 단계는 그대로 빈 리스트를 흘려보낸다(에러 없이).
+    assert calls == ["select", "group", "enrich", "compose", "wiki"]
