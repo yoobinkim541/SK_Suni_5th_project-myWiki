@@ -1,5 +1,5 @@
 // 설정 페이지 — PC/모바일 공용 (#v-settings)
-// 계정 / 알림 / 세션 / 화면 / 데이터·파이프라인 / 앱·소스 6개 섹션을
+// 계정 설정 / 알림 / 세션 / 화면 / 데이터·파이프라인 / 앱·소스 6개 섹션을
 // SettingsGroup + SettingsRow로 조립합니다.
 //
 // 다크 모드: 상단 톱니바퀴 드롭다운(SettingsPanel)의 다크 모드 토글과
@@ -85,8 +85,8 @@ export default function SettingsPage({
 
   return (
     <section className="view on" id="v-settings"
-      data-pri="-"
-      data-cap="계정·화면·데이터 설정. 다크 모드와 글자 크기는 이 브라우저에 저장되고, 나머지는 파이프라인·에이전트 동작에 반영됩니다."
+      data-pri="—"
+      data-cap="계정·화면·데이터 설정. 다크 모드와 글자 크기는 이 브라우저에 저장되고, 나머지는 파이프라인·에이전트 동작에 연결된다."
     >
       <div className="ph">
         <h2>설정</h2>
