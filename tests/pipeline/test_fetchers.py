@@ -287,3 +287,154 @@ def test_article_url_uses_final_redirect_target(
     outcome = fetchers.fetch_gnews(gnews_source, request_obj)
 
     assert outcome.items[0].url == "https://www.yna.co.kr/view/AKR20260802"
+
+
+# ------------------------------------------------------------
+# 네이버 API 에러 처리
+# ------------------------------------------------------------
+
+NAVER_AUTH_ERROR_RESPONSE = {
+    "errorMessage": "NID AUTH Result Invalid (1000) : Authentication failed.",
+    "errorCode": "024",
+}
+
+NAVER_SEARCH_RESPONSE = {
+    "lastBuildDate": "Mon, 03 Aug 2026 14:03:17 +0900",
+    "total": 1039917,
+    "start": 1,
+    "display": 1,
+    "items": [
+        {
+            "title": "SK하이닉스 정책 기사",
+            "originallink": "https://www.segye.com/newsView/20260803511351",
+            "link": "https://n.news.naver.com/mnews/article/022/0004147996",
+            "description": "SK하이닉스 관련 기사",
+            "pubDate": "Mon, 03 Aug 2026 14:00:00 +0900",
+        }
+    ],
+}
+
+
+@pytest.fixture
+def naver_source() -> dict:
+    return {
+        "id": str(uuid4()),
+        "name": "네이버 뉴스 - SK하이닉스",
+        "source_type": "news",
+        "config": {"provider": "naver", "query": "SK하이닉스", "request_delay_sec": 0},
+    }
+
+
+def _stub_naver_api(monkeypatch: pytest.MonkeyPatch, payload: dict, status_code: int = 200) -> None:
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResponse(payload, status_code))
+    monkeypatch.setenv("NAVER_CLIENT_ID", "test-id-not-real")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "test-secret-not-real")
+
+
+def test_fetch_naver_news_raises_on_auth_failure(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest
+) -> None:
+    """
+    인증 실패(401 + errorCode)를 status_code 확인 없이 payload.get("items", [])만
+    보면 빈 리스트로 조용히 넘어가서 "정상 호출인데 0건 수집"처럼 보인다 —
+    반드시 FetchError로 드러나야 한다.
+    """
+    _stub_naver_api(monkeypatch, NAVER_AUTH_ERROR_RESPONSE, status_code=401)
+
+    with pytest.raises(fetchers.FetchError, match="네이버 검색 API 응답 오류"):
+        fetchers.fetch_naver_news(naver_source, request_obj)
+
+
+def test_fetch_naver_news_succeeds_on_valid_response(
+    monkeypatch: pytest.MonkeyPatch, naver_source: dict, request_obj: CollectRequest, stub_article
+) -> None:
+    _stub_naver_api(monkeypatch, NAVER_SEARCH_RESPONSE)
+    stub_article()
+
+    outcome = fetchers.fetch_naver_news(naver_source, request_obj)
+
+    assert len(outcome.items) == 1
+    assert outcome.items[0].url == "https://www.segye.com/newsView/20260803511351"
+
+
+# ------------------------------------------------------------
+# 구글 뉴스 RSS 링크 디코딩
+# ------------------------------------------------------------
+
+GOOGLE_NEWS_LINK = (
+    "https://news.google.com/rss/articles/CBMiaEFVX3lxTFBkQVZHdXQwM3VsSl9f"
+    "VElHSzlKU3huZHkyZXRITnU1WUF2WXJ0SzNkOEIzX21zN0dHSWVyZ2d5anhfdkRhUVFyUG0x"
+    "WkhqRnEyVkRLWGtoTkVVOU03Zmg3ckp1UnlqcFl3?oc=5"
+)
+
+
+def test_resolve_google_news_url_passes_through_non_google_links() -> None:
+    url = "https://www.yna.co.kr/view/AKR20260802"
+    assert fetchers._resolve_google_news_url(url) == url
+
+
+def test_resolve_google_news_url_decodes_successfully(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    구글 뉴스 링크는 JS 기반 리다이렉트라 httpx가 못 따라간다 — 언론사 원문
+    주소로 디코딩된 값을 써야 전처리 단계에서 빈 정제 결과가 안 나온다.
+    """
+    import googlenewsdecoder
+
+    monkeypatch.setattr(
+        googlenewsdecoder,
+        "gnewsdecoder",
+        lambda url, interval=1: {"status": True, "decoded_url": "https://www.mt.co.kr/stock/2026/08/03/x"},
+    )
+
+    resolved = fetchers._resolve_google_news_url(GOOGLE_NEWS_LINK)
+
+    assert resolved == "https://www.mt.co.kr/stock/2026/08/03/x"
+
+
+def test_resolve_google_news_url_falls_back_when_decoder_reports_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import googlenewsdecoder
+
+    monkeypatch.setattr(
+        googlenewsdecoder, "gnewsdecoder", lambda url, interval=1: {"status": False, "message": "boom"}
+    )
+
+    resolved = fetchers._resolve_google_news_url(GOOGLE_NEWS_LINK)
+
+    assert resolved == GOOGLE_NEWS_LINK
+
+
+def test_resolve_google_news_url_falls_back_when_decoder_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """디코더가 죽어도 수집 자체는 안 죽어야 한다 — 원래 주소로 폴백."""
+    import googlenewsdecoder
+
+    def boom(url, interval=1):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(googlenewsdecoder, "gnewsdecoder", boom)
+
+    resolved = fetchers._resolve_google_news_url(GOOGLE_NEWS_LINK)
+
+    assert resolved == GOOGLE_NEWS_LINK
+
+
+def test_fetch_article_resolves_google_news_link_before_http_get(
+    monkeypatch: pytest.MonkeyPatch, stub_article
+) -> None:
+    """_fetch_article이 실제로 디코딩된 주소로 _http_get을 호출하는지 확인한다."""
+    import googlenewsdecoder
+
+    monkeypatch.setattr(
+        googlenewsdecoder,
+        "gnewsdecoder",
+        lambda url, interval=1: {"status": True, "decoded_url": "https://www.mt.co.kr/stock/2026/08/03/x"},
+    )
+    calls = stub_article()
+
+    item = fetchers._fetch_article({"name": "구글 RSS"}, GOOGLE_NEWS_LINK, None, None)
+
+    assert calls == ["https://www.mt.co.kr/stock/2026/08/03/x"]
+    assert item is not None
