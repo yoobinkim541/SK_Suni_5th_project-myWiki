@@ -203,6 +203,9 @@ def collect(request: CollectRequest) -> list[CollectedDocument]:
             "failed": failed,
             "skip_reasons": skip_reasons,
             "failure_reasons": failure_reasons,
+            # 소스가 알려준 제약 안내 (예: 요금제 때문에 결과가 잘림).
+            # 수집 0건인데 실패도 없는 상황의 원인이 여기 남는다.
+            "notices": list(outcome.notices),
         },
     )
     return collected

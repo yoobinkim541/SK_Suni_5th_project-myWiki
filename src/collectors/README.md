@@ -84,18 +84,52 @@ def fetch_dart(source: dict, request) -> fetchers.FetchOutcome: ...
 fetchers.register_fetcher("disclosure", fetch_dart)
 ```
 
-기본 제공: `rss`(GeekNews·구글 RSS) · `news`(네이버 검색 API) · `website`(단일 페이지).
-`disclosure`(DART) 추가 여부는 지침 §9-C-4에서 결정 대기 중이다.
+기본 제공: `rss`(GeekNews·구글 RSS) · `news`(네이버 검색 API·GNews) · `website`(단일 페이지).
 
 `sources.config`(JSONB)에서 읽는 키는 `fetchers.py` 상단 주석 참조.
-스키마 확정 전이라 `config/sources.yaml` 분리는 아직 하지 않았다 (지침 §9-A-3).
+스키마 확정 전이라 `config/sources.yaml` 분리는 아직 하지 않았다.
+
+## 뉴스 제공자 (`source_type='news'`)
+
+`sources.source_type`은 DB CHECK로 6개 값만 허용해서 제공자별로 값을 새로 만들 수 없다.
+그래서 `config.provider`로 가른다. 값이 없으면 `naver`로 동작하므로 기존 설정은 그대로 쓸 수 있다.
+
+```python
+register_source(ws, name="네이버 - HBM", source_type="news",
+                config={"provider": "naver", "query": "HBM"})
+
+register_source(ws, name="GNews - semiconductor", source_type="news",
+                config={"provider": "gnews", "query": "semiconductor", "lang": "en"})
+```
+
+### 제공자 선택 근거 (2026-08-03 실측)
+
+| | 실시간성 | 무료 한도 | 한국어 | 영문 |
+|---|---|---|---|---|
+| 네이버 검색 API | 지연 없음 | 25,000회/일 | 양호 | — |
+| GNews | **12시간 지연** | 100회/일 | `q=반도체` 검색 결과 **총 1건** | `q=semiconductor` **16,645건** |
+
+**국내 기사는 네이버, 해외 영문은 GNews**로 나눈다. GNews 무료 요금제는 한국어 색인이
+사실상 비어 있고, 12시간 지연·30일 이전 기사 제외 제약이 있어 결과가 조용히 0건이 된다.
+그 사유는 응답의 `information` / `articlesRemovedFromResponse`에 담겨 오므로
+`FetchOutcome.notices`로 옮겨 collect job의 `result.notices`에 남긴다.
+
+### 알려진 한계 — 통신사 기사 중복
+
+같은 통신사 기사를 여러 매체가 그대로 싣는 경우, URL이 달라 서로 다른 문서로 저장된다.
+현재 중복 방지는 URL 기준(문서)과 해시 기준(같은 문서의 버전)이라 이 경우를 걸러내지 못한다.
+분석 단계에서 근거 건수를 셀 때 같은 기사를 여러 건으로 오인할 수 있다.
+제목 유사도 기반 판별은 아직 넣지 않았다.
 
 ## 환경변수
 
 | 변수 | 용도 |
 |---|---|
 | `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` | 배치 접속 (위 "DB 접속" 절) |
-| `NAVER_CLIENT_ID` · `NAVER_CLIENT_SECRET` | `source_type='news'` 수집기를 쓸 때만 |
+| `NAVER_CLIENT_ID` · `NAVER_CLIENT_SECRET` | `config.provider='naver'`인 소스를 쓸 때만 |
+| `GNEWS_API_KEY` | `config.provider='gnews'`인 소스를 쓸 때만 |
+
+키 값은 `.env`에만 두고 코드·문서·대화·커밋 어디에도 적지 않는다.
 
 배치 진입점에서 `workspace_id`를 1회 확보해 모든 함수에 인자로 넘긴다.
 전역 상수로 두지 않는다 (명세 §4-5). 실제 UUID는 아직 공유 전이다 (지침 §9-B-3).
