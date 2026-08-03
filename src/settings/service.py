@@ -91,6 +91,7 @@ def update_workspace_settings(
 
 def mark_wiki_refreshed(workspace_id: str, *, supabase: Client | None = None) -> None:
     db = supabase or _get_client()
+    get_workspace_settings(workspace_id, supabase=db)  # 행이 없으면 먼저 만든다
     now = datetime.now(timezone.utc).isoformat()
     db.table("workspace_settings").update({"last_wiki_refresh_at": now}).eq(
         "workspace_id", workspace_id
