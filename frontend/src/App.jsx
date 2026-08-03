@@ -298,10 +298,7 @@ export default function App() {
             onNavigate={navigateTo}
             onPwaInstallClick={handlePwaInstallClick}
             pwaStateLabel={pwaStateLabel}
-            onLogoutClick={() => {
-              // TODO: 실제 로그아웃 로직 연결 (인증 API 붙을 때)
-              alert('로그아웃 (구현 예정)');
-            }}
+            onLogoutClick={handleLogout}
           />
         </>
       )}
