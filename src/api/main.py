@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .auth import get_current_user
@@ -29,6 +30,13 @@ from ..agent.wiki_tools import WikiTools
 from ..wiki.interface import WikiDraftInput, WikiSourceInput, create_wiki_version, upsert_wiki_page
 
 app = FastAPI(title="myWiki Agent API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://mywiki.pe.kr", "https://www.mywiki.pe.kr"],
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(wiki_router)
 app.include_router(settings_router)
 
