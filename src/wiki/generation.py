@@ -129,7 +129,7 @@ def _generate_issue_page(
         draft_slug = matched.slug
         draft_title = matched.title
         draft_page_type = matched.page_type
-        draft_parent_page_id = matched.parent_page_id
+        draft_parent_page_id = matched.parent_page_id if matched.parent_page_id is not None else parent_page_id
     else:
         page_id = upsert_wiki_page(
             workspace_id,
@@ -152,7 +152,9 @@ def _generate_issue_page(
         parent_page_id=draft_parent_page_id,
         markdown=_build_issue_page_markdown(section, evidence_texts),
         sources=_build_issue_page_sources(section, evidence_texts),
-        change_summary="리포트 파이프라인에서 자동 생성",
+        change_summary=(
+            "리포트 파이프라인에서 기존 이슈 페이지 갱신" if matched is not None else "리포트 파이프라인에서 자동 생성"
+        ),
         created_by=requested_by,
         generated_by="llm",
     )

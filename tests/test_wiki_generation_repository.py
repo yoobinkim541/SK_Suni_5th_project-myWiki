@@ -436,3 +436,35 @@ def test_find_matching_issue_page_picks_highest_overlap_among_multiple_matches()
 
     assert result is not None
     assert result.page_id == "page-high"
+
+
+def test_find_matching_issue_page_null_category_does_not_suppress_valid_category():
+    """document_analysis_results에 primary_category=NULL인 행(분류 실패)이 있어도
+    같은 document_version_id에 유효한 카테고리 행이 있으면 그걸로 매칭돼야 한다.
+    (dict 대신 set으로 모아서 NULL 행이 유효한 값을 덮어쓰지 않는지 검증)"""
+    now = datetime.now(timezone.utc)
+    recent = (now - timedelta(days=1)).isoformat()
+    supabase = FakeSupabase(
+        {
+            "wiki_pages": [_wiki_page("page-1", slug="issue-old", current_version_id="v1")],
+            "wiki_page_versions": [_wiki_version("v1", page_id="page-1", created_at=recent)],
+            "wiki_page_sources": [_wiki_source(wiki_version_id="v1", document_version_id="doc-1")],
+            "document_analysis_results": [_analysis_row(document_version_id="doc-1", primary_category=None)],
+        }
+    )
+
+    # NULL 카테고리 행만 있으면 매칭 신호가 없으므로 None (크래시도 안 남)
+    result = find_matching_issue_page(
+        "ws-1", category="제품·기술", document_version_ids=["doc-1"], supabase=supabase,
+    )
+    assert result is None
+
+    # 같은 document_version_id에 유효한 카테고리 행을 추가하면, NULL 행이 있어도 매칭돼야 한다.
+    supabase.tables["document_analysis_results"].append(
+        _analysis_row(document_version_id="doc-1", primary_category="제품·기술")
+    )
+    result = find_matching_issue_page(
+        "ws-1", category="제품·기술", document_version_ids=["doc-1"], supabase=supabase,
+    )
+    assert result is not None
+    assert result.page_id == "page-1"
