@@ -12,8 +12,11 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 // 출처 원문 정의(공시/뉴스 등) 조회 — CitationTag.jsx, AgentPage.jsx가 그대로 씁니다.
 // 위키 화면 자체는 이제 실제 문서 출처(document_title/canonical_url)를 직접 쓰므로
 // 이 조회를 거치지 않습니다.
+// key가 없을 수 있어(백엔드 citations가 출처 종류를 안 주는 경로) null을 그대로 돌려줍니다 —
+// 호출부에서 반드시 널 체크를 해야 합니다.
 export function getSource(key) {
-  return WIKI_SOURCES[key];
+  if (!key) return null;
+  return WIKI_SOURCES[key] ?? null;
 }
 
 function formatDate(iso) {
