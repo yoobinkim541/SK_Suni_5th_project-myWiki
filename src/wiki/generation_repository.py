@@ -164,3 +164,138 @@ def get_wiki_page_identity(
         page_type=row["page_type"],
         parent_page_id=str(row["parent_page_id"]) if row.get("parent_page_id") else None,
     )
+
+
+def find_matching_issue_page(
+    workspace_id: str,
+    *,
+    category: str,
+    document_version_ids: list[str],
+    within_days: int = 7,
+    supabase: Client | None = None,
+) -> WikiPageIdentity | None:
+    """같은 사건이 여러 주기에 걸쳐 보도될 때 매번 새 이슈 페이지가 생기는 걸 막는다.
+    최근 within_days 이내 발행된 issue 타입 페이지 중, 카테고리가 같고 이번 근거 문서와
+    과반수 이상 겹치는 게 있으면 그 페이지를 반환한다.
+
+    1차 필터로 이번 이슈 근거 문서와 겹치는 wiki_page_sources부터 좁혀서 시작한다 —
+    이슈 페이지 전체를 항상 스캔하면 페이지 수가 늘어날수록(90일 아카이빙 전까지 계속
+    누적) in_() 쿼리 URL이 무한정 커지고 결국 414/응답 잘림으로 이어진다.
+    """
+    if not document_version_ids:
+        return None
+
+    db = supabase or get_supabase()
+
+    overlap_source_rows = (
+        db.table("wiki_page_sources")
+        .select("wiki_version_id, document_version_id")
+        .in_("document_version_id", document_version_ids)
+        .execute()
+        .data
+    )
+    if not overlap_source_rows:
+        return None
+    overlap_version_ids = list({str(row["wiki_version_id"]) for row in overlap_source_rows})
+
+    versions = (
+        db.table("wiki_page_versions")
+        .select("id, page_id, created_at")
+        .in_("id", overlap_version_ids)
+        .execute()
+        .data
+    )
+    threshold = datetime.now(timezone.utc) - timedelta(days=within_days)
+    recent_version_by_id: dict[str, dict] = {}
+    for row in versions:
+        created_at_raw = row.get("created_at")
+        if not created_at_raw:
+            continue
+        created_at = datetime.fromisoformat(str(created_at_raw).replace("Z", "+00:00"))
+        if created_at >= threshold:
+            recent_version_by_id[str(row["id"])] = {**row, "created_at": created_at}
+    if not recent_version_by_id:
+        return None
+
+    candidate_page_ids = list({str(row["page_id"]) for row in recent_version_by_id.values()})
+    pages = (
+        db.table("wiki_pages")
+        .select("id, slug, title, page_type, parent_page_id, current_version_id")
+        .eq("workspace_id", workspace_id)
+        .eq("page_type", "issue")
+        .eq("status", "published")
+        .in_("id", candidate_page_ids)
+        .execute()
+        .data
+    )
+    candidate_pages = [
+        p for p in pages
+        if p.get("current_version_id") and str(p["current_version_id"]) in recent_version_by_id
+    ]
+    if not candidate_pages:
+        return None
+
+    candidate_version_ids = list({str(p["current_version_id"]) for p in candidate_pages})
+    full_source_rows = (
+        db.table("wiki_page_sources")
+        .select("wiki_version_id, document_version_id")
+        .in_("wiki_version_id", candidate_version_ids)
+        .execute()
+        .data
+    )
+    docs_by_version: dict[str, set[str]] = {}
+    for row in full_source_rows:
+        docs_by_version.setdefault(str(row["wiki_version_id"]), set()).add(row["document_version_id"])
+
+    all_candidate_doc_ids = list({did for docs in docs_by_version.values() for did in docs})
+    if not all_candidate_doc_ids:
+        return None
+    analysis_rows = (
+        db.table("document_analysis_results")
+        .select("document_version_id, primary_category")
+        .eq("workspace_id", workspace_id)
+        .in_("document_version_id", all_candidate_doc_ids)
+        .execute()
+        .data
+    )
+    categories_by_doc: dict[str, set[str]] = {}
+    for row in analysis_rows:
+        primary_category = row.get("primary_category")
+        if not primary_category:
+            continue
+        categories_by_doc.setdefault(row["document_version_id"], set()).add(primary_category)
+
+    new_doc_ids = set(document_version_ids)
+    best_page: dict | None = None
+    best_ratio = -1.0
+    best_created_at: datetime | None = None
+    for page in candidate_pages:
+        version_id = str(page["current_version_id"])
+        candidate_docs = docs_by_version.get(version_id, set())
+        if not candidate_docs:
+            continue
+        has_matching_category = any(
+            category in categories_by_doc.get(did, ()) for did in candidate_docs
+        )
+        if not has_matching_category:
+            continue
+        overlap = len(candidate_docs & new_doc_ids)
+        ratio = overlap / len(new_doc_ids)
+        if ratio < 0.5:
+            continue
+        created_at = recent_version_by_id[version_id]["created_at"]
+        if ratio > best_ratio or (ratio == best_ratio and (best_created_at is None or created_at > best_created_at)):
+            best_page = page
+            best_ratio = ratio
+            best_created_at = created_at
+
+    if best_page is None:
+        return None
+
+    return WikiPageIdentity(
+        page_id=str(best_page["id"]),
+        slug=best_page["slug"],
+        title=best_page["title"],
+        page_type=best_page["page_type"],
+        parent_page_id=str(best_page["parent_page_id"]) if best_page.get("parent_page_id") else None,
+    )

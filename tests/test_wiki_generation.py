@@ -70,6 +70,7 @@ def test_generate_issue_page_creates_and_auto_publishes(monkeypatch):
     def fake_publish_wiki_version(page_id, version_id, *, supabase=None):
         calls.append(("publish", page_id, version_id))
 
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
     monkeypatch.setattr(generation, "upsert_wiki_page", fake_upsert_wiki_page)
     monkeypatch.setattr(generation, "create_wiki_version", fake_create_wiki_version)
     monkeypatch.setattr(generation, "record_wiki_validation", fake_record_wiki_validation)
@@ -93,6 +94,7 @@ def test_generate_issue_page_creates_and_auto_publishes(monkeypatch):
 
 def test_generate_issue_page_defaults_parent_to_none(monkeypatch):
     calls = []
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
     monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-1")
     monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: "version-1")
     monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
@@ -103,6 +105,80 @@ def test_generate_issue_page_defaults_parent_to_none(monkeypatch):
 
     upsert_call = next(call for call in calls if call[0] == "upsert")
     assert upsert_call[1] == ("ws-1", "issue-hbm4-supply", "HBM4 공급 부족 심화", "issue", None)
+
+
+def test_generate_issue_page_reuses_matched_page_identity(monkeypatch):
+    calls = []
+    matched = generation.WikiPageIdentity(
+        page_id="page-existing", slug="issue-existing", title="기존 제목",
+        page_type="issue", parent_page_id="page-parent-existing",
+    )
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: calls.append(("find", k)) or matched)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "should-not-be-used")
+    monkeypatch.setattr(
+        generation, "create_wiki_version",
+        lambda draft, **k: calls.append(
+            ("create", draft.slug, draft.title, draft.page_type, draft.parent_page_id, draft.change_summary)
+        ) or "version-new",
+    )
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: calls.append(("publish", a)))
+
+    page_id, version_id = generation._generate_issue_page(_section(), workspace_id="ws-1", requested_by=None)
+
+    assert page_id == "page-existing"
+    assert version_id == "version-new"
+    assert not any(call[0] == "upsert" for call in calls)  # 매칭됐으면 upsert_wiki_page를 호출하지 않는다
+    create_call = next(call for call in calls if call[0] == "create")
+    assert create_call[1:5] == ("issue-existing", "기존 제목", "issue", "page-parent-existing")
+    assert create_call[5] == "리포트 파이프라인에서 기존 이슈 페이지 갱신"  # 매칭 시점엔 "갱신" 문구로 구분
+    assert ("publish", ("page-existing", "version-new")) in calls
+    find_call = next(call for call in calls if call[0] == "find")
+    assert find_call[1]["category"] == _section().category.value
+
+
+def test_generate_issue_page_adopts_new_parent_when_matched_page_has_none(monkeypatch):
+    """매칭된 기존 페이지의 parent_page_id가 None으로 고착돼 있어도(예: 이전 회차
+    주제 페이지 생성 실패), 이번 회차가 parent_page_id를 성공적으로 계산했다면
+    그 값을 채택해야 한다 — 영원히 고아 상태로 남으면 안 된다."""
+    calls = []
+    matched = generation.WikiPageIdentity(
+        page_id="page-existing", slug="issue-existing", title="기존 제목",
+        page_type="issue", parent_page_id=None,
+    )
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: matched)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "should-not-be-used")
+    monkeypatch.setattr(
+        generation, "create_wiki_version",
+        lambda draft, **k: calls.append(("create", draft.parent_page_id)) or "version-new",
+    )
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None, parent_page_id="page-parent-new",
+    )
+
+    create_call = next(call for call in calls if call[0] == "create")
+    assert create_call[1] == "page-parent-new"
+
+
+def test_generate_issue_page_creates_new_when_no_match(monkeypatch):
+    calls = []
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-new")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: calls.append(("create", draft.slug)) or "version-new")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    page_id, version_id = generation._generate_issue_page(_section("issue-hbm4-supply"), workspace_id="ws-1", requested_by=None)
+
+    assert page_id == "page-new"
+    upsert_call = next(call for call in calls if call[0] == "upsert")
+    assert upsert_call[1][1] == "issue-hbm4-supply"  # section.issue_key 그대로 slug로 씀
 
 
 def test_generate_issue_page_markdown_contains_all_sections():
@@ -647,6 +723,7 @@ def test_generate_issue_page_threads_supabase_into_writes(monkeypatch):
     seen: list[object] = []
     sentinel = object()
 
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, supabase=None, **k: None)
     monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, supabase=None, **k: seen.append(supabase) or "page-1")
     monkeypatch.setattr(generation, "create_wiki_version", lambda draft, supabase=None: seen.append(supabase) or "version-1")
     monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, supabase=None: seen.append(supabase))
