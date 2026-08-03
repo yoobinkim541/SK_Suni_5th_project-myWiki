@@ -214,6 +214,95 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
 
 
 # ---------------------------------------------------------------------------
+# 근거 검증 — 모델이 citations에 지어낸(또는 규칙 위반인) 값을 넣는 경우
+# ---------------------------------------------------------------------------
+
+def test_answer_accepts_citation_missing_optional_wiki_slug(agent, wiki_tools, monkeypatch):
+    """submit_answer 도구 스키마는 wiki_slug를 required로 요구하지 않으므로,
+    모델이 생략해도 Citation 파싱이 죽으면 안 된다."""
+    wiki_tools.read_wiki_page.return_value = FakePage(
+        title="HBM4",
+        markdown="# HBM4",
+        sources=[FakeSource(document_version_id="doc-1", claim_text="HBM4는 차세대 메모리다.")],
+    )
+    citation_without_wiki_slug = {
+        "document_version_id": "doc-1",
+        "quote": "HBM4는 차세대 메모리다.",
+    }
+    responses = [
+        tool_call_response(("call-1", "read_wiki_page", {"slug": "hbm4"})),
+        tool_call_response(("call-2", "submit_answer", {"answer": "HBM4는 차세대 메모리다.", "citations": [citation_without_wiki_slug]})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4가 뭐야?")
+
+    assert result.has_answer is True
+    assert result.citations[0].wiki_slug is None
+
+
+def test_answer_rejects_citation_not_grounded_in_read_page(agent, wiki_tools, monkeypatch):
+    """read_wiki_page로 실제 조회한 문서에 없는 document_version_id를 인용하면
+    (모델이 지어낸 근거) has_answer=False로 강등해야 한다 — 그대로 저장하면
+    message_citations의 document_version_id FK 위반으로 API가 죽는다."""
+    wiki_tools.read_wiki_page.return_value = FakePage(
+        title="HBM4",
+        markdown="# HBM4",
+        sources=[FakeSource(document_version_id="doc-1", claim_text="HBM4는 차세대 메모리다.")],
+    )
+    hallucinated_citation = {
+        "document_version_id": "doc-does-not-exist",
+        "quote": "지어낸 인용",
+    }
+    responses = [
+        tool_call_response(("call-1", "read_wiki_page", {"slug": "hbm4"})),
+        tool_call_response(("call-2", "submit_answer", {"answer": "답변", "citations": [hallucinated_citation]})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4가 뭐야?")
+
+    assert result.has_answer is False
+    assert "일치하지 않음" in result.no_answer_reason
+
+
+def test_answer_rejects_empty_citations_list(agent, wiki_tools, monkeypatch):
+    """citations가 빈 리스트인 submit_answer는 근거 없이 답한 것과 같으므로 거부한다."""
+    responses = [
+        tool_call_response(("call-1", "submit_answer", {"answer": "근거 없는 답변", "citations": []})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("질문")
+
+    assert result.has_answer is False
+
+
+def test_answer_rejects_citation_with_out_of_range_relevance_score(agent, wiki_tools, monkeypatch):
+    """relevance_score는 message_citations에 CHECK(0~1) 제약이 있다 — 범위 밖 값을
+    그대로 저장하면 API가 500을 낸다."""
+    wiki_tools.read_wiki_page.return_value = FakePage(
+        title="HBM4",
+        markdown="# HBM4",
+        sources=[FakeSource(document_version_id="doc-1", claim_text="HBM4는 차세대 메모리다.")],
+    )
+    out_of_range_citation = {
+        "document_version_id": "doc-1",
+        "quote": "HBM4는 차세대 메모리다.",
+        "relevance_score": 85,
+    }
+    responses = [
+        tool_call_response(("call-1", "read_wiki_page", {"slug": "hbm4"})),
+        tool_call_response(("call-2", "submit_answer", {"answer": "답변", "citations": [out_of_range_citation]})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4가 뭐야?")
+
+    assert result.has_answer is False
+
+
+# ---------------------------------------------------------------------------
 # 초기화
 # ---------------------------------------------------------------------------
 
