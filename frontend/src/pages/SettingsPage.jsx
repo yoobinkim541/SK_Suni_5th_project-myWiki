@@ -1,5 +1,5 @@
 // 설정 페이지 — PC/모바일 공용 (#v-settings)
-// 계정 설정 / 알림 / 세션 / 화면 / 데이터·파이프라인 / 앱·소스 6개 섹션을
+// 계정 / 알림 / 세션 / 화면 / 데이터·파이프라인 / 앱·소스 6개 섹션을
 // SettingsGroup + SettingsRow로 조립합니다.
 //
 // 다크 모드: 상단 톱니바퀴 드롭다운(SettingsPanel)의 다크 모드 토글과
@@ -19,6 +19,11 @@
 // 나머지(에이전트 참조 범위, 수집/리포트 시각 등)는 아직 백엔드가 없어서 이 페이지 안의
 // 로컬 상태로만 관리합니다. 리포트 생성 시간/Wiki 주기/대화 보관 기간은 원본 시안과 동일하게
 // localStorage에 저장해 새로고침해도 유지됩니다.
+//
+// ⚠ 수정: "수집 소스" 표기를 services/settingsApi.js 경유로 바꿨습니다.
+//   기존 문구("네이버 뉴스 API · OpenDART · RSS 6개 매체" / "3종 연결됨")가
+//   scripts/register_sources.py의 실제 등록 내용과 달라서(GNews 누락, RSS는 1건)
+//   화면이 근거 없는 숫자를 단정하고 있었습니다.
 
 import { useState, useEffect } from 'react';
 import SettingsGroup from '../components/settings/SettingsGroup';
@@ -26,6 +31,11 @@ import SettingsRow from '../components/settings/SettingsRow';
 import ToggleSwitch from '../components/common/ToggleSwitch';
 import SegmentedControl from '../components/common/SegmentedControl';
 import { ACCOUNT } from '../data/mockAccount';
+import {
+  fetchCollectSources,
+  formatSourceSummary,
+  formatSourceCount,
+} from '../services/settingsApi';
 
 function getInitial(key, fallback) {
   try {
@@ -50,6 +60,19 @@ export default function SettingsPage({
   const [wikiCycle, setWikiCycle] = useState(() => getInitial('mywiki-wiki-cycle', '6h'));
   const [chatKeep, setChatKeep] = useState(() => getInitial('mywiki-chat-keep', '90'));
 
+  // 수집 소스 — 백엔드 조회 엔드포인트가 열리면 settingsApi 쪽만 바뀝니다.
+  const [sources, setSources] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchCollectSources()
+      .then((rows) => alive && setSources(rows))
+      .catch(() => alive && setSources([]));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   useEffect(() => {
     try { localStorage.setItem('mywiki-report-time', reportTime); } catch { /* noop */ }
   }, [reportTime]);
@@ -62,8 +85,8 @@ export default function SettingsPage({
 
   return (
     <section className="view on" id="v-settings"
-      data-pri="—"
-      data-cap="계정·화면·데이터 설정. 다크 모드와 글자 크기는 이 브라우저에 저장되고, 나머지는 파이프라인·에이전트 동작에 연결된다."
+      data-pri="-"
+      data-cap="계정·화면·데이터 설정. 다크 모드와 글자 크기는 이 브라우저에 저장되고, 나머지는 파이프라인·에이전트 동작에 반영됩니다."
     >
       <div className="ph">
         <h2>설정</h2>
@@ -169,8 +192,11 @@ export default function SettingsPage({
         <SettingsRow label="참조 도메인" desc="현재 수집·분석 대상 산업">
           <div className="vl">반도체</div>
         </SettingsRow>
-        <SettingsRow label="수집 소스" desc="네이버 뉴스 API · OpenDART · RSS 6개 매체">
-          <div className="vl">3종 연결됨</div>
+        {/* ⚠ 수정: 하드코딩된 "네이버 뉴스 API · OpenDART · RSS 6개 매체" / "3종 연결됨"을
+            settingsApi 경유로 바꿨습니다. 실제 매체명(전자신문·ZDNet 등)은 수집 결과에서만
+            나오는 값이라 백엔드 조회 API가 열린 뒤에 채웁니다. */}
+        <SettingsRow label="수집 소스" desc={formatSourceSummary(sources)}>
+          <div className="vl">{formatSourceCount(sources)}</div>
         </SettingsRow>
       </SettingsGroup>
 
