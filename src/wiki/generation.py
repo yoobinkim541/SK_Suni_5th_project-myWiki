@@ -12,6 +12,7 @@ from .generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_
 from .generation_repository import (
     archive_wiki_page,
     filter_to_topic_page_ids,
+    find_matching_issue_page,
     find_stale_published_page_ids,
     get_wiki_page_identity,
     list_top_level_topic_pages,
@@ -116,20 +117,39 @@ def _generate_issue_page(
     evidence_texts: dict[str, str] | None = None,
     supabase: Client | None = None,
 ) -> tuple[str, str]:
-    page_id = upsert_wiki_page(
+    matched = find_matching_issue_page(
         workspace_id,
-        section.issue_key,
-        section.title,
-        "issue",
-        parent_page_id,
+        category=section.category.value,
+        document_version_ids=[c.document_version_id for c in section.news_citations],
         supabase=supabase,
     )
+
+    if matched is not None:
+        page_id = matched.page_id
+        draft_slug = matched.slug
+        draft_title = matched.title
+        draft_page_type = matched.page_type
+        draft_parent_page_id = matched.parent_page_id
+    else:
+        page_id = upsert_wiki_page(
+            workspace_id,
+            section.issue_key,
+            section.title,
+            "issue",
+            parent_page_id,
+            supabase=supabase,
+        )
+        draft_slug = section.issue_key
+        draft_title = section.title
+        draft_page_type = "issue"
+        draft_parent_page_id = parent_page_id
+
     draft = WikiDraftInput(
         workspace_id=workspace_id,
-        slug=section.issue_key,
-        title=section.title,
-        page_type="issue",
-        parent_page_id=parent_page_id,
+        slug=draft_slug,
+        title=draft_title,
+        page_type=draft_page_type,
+        parent_page_id=draft_parent_page_id,
         markdown=_build_issue_page_markdown(section, evidence_texts),
         sources=_build_issue_page_sources(section, evidence_texts),
         change_summary="리포트 파이프라인에서 자동 생성",
