@@ -7,24 +7,73 @@
 //     그 키워드에 엮인 공시·IR 원문과 뉴스기사 목록이 모달로 뜹니다.
 //
 // 1·2번은 같은 상태(docId) 하나만 바꾸므로 동작이 갈리지 않습니다.
-// 근거 출처와 본문 각주는 기존대로 출처 원문(Source Router)으로 새 탭 이동합니다.
+// 근거 출처는 백엔드가 조인해 준 문서 제목·매체명·게시일을 그대로 보여주고,
+// 클릭하면 언론사 원문(canonical_url)으로 이동합니다 — 실제 원문 주소가 없는
+// 근거는 클릭 불가로 남겨 둡니다(잘못된 링크를 지어내지 않음).
+//
+// 데이터는 services/wikiApi.js를 통해서만 가져옵니다.
+// VITE_USE_MOCK=true면 목업, false면 실제 백엔드(api/wiki.js)를 호출합니다.
 
 import { useEffect, useState } from 'react';
-import { MOCK_WIKI_TREE, MOCK_WIKI_DOCS, DEFAULT_WIKI_DOC, WIKI_KEYWORD_LINKS } from '../data/mockWiki';
-import { getWikiDoc, getSource, resolveWikiId } from '../services/wikiApi';
+import { WIKI_KEYWORD_LINKS } from '../data/mockWiki';
+import { fetchWikiTree, fetchWikiDoc, resolveWikiId } from '../services/wikiApi';
 import WikiCard from '../components/wiki/WikiCard';
 import WikiKeywordModal from '../components/wiki/WikiKeywordModal';
 
 export default function WikiPage({ docId }) {
-  const [current, setCurrent] = useState(() => resolveWikiId(docId || DEFAULT_WIKI_DOC));
+  const [tree, setTree] = useState(null);
+  const [current, setCurrent] = useState(null);
+  const [doc, setDoc] = useState(null);
   const [keyword, setKeyword] = useState(null);
+  const [error, setError] = useState(null);
+
+  // 최초 진입 시 좌측 트리를 불러오고, 대시보드·리포트에서 넘어온 docId가
+  // 없으면 첫 문서를 기본으로 엽니다.
+  useEffect(() => {
+    let alive = true;
+    fetchWikiTree()
+      .then((data) => {
+        if (!alive) return;
+        setTree(data);
+        const resolved = resolveWikiId(docId) || data[0]?.items[0]?.id || null;
+        setCurrent(resolved);
+      })
+      .catch((e) => alive && setError(e.message || '위키 목록을 불러오지 못했습니다.'));
+    return () => { alive = false; };
+  }, []);
 
   // 대시보드·리포트의 "관련 위키" 링크로 진입했을 때 해당 문서를 엽니다.
   useEffect(() => {
     if (docId) setCurrent(resolveWikiId(docId));
   }, [docId]);
 
-  const doc = getWikiDoc(current);
+  // 현재 선택된 문서의 본문을 불러옵니다.
+  useEffect(() => {
+    if (!current) return;
+    let alive = true;
+    setDoc(null);
+    fetchWikiDoc(current)
+      .then((data) => alive && setDoc(data))
+      .catch((e) => alive && setError(e.message || '위키 문서를 불러오지 못했습니다.'));
+    return () => { alive = false; };
+  }, [current]);
+
+  if (error) {
+    return (
+      <section className="view on" id="v-wiki">
+        <div className="ph"><h2>위키를 불러오지 못했습니다</h2></div>
+        <p>{error}</p>
+      </section>
+    );
+  }
+
+  if (!tree || !doc) {
+    return (
+      <section className="view on" id="v-wiki">
+        <div className="ph"><h2>불러오는 중…</h2></div>
+      </section>
+    );
+  }
 
   return (
     <section className="view on" id="v-wiki">
@@ -36,16 +85,16 @@ export default function WikiPage({ docId }) {
 
       <div className="wiki">
         <div className="tree">
-          {MOCK_WIKI_TREE.map((section) => (
+          {tree.map((section) => (
             <div key={section.group}>
               <div className="g">{section.group}</div>
-              {section.items.map((id) => (
+              {section.items.map((item) => (
                 <a
-                  key={id}
-                  className={current === id ? 'on' : ''}
-                  onClick={() => setCurrent(id)}
+                  key={item.id}
+                  className={current === item.id ? 'on' : ''}
+                  onClick={() => setCurrent(item.id)}
                 >
-                  {MOCK_WIKI_DOCS[id].title}
+                  {item.title}
                 </a>
               ))}
             </div>
@@ -57,21 +106,20 @@ export default function WikiPage({ docId }) {
         <div>
           <div className="col">
             <h5>근거 출처<span className="c">{doc.sourceCount}</span></h5>
-            {doc.sources.map((s, i) => {
-              const src = getSource(s.key);
-              return (
-                <a
-                  className="it"
-                  key={`${s.key}-${i}`}
-                  href={src.url}
-                  target="_blank"
-                  rel="noopener"
-                  title={src.title}
-                >
-                  <span className="no">{i + 1}</span>{src.name} · {s.date}
-                </a>
-              );
-            })}
+            {doc.sources.map((s, i) => (
+              <a
+                className="it"
+                key={`${s.citationOrder}-${i}`}
+                href={s.url || undefined}
+                target={s.url ? '_blank' : undefined}
+                rel={s.url ? 'noopener' : undefined}
+                title={s.url ? s.title : `${s.title} (원문 주소 확인 안 됨)`}
+                aria-disabled={!s.url}
+              >
+                <span className="no">{i + 1}</span>
+                {s.title}{s.sourceName ? ` · ${s.sourceName}` : ''}{s.date ? ` · ${s.date}` : ''}
+              </a>
+            ))}
           </div>
 
           <div className="col">
