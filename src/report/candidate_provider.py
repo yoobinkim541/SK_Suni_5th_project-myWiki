@@ -82,57 +82,9 @@ def get_report_candidates(
     if not analysis_rows:
         return []
 
-    source_ids = [row.get("source_id") for row in document_rows if row.get("source_id")]
-    source_rows = (
-        db.table("sources")
-        .select("id, name")
-        .in_("id", list(set(source_ids)) or [""])
-        .execute()
-        .data
-    ) if source_ids else []
-    sources_by_id = {row["id"]: row for row in source_rows}
-
-    rows_by_document_version: dict[str, list[dict[str, Any]]] = {}
-    for row in analysis_rows:
-        document_version_id = row.get("document_version_id")
-        if not document_version_id:
-            continue
-        rows_by_document_version.setdefault(document_version_id, []).append(row)
-
-    selected_results: list[tuple[AnalysisResultForReport, str]] = []
-    for document_version_id in document_version_ids:
-        document_id = version_to_document.get(document_version_id)
-        document = documents_by_id.get(document_id) if document_id else None
-        if document_id is None or document is None:
-            continue
-
-        ready_rows = [
-            row
-            for row in rows_by_document_version.get(document_version_id, [])
-            if _row_is_report_candidate_ready(row)
-        ]
-        selected_row = _select_analysis_row_for_ranking(
-            rows=ready_rows,
-            workspace_id=workspace_id,
-            document_version_id=document_version_id,
-        )
-        if selected_row is None:
-            continue
-
-        source = sources_by_id.get(document.get("source_id"), {}) if document.get("source_id") else {}
-        payload = dict(selected_row)
-        payload["analysis_result_id"] = payload.get("id")
-        payload["title"] = document.get("title") or ""
-        payload["canonical_url"] = document.get("canonical_url")
-        payload["published_at"] = document.get("published_at")
-        payload["source_name"] = source.get("name")
-        selected_results.append((AnalysisResultForReport.model_validate(payload), document_id))
-
-    candidates = [
-        to_report_candidate(result=result, document_id=document_id)
-        for result, document_id in selected_results
-    ]
-    return build_report_candidates(candidates)
+    return _build_candidates_from_analysis_rows(
+        db, analysis_rows=analysis_rows, workspace_id=workspace_id,
+    )
 
 
 def to_report_candidate(*, result: AnalysisResultForReport, document_id: str) -> ReportCandidate:
@@ -203,6 +155,25 @@ def get_recently_analyzed_candidates(
     if not analysis_rows:
         return []
 
+    return _build_candidates_from_analysis_rows(
+        db, analysis_rows=analysis_rows, workspace_id=workspace_id,
+    )
+
+
+def _build_candidates_from_analysis_rows(
+    db: Client,
+    *,
+    analysis_rows: list[dict[str, Any]],
+    workspace_id: str,
+) -> list[ReportCandidate]:
+    """analysis_rows(document_analysis_results 행들)로부터 document_versions/documents/sources를
+    조회해 ReportCandidate 리스트로 변환한다. get_report_candidates와
+    get_recently_analyzed_candidates가 공유한다.
+
+    documents는 workspace_id로 직접 필터링하지 않고, analysis_rows(이미 workspace_id로
+    필터링됨) -> document_versions -> documents 경로로 전이적으로만 도달한다. 두 호출부의
+    "어떤 문서/분석 행이 대상인지" 결정 로직은 각자 다르므로 이 함수에 들어오지 않는다.
+    """
     document_version_ids = list({row["document_version_id"] for row in analysis_rows if row.get("document_version_id")})
     version_rows = (
         db.table("document_versions")

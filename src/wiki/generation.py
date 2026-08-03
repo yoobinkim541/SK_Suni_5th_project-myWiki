@@ -433,5 +433,5 @@ def refresh_wiki_from_recent_analysis(
     sections = compose_report_sections(enriched_groups, config=config.composer)
 
     return generate_wiki_drafts_for_sections(
-        sections, enriched_groups, workspace_id=workspace_id, requested_by=requested_by,
+        sections, enriched_groups, workspace_id=workspace_id, requested_by=requested_by, supabase=supabase,
     )

@@ -852,6 +852,7 @@ from datetime import datetime, timedelta, timezone
 
 def test_refresh_wiki_from_recent_analysis_runs_pipeline_and_skips_report_persistence(monkeypatch):
     calls = []
+    sentinel_supabase = object()
 
     candidate = ReportCandidate(
         analysis_result_id="analysis-1",
@@ -873,18 +874,27 @@ def test_refresh_wiki_from_recent_analysis_runs_pipeline_and_skips_report_persis
     monkeypatch.setattr(generation, "group_report_candidates", lambda candidates, **kwargs: calls.append(("group", len(candidates))) or [issue_group])
     monkeypatch.setattr(generation, "enrich_issue_groups", lambda groups, **kwargs: calls.append(("enrich", len(groups))) or [enriched_group])
     monkeypatch.setattr(generation, "compose_report_sections", lambda groups, **kwargs: calls.append(("compose", len(groups))) or [section])
-    monkeypatch.setattr(generation, "generate_wiki_drafts_for_sections", lambda sections, groups, **kwargs: calls.append(("wiki", len(sections), kwargs.get("workspace_id"))) or [])
+    monkeypatch.setattr(generation, "generate_wiki_drafts_for_sections", lambda sections, groups, **kwargs: calls.append(("wiki", len(sections), kwargs)) or [])
 
-    result = generation.refresh_wiki_from_recent_analysis("ws-1", since_hours=2)
+    result = generation.refresh_wiki_from_recent_analysis("ws-1", since_hours=2, supabase=sentinel_supabase)
 
     assert result == []
     call_names = [c[0] for c in calls]
     assert call_names == ["candidates", "select", "group", "enrich", "compose", "wiki"]
     assert calls[0][1] == "ws-1"
-    assert calls[5][2] == "ws-1"
+    wiki_kwargs = calls[5][2]
+    assert wiki_kwargs.get("workspace_id") == "ws-1"
+    # supabase가 읽기 경로(get_recently_analyzed_candidates 등)뿐 아니라
+    # 쓰기 경로(generate_wiki_drafts_for_sections)에도 동일하게 전달돼야 한다.
+    assert wiki_kwargs.get("supabase") is sentinel_supabase
+
+    # report_sections/reports 저장 함수는 wiki.generation 네임스페이스에 아예 없어야 한다
+    # (구조적으로 리포트 영속화가 불가능함을 보장).
+    for name in ("save_report_sections", "mark_report_completed", "create_report_version", "create_and_save_markdown_artifact"):
+        assert not hasattr(generation, name)
 
 
-def test_refresh_wiki_from_recent_analysis_stops_early_when_no_candidates(monkeypatch):
+def test_refresh_wiki_from_recent_analysis_passes_empty_list_through_all_stages(monkeypatch):
     calls = []
     monkeypatch.setattr(generation, "get_recently_analyzed_candidates", lambda **kwargs: [])
     monkeypatch.setattr(generation, "select_report_candidates", lambda *a, **k: calls.append("select") or [])
@@ -896,5 +906,6 @@ def test_refresh_wiki_from_recent_analysis_stops_early_when_no_candidates(monkey
     result = generation.refresh_wiki_from_recent_analysis("ws-1")
 
     assert result == []
-    # 후보가 없어도 나머지 단계는 그대로 빈 리스트를 흘려보낸다(에러 없이).
+    # 후보가 없어도 조기 종료하지 않는다: 각 단계가 빈 리스트를 그대로 받아
+    # 예외 없이 no-op으로 통과하며, 마지막 단계까지 전부 호출된다.
     assert calls == ["select", "group", "enrich", "compose", "wiki"]
