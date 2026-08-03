@@ -110,7 +110,7 @@ def delete_expired_sessions(workspace_id: str, *, retention_days: int | None) ->
     message_ids = [
         row["id"]
         for row in _select_all(
-            lambda: db.table("chat_messages").select("id").in_("session_id", expired_ids)
+            lambda: db.table("chat_messages").select("id").in_("session_id", expired_ids).order("id")
         )
     ]
     if message_ids:
