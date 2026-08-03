@@ -82,6 +82,120 @@ def get_report_candidates(
     if not analysis_rows:
         return []
 
+    return _build_candidates_from_analysis_rows(
+        db, analysis_rows=analysis_rows, workspace_id=workspace_id,
+    )
+
+
+def to_report_candidate(*, result: AnalysisResultForReport, document_id: str) -> ReportCandidate:
+    return ReportCandidate(
+        analysis_result_id=result.analysis_result_id,
+        workspace_id=result.workspace_id,
+        document_id=document_id,
+        document_version_id=result.document_version_id,
+        category=result.primary_category,
+        title=result.title,
+        summary=result.core_summary,
+        reliability_score=result.reliability_score,
+        importance_score=result.importance_score,
+        ranking_score=Decimal(str(result.ranking_score)) if result.ranking_score is not None else None,
+        source_name=result.source_name,
+        canonical_url=result.canonical_url,
+        published_at=result.published_at,
+        impact_direction=result.impact_direction,
+        time_horizon=result.time_horizon,
+    )
+
+
+def build_report_candidates(candidates: Sequence[ReportCandidate]) -> list[ReportCandidate]:
+    ordered = list(candidates)
+    ordered.sort(key=lambda item: item.analysis_result_id, reverse=True)
+    ordered.sort(
+        key=lambda item: item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    ordered.sort(
+        key=lambda item: item.ranking_score if item.ranking_score is not None else Decimal("-1"),
+        reverse=True,
+    )
+    return ordered
+
+
+def _row_is_report_candidate_ready(row: dict[str, Any]) -> bool:
+    return bool(
+        row.get("ranking_status") == "completed"
+        and row.get("ranking_score") is not None
+        and _row_is_ranking_candidate_ready(row)
+        and _row_has_report_summary(row)
+    )
+
+
+def get_recently_analyzed_candidates(
+    *,
+    workspace_id: str,
+    since: datetime,
+    supabase: Client | None = None,
+) -> list[ReportCandidate]:
+    """report_date 하루 단위가 아니라 '최근 since 이후 분석 완료된 것' 기준으로
+    candidate를 가져온다 — 2시간 주기 위키 갱신 배치 전용."""
+    db = supabase or get_supabase()
+    analysis_rows = (
+        db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .eq("status", "completed")
+        .eq("reliability_status", "completed")
+        .eq("importance_status", "completed")
+        .eq("ranking_status", "completed")
+        .gte("importance_evaluated_at", since.isoformat())
+        .order("importance_evaluated_at", desc=True)
+        .execute()
+        .data
+    )
+    if not analysis_rows:
+        return []
+
+    return _build_candidates_from_analysis_rows(
+        db, analysis_rows=analysis_rows, workspace_id=workspace_id,
+    )
+
+
+def _build_candidates_from_analysis_rows(
+    db: Client,
+    *,
+    analysis_rows: list[dict[str, Any]],
+    workspace_id: str,
+) -> list[ReportCandidate]:
+    """analysis_rows(document_analysis_results 행들)로부터 document_versions/documents/sources를
+    조회해 ReportCandidate 리스트로 변환한다. get_report_candidates와
+    get_recently_analyzed_candidates가 공유한다.
+
+    documents는 workspace_id로 직접 필터링하지 않고, analysis_rows(이미 workspace_id로
+    필터링됨) -> document_versions -> documents 경로로 전이적으로만 도달한다. 두 호출부의
+    "어떤 문서/분석 행이 대상인지" 결정 로직은 각자 다르므로 이 함수에 들어오지 않는다.
+    """
+    document_version_ids = list({row["document_version_id"] for row in analysis_rows if row.get("document_version_id")})
+    version_rows = (
+        db.table("document_versions")
+        .select("id, document_id")
+        .in_("id", document_version_ids)
+        .execute()
+        .data
+    )
+    if not version_rows:
+        return []
+    version_to_document = {row["id"]: row["document_id"] for row in version_rows}
+
+    document_ids = list(set(version_to_document.values()))
+    document_rows = (
+        db.table("documents")
+        .select("id, title, canonical_url, published_at, source_id")
+        .in_("id", document_ids)
+        .execute()
+        .data
+    )
+    documents_by_id = {row["id"]: row for row in document_rows}
+
     source_ids = [row.get("source_id") for row in document_rows if row.get("source_id")]
     source_rows = (
         db.table("sources")
@@ -133,46 +247,3 @@ def get_report_candidates(
         for result, document_id in selected_results
     ]
     return build_report_candidates(candidates)
-
-
-def to_report_candidate(*, result: AnalysisResultForReport, document_id: str) -> ReportCandidate:
-    return ReportCandidate(
-        analysis_result_id=result.analysis_result_id,
-        workspace_id=result.workspace_id,
-        document_id=document_id,
-        document_version_id=result.document_version_id,
-        category=result.primary_category,
-        title=result.title,
-        summary=result.core_summary,
-        reliability_score=result.reliability_score,
-        importance_score=result.importance_score,
-        ranking_score=Decimal(str(result.ranking_score)) if result.ranking_score is not None else None,
-        source_name=result.source_name,
-        canonical_url=result.canonical_url,
-        published_at=result.published_at,
-        impact_direction=result.impact_direction,
-        time_horizon=result.time_horizon,
-    )
-
-
-def build_report_candidates(candidates: Sequence[ReportCandidate]) -> list[ReportCandidate]:
-    ordered = list(candidates)
-    ordered.sort(key=lambda item: item.analysis_result_id, reverse=True)
-    ordered.sort(
-        key=lambda item: item.published_at or datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
-    ordered.sort(
-        key=lambda item: item.ranking_score if item.ranking_score is not None else Decimal("-1"),
-        reverse=True,
-    )
-    return ordered
-
-
-def _row_is_report_candidate_ready(row: dict[str, Any]) -> bool:
-    return bool(
-        row.get("ranking_status") == "completed"
-        and row.get("ranking_score") is not None
-        and _row_is_ranking_candidate_ready(row)
-        and _row_has_report_summary(row)
-    )

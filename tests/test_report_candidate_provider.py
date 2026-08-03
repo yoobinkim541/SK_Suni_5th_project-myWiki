@@ -392,3 +392,122 @@ def _coerce_value(value):
         except ValueError:
             return value
     return value
+
+
+# Tests for get_recently_analyzed_candidates
+
+
+def _completed_analysis_row_for_recent(*, document_version_id: str, importance_evaluated_at: str, ranking_score: str = "80.00") -> dict:
+    return {
+        "id": f"analysis-{document_version_id}",
+        "workspace_id": "ws-1",
+        "document_version_id": document_version_id,
+        "status": "completed",
+        "reliability_status": "completed",
+        "importance_status": "completed",
+        "ranking_status": "completed",
+        "ranking_score": ranking_score,
+        "reliability_score": 80,
+        "reliability_level": "높음",
+        "importance_score": 85,
+        "importance_level": "높음",
+        "importance_evaluated_at": importance_evaluated_at,
+        "reliability_evaluated_at": importance_evaluated_at,
+        "classified_at": importance_evaluated_at,
+        "primary_category": "제품·기술",
+        "secondary_categories": [],
+        "core_summary": "핵심 요약",
+        "sk_hynix_implication": "시사점",
+        "impact_direction": "중립",
+        "time_horizon": "단기",
+        "prompt_version": "classification-v1",
+        "model_name": "classification-model-a",
+        "reliability_prompt_version": "reliability-v1",
+        "reliability_model_name": "reliability-model-a",
+        "importance_prompt_version": "importance-v2",
+        "importance_model_name": "importance-model-a",
+        "key_points": ["포인트1", "포인트2", "포인트3"],
+        "key_numbers": [],
+        "summary_evidence_refs": [{"document_version_id": document_version_id, "quoted_text": "인용문", "supports": ["core_summary"]}],
+        "affected_areas": [],
+        "opportunities": [],
+        "risks": [],
+        "watch_points": [],
+        "importance_missing_information": [],
+        "reliability_detail": {},
+        "importance_detail": {},
+        "selected_for_report": True,
+        "report_selection_position": 1,
+        "selection_reason": "SELECTED",
+        "ranking_detail": {},
+        "ranking_formula_version": "ranking-v1",
+        "ranking_reference_time": importance_evaluated_at,
+        "ranking_batch_date": "2026-08-02",
+        "ranked_at": importance_evaluated_at,
+        "recency_score": 100,
+        "ranking_position": 1,
+        "created_at": importance_evaluated_at,
+        "updated_at": importance_evaluated_at,
+    }
+
+
+def _tables_for_recent(analysis_rows: list[dict]) -> dict:
+    document_version_ids = [row["document_version_id"] for row in analysis_rows]
+    return {
+        "document_analysis_results": analysis_rows,
+        "document_versions": [
+            {"id": dvid, "document_id": f"doc-{dvid}"} for dvid in document_version_ids
+        ],
+        "documents": [
+            {"id": f"doc-{dvid}", "title": f"제목-{dvid}", "canonical_url": None, "published_at": None, "source_id": None}
+            for dvid in document_version_ids
+        ],
+        "sources": [],
+    }
+
+
+def test_get_recently_analyzed_candidates_excludes_rows_before_since():
+    from src.report.candidate_provider import get_recently_analyzed_candidates
+
+    now = datetime.now(timezone.utc)
+    recent = (now - timedelta(hours=1)).isoformat()
+    old = (now - timedelta(hours=5)).isoformat()
+    analysis_rows = [
+        _completed_analysis_row_for_recent(document_version_id="dv-recent", importance_evaluated_at=recent),
+        _completed_analysis_row_for_recent(document_version_id="dv-old", importance_evaluated_at=old),
+    ]
+    supabase = FakeSupabase(_tables_for_recent(analysis_rows))
+
+    candidates = get_recently_analyzed_candidates(
+        workspace_id="ws-1", since=now - timedelta(hours=2), supabase=supabase,
+    )
+
+    assert [c.document_version_id for c in candidates] == ["dv-recent"]
+
+
+def test_get_recently_analyzed_candidates_excludes_incomplete_status():
+    from src.report.candidate_provider import get_recently_analyzed_candidates
+
+    now = datetime.now(timezone.utc)
+    recent = (now - timedelta(hours=1)).isoformat()
+    incomplete_row = _completed_analysis_row_for_recent(document_version_id="dv-incomplete", importance_evaluated_at=recent)
+    incomplete_row["ranking_status"] = "pending"
+    incomplete_row["ranking_score"] = None
+    analysis_rows = [incomplete_row]
+    supabase = FakeSupabase(_tables_for_recent(analysis_rows))
+
+    candidates = get_recently_analyzed_candidates(
+        workspace_id="ws-1", since=now - timedelta(hours=2), supabase=supabase,
+    )
+
+    assert candidates == []
+
+
+def test_get_recently_analyzed_candidates_returns_empty_when_no_rows():
+    from src.report.candidate_provider import get_recently_analyzed_candidates
+
+    supabase = FakeSupabase({"document_analysis_results": [], "document_versions": [], "documents": [], "sources": []})
+    candidates = get_recently_analyzed_candidates(
+        workspace_id="ws-1", since=datetime.now(timezone.utc) - timedelta(hours=2), supabase=supabase,
+    )
+    assert candidates == []

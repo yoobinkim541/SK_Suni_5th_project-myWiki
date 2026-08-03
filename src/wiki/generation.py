@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import logging
 from collections.abc import Callable
 
 from supabase import Client
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
+from ..report.candidate_provider import get_recently_analyzed_candidates
+from ..report.composer import compose_report_sections
+from ..report.grouper import group_report_candidates
 from ..report.models import EnrichedIssueGroup, ReportSectionDraft, WikiContext
+from ..report.selector import select_report_candidates
+from ..report.wiki_context import enrich_issue_groups
 from .generation_models import TopicPageCandidate, TopLevelTopicPage, WikiDraftGenerationResult, WikiPageIdentity, WikiTopicLLMResult
 from .generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_prompt
 from .generation_repository import (
@@ -23,6 +29,7 @@ from .interface import (
     publish_wiki_version,
     record_wiki_validation,
     review_wiki_version,
+    search_wiki_contexts,
     upsert_wiki_page,
 )
 
@@ -390,3 +397,41 @@ def archive_stale_wiki_pages(
     for page_id in stale_page_ids:
         archive_wiki_page(page_id, supabase=supabase)
     return stale_page_ids
+
+
+def refresh_wiki_from_recent_analysis(
+    workspace_id: str,
+    *,
+    since_hours: int = 2,
+    requested_by: str | None = None,
+    supabase: Client | None = None,
+) -> list[WikiDraftGenerationResult]:
+    """리포트 파이프라인과 별개로, 최근 since_hours 내 분석 완료된 문서를 근거로
+    위키만 갱신한다. reports/report_sections에는 아무것도 남기지 않는다."""
+    # report.interface가 모듈 최상단에서 wiki.generation을 import하므로(순환 참조),
+    # ReportGenerationConfig는 호출 시점에 지연 import한다. report/interface.py 파일 자체는 수정하지 않는다.
+    from ..report.interface import ReportGenerationConfig
+
+    config = ReportGenerationConfig()
+    since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+
+    candidates = get_recently_analyzed_candidates(workspace_id=workspace_id, since=since, supabase=supabase)
+    selected = select_report_candidates(
+        candidates,
+        max_candidates=config.selection.max_candidates or 15,
+        min_reliability_score=config.selection.min_reliability_score,
+        min_importance_score=config.selection.min_importance_score,
+        min_ranking_score=config.selection.min_ranking_score,
+        category_limits=config.selection.category_limits,
+    )
+    issue_groups = group_report_candidates(selected, config=config.grouping)
+    enriched_groups = enrich_issue_groups(
+        issue_groups,
+        wiki_search=lambda wiki_request: search_wiki_contexts(wiki_request, supabase=supabase),
+        limit_per_group=config.wiki.limit_per_group,
+    )
+    sections = compose_report_sections(enriched_groups, config=config.composer)
+
+    return generate_wiki_drafts_for_sections(
+        sections, enriched_groups, workspace_id=workspace_id, requested_by=requested_by, supabase=supabase,
+    )
