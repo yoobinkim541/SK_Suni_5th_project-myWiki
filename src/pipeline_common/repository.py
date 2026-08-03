@@ -92,6 +92,19 @@ def insert_source(
     return _rows(res)[0]
 
 
+def list_enabled_sources(workspace_id: UUID) -> list[dict]:
+    """워크스페이스의 enabled=true 출처 전체. 배치 진입점이 소스 목록을 도는 데 쓴다."""
+    res = (
+        db.get_client()
+        .table("sources")
+        .select("*")
+        .eq("workspace_id", str(workspace_id))
+        .eq("enabled", True)
+        .execute()
+    )
+    return _rows(res)
+
+
 def get_sources_by_ids(source_ids: list[UUID], workspace_id: UUID) -> dict[str, dict]:
     """id -> 행. workspace가 다른 소스는 결과에서 빠진다."""
     if not source_ids:
@@ -204,9 +217,41 @@ def set_document_status(document_id: UUID, workspace_id: UUID, status: str) -> d
     return _first(res)
 
 
+def list_active_documents(workspace_id: UUID) -> list[dict]:
+    """워크스페이스의 status='active' 문서 전체. 정제 대기 목록 산출의 1단계다."""
+    res = (
+        db.get_client()
+        .table("documents")
+        .select("*")
+        .eq("workspace_id", str(workspace_id))
+        .eq("status", DOC_STATUS_ACTIVE)
+        .execute()
+    )
+    return _rows(res)
+
+
 # ------------------------------------------------------------
 # document_versions
 # ------------------------------------------------------------
+
+
+def find_document_ids_with_versions(document_ids: list[UUID]) -> set[str]:
+    """document_ids 중 document_versions 행이 이미 있는 id 집합 (문자열).
+
+    정제 대기 문서(§명세 3-3 사전조건: document_versions 없음)를 가리기 위한
+    2단계 조회의 2단계다 — list_active_documents()로 얻은 후보와 여기서 뺀 집합을
+    비교해 "아직 정제 안 된 문서"를 구한다.
+    """
+    if not document_ids:
+        return set()
+    res = (
+        db.get_client()
+        .table("document_versions")
+        .select("document_id")
+        .in_("document_id", [str(did) for did in document_ids])
+        .execute()
+    )
+    return {row["document_id"] for row in _rows(res)}
 
 
 def find_version_by_hash(document_id: UUID, content_hash: str) -> dict | None:
