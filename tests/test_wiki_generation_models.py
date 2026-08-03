@@ -67,4 +67,12 @@ def test_wiki_page_identity_requires_page_type():
     )
     assert identity.slug == "hbm4-supply"
     with pytest.raises(ValidationError):
-        WikiPageIdentity(page_id="page-1", slug="s", title="t", page_type="issue", parent_page_id=None)
+        WikiPageIdentity(page_id="page-1", slug="s", title="t", page_type="bogus", parent_page_id=None)
+
+
+def test_wiki_page_identity_accepts_issue_page_type():
+    """find_matching_issue_page()가 매칭된 이슈 페이지의 identity를 반환할 때 필요하다."""
+    identity = WikiPageIdentity(
+        page_id="page-1", slug="issue-hbm4-supply", title="HBM4 공급 부족", page_type="issue", parent_page_id=None,
+    )
+    assert identity.page_type == "issue"
