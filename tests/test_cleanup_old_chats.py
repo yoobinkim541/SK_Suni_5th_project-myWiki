@@ -109,6 +109,67 @@ def test_delete_expired_sessions_removes_messages_and_session(workspace_id, user
         _cleanup_session(old_session_id)  # 이미 지워졌으면 조용히 아무것도 안 함
 
 
+def test_delete_expired_sessions_cascades_to_message_citations(workspace_id, user_id):
+    """message_citations는 chat_messages.id를 FK로 참조하고 ON DELETE CASCADE가 아니므로,
+    삭제 순서(message_citations -> chat_messages -> chat_sessions)가 틀리면 FK 위반으로
+    배치 자체가 죽는다. 만료된 세션의 메시지에 달린 citation이 같이 지워지는지 확인한다."""
+    db = _get_client()
+    doc_ver = db.table("document_versions").select("id").limit(1).execute()
+    if not doc_ver.data:
+        pytest.skip("document_versions 데이터 없음")
+    doc_ver_id = doc_ver.data[0]["id"]
+
+    now = datetime.now(timezone.utc)
+    session = (
+        db.table("chat_sessions")
+        .insert({
+            "workspace_id": workspace_id,
+            "user_id": user_id,
+            "title": f"test-{uuid.uuid4().hex[:8]}",
+            "visibility": "private",
+            "created_at": (now - timedelta(days=105)).isoformat(),
+        })
+        .execute()
+        .data[0]
+    )
+    session_id = session["id"]
+    message = (
+        db.table("chat_messages")
+        .insert({
+            "session_id": session_id,
+            "role": "user",
+            "content": "테스트 메시지",
+            "created_at": (now - timedelta(days=100)).isoformat(),
+        })
+        .execute()
+        .data[0]
+    )
+    message_id = message["id"]
+    citation = (
+        db.table("message_citations")
+        .insert({
+            "message_id": message_id,
+            "document_version_id": doc_ver_id,
+            "citation_order": 1,
+        })
+        .execute()
+        .data[0]
+    )
+    citation_id = citation["id"]
+
+    try:
+        deleted_count = delete_expired_sessions(workspace_id, retention_days=90)
+        assert deleted_count >= 1
+
+        remaining_citation = (
+            db.table("message_citations").select("id").eq("id", citation_id).execute()
+        )
+        assert remaining_citation.data == []
+    finally:
+        db.table("message_citations").delete().eq("id", citation_id).execute()
+        _cleanup_session(session_id)
+
+
 def test_find_expired_session_ids_empty_when_retention_none(workspace_id, user_id):
     old_session_id = _make_session(workspace_id, user_id, last_message_days_ago=1000)
     try:
