@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
 
 class CreateSessionRequest(BaseModel):
     title: Optional[str] = None
+    visibility: Literal["private", "team"] = "private"
 
 
 class ChatSessionOut(BaseModel):
@@ -15,6 +16,7 @@ class ChatSessionOut(BaseModel):
     workspace_id: str
     user_id: str
     title: Optional[str]
+    visibility: str
     created_at: datetime
     updated_at: datetime
 
@@ -29,6 +31,7 @@ class CitationOut(BaseModel):
     quoted_text: Optional[str]
     relevance_score: Optional[float]
     citation_order: Optional[int]
+    source_url: Optional[str] = None
 
 
 class ChatMessageOut(BaseModel):
@@ -46,6 +49,12 @@ class SendMessageResponse(BaseModel):
     user_message: ChatMessageOut
     assistant_message: ChatMessageOut
     has_answer: bool
+
+
+class SaveToWikiResponse(BaseModel):
+    page_id: str
+    version_id: str
+    slug: str
 
 
 # ---------------------------------------------------------------------------
