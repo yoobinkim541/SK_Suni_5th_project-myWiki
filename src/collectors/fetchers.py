@@ -138,6 +138,30 @@ def _max_items(source: dict, request: CollectRequest) -> int:
     return int(_conf_number(source, "max_items", DEFAULT_MAX_ITEMS))
 
 
+def _resolve_google_news_url(url: str) -> str:
+    """
+    구글 뉴스 RSS 링크(news.google.com/rss/articles/...)는 서버 3xx 리다이렉트가
+    아니라 JS 기반 리다이렉트라서 httpx(follow_redirects=True)가 못 따라간다 —
+    그대로 요청하면 언론사 원문이 아니라 구글의 빈 중계 페이지를 받아서
+    전처리 단계에서 "정제 결과가 비어 있다"로 매번 실패한다.
+
+    google뉴스 링크가 아니면 원래 url을 그대로 돌려준다. 디코딩 실패 시에도
+    예외를 던지지 않고 원래 url로 폴백한다 — 이후 흐름(전처리 실패)은 지금과
+    동일하게 처리되므로 수집 자체가 죽는 것보단 낫다.
+    """
+    if "news.google.com" not in url:
+        return url
+    try:
+        from googlenewsdecoder import gnewsdecoder
+
+        result = gnewsdecoder(url, interval=1)
+    except Exception:  # noqa: BLE001 - 디코더 내부 예외 종류가 다양하다
+        return url
+    if isinstance(result, dict) and result.get("status") and result.get("decoded_url"):
+        return result["decoded_url"]
+    return url
+
+
 def _fetch_article(
     source: dict, url: str, title_hint: str | None, published_at: datetime | None
 ) -> RawFetchResult | None:
@@ -147,6 +171,7 @@ def _fetch_article(
     문서 식별에 쓰는 url은 요청한 주소가 아니라 리다이렉트 최종 주소다.
     경유 주소를 그대로 쓰면 같은 기사가 중복 문서로 쌓인다.
     """
+    url = _resolve_google_news_url(url)
     body, content_type, status, final_url = _http_get(url, source)
     if status in _BLOCKED_STATUS or status >= 400 or not body:
         return None
@@ -261,6 +286,14 @@ def fetch_naver_news(source: dict, request: CollectRequest) -> FetchOutcome:
         payload = response.json()
     except Exception as exc:  # noqa: BLE001
         raise FetchError(f"네이버 검색 API 호출 실패: {exc}") from exc
+
+    if response.status_code >= 400 or payload.get("errorCode"):
+        # status_code를 확인 안 하면 인증 실패(401) 같은 에러 응답도 payload.get("items", [])가
+        # 빈 리스트를 돌려줘서 "정상 호출인데 0건 수집"으로 조용히 넘어간다.
+        raise FetchError(
+            f"네이버 검색 API 응답 오류 {response.status_code}: "
+            f"{payload.get('errorMessage') or payload.get('errorCode')}"
+        )
 
     outcome = FetchOutcome()
     for entry in payload.get("items", []):
