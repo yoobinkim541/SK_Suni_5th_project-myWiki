@@ -72,7 +72,7 @@ function toViewMessage(msg, scope) {
     return {
       role: 'ai',
       none: parseNoAnswer(msg.content),
-      acts: ['수집 소스 추가', '관련 문서 찾아보기'],
+      acts: ['수집 소스 추가', '관련 문서 찾아보기', '다시 생성', '삭제'],
       _id: msg.id,
     };
   }
@@ -83,7 +83,10 @@ function toViewMessage(msg, scope) {
     role: 'ai',
     paragraphs: [[msg.content]],
     cites: toCites(msg.citations),
-    acts: scope === 'mine' ? ['팀에 공유', '위키에 저장', '복사', '다시 생성'] : ['위키에 저장', '복사', '다시 생성'],
+    acts:
+      scope === 'mine'
+        ? ['팀에 공유', '위키에 저장', '복사', '다시 생성', '삭제']
+        : ['위키에 저장', '복사', '다시 생성', '삭제'],
     _id: msg.id,
   };
 }
@@ -202,6 +205,24 @@ export async function askAgent(sessionId, content, scope) {
 }
 
 /**
+ * "다시 생성" — 같은 질문으로 답변을 새로 받아 이 메시지를 그 자리에서 교체합니다
+ * (근거 부족 카드였어도 다시 시도할 수 있습니다).
+ * @returns {Promise<{message: object, evidence: object[]}>} 교체된 답변(화면 shape)과 근거 원문
+ */
+export async function regenerateMessage(sessionId, messageId, scope) {
+  const updated = await agentApi.regenerateChatMessage(sessionId, messageId);
+  return { message: toViewMessage(updated, scope), evidence: toEvidence(updated.citations) };
+}
+
+/**
+ * "삭제" — 이 질문/답변 쌍을 DB에서 완전히 지웁니다(정상 답변도 대상 — 위키 저장이나
+ * 팀 공유로 이미 복사된 게 있다면 그건 별도 행이라 영향받지 않습니다).
+ */
+export async function deleteMessage(sessionId, messageId) {
+  await agentApi.deleteChatMessage(sessionId, messageId);
+}
+
+/**
  * "팀에 공유" — 개인 세션의 답변(질문 쌍)을 팀 공유 세션으로 복사합니다.
  * @param {string} [targetSessionId] 지정하면 그 팀 세션으로, 생략하면 새 팀 세션을 만듭니다.
  * @returns {Promise<{message: object, targetSessionId: string}>} 복사된 메시지(화면 shape)와
@@ -238,4 +259,28 @@ export async function toggleArchive(sessionId) {
 export async function deleteConversation(sessionId) {
   if (USE_MOCK) return;
   await agentApi.deleteChatSession(sessionId);
+}
+
+/** 팀 세션 참여자 목록. */
+export async function listParticipants(sessionId) {
+  if (USE_MOCK) return [];
+  return agentApi.fetchSessionParticipants(sessionId);
+}
+
+/** 참여자 추가. */
+export async function addParticipant(sessionId, userId) {
+  if (USE_MOCK) return null;
+  return agentApi.addSessionParticipant(sessionId, userId);
+}
+
+/** 참여자 제거(본인 탈퇴 포함). */
+export async function removeParticipant(sessionId, userId) {
+  if (USE_MOCK) return;
+  await agentApi.removeSessionParticipant(sessionId, userId);
+}
+
+/** "참여자 추가" 선택지용 워크스페이스 멤버 전체 목록. */
+export async function listWorkspaceMembers() {
+  if (USE_MOCK) return [];
+  return agentApi.fetchWorkspaceMembers();
 }
