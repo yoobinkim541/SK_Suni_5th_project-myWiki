@@ -35,8 +35,8 @@ def test_report_generation_config_has_component_configs() -> None:
     config = ReportGenerationConfig()
 
     assert config.selection.max_candidates is None
-    assert config.selection.min_reliability_score == 70
-    assert config.selection.min_importance_score == 70
+    assert config.selection.min_reliability_score == 40
+    assert config.selection.min_importance_score == 40
     assert config.wiki.limit_per_group >= 0
     assert config.composer.prompt_version
 
