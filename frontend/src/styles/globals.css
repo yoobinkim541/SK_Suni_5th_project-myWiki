@@ -1370,7 +1370,7 @@ a.fn:hover{text-decoration:underline}
   min-width: 34px;
   height: 34px;
   padding: 0 9px;
-  border: 1px solid var(--line, #e3e6e5);
+  border: 1px solid var(--hair);
   border-radius: 8px;
   background: transparent;
   color: inherit;
@@ -1378,11 +1378,11 @@ a.fn:hover{text-decoration:underline}
   cursor: pointer;
 }
 .rpage-btn:hover:not(:disabled) {
-  border-color: var(--brand, #175243);
+  border-color: var(--green);
 }
 .rpage-btn.on {
-  background: var(--brand, #175243);
-  border-color: var(--brand, #175243);
+  background: var(--green);
+  border-color: var(--green);
   color: #fff;
   font-weight: 600;
 }
@@ -1451,8 +1451,8 @@ a.fn:hover{text-decoration:underline}
 .rdm-dl.whole {
   margin: 14px 0 18px;
   padding: 12px 0;
-  border-top: 1px solid var(--line, #e3e6e5);
-  border-bottom: 1px solid var(--line, #e3e6e5);
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
 }
 .rdm-dl.whole .lb {
   font-size: 13px;
@@ -1464,5 +1464,4 @@ a.fn:hover{text-decoration:underline}
   font-size: 12px;
 }
 
-.sh.big .t { color: #175243; }
-:root[data-theme="dark"] .sh.big .t { color: #5fd4b0; }
+.sh.big .t { color: var(--green); }
