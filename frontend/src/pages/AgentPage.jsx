@@ -9,6 +9,9 @@
 //
 // 데이터는 services/agentApi.js를 통해서만 가져옵니다.
 // VITE_USE_MOCK=true면 목업, false면 실제 백엔드(api/agent.js)를 호출합니다.
+//
+// team 세션은 여러 개일 수 있습니다(공유할 때마다 고르거나 새로 만듦) — "팀에 공유"는
+// ShareToTeamModal로 대상을 고르게 하고, 성공하면 팀 탭으로 전환해 그 세션을 보여줍니다.
 
 import { useEffect, useState } from 'react';
 import { getSource } from '../services/wikiApi';
@@ -17,23 +20,34 @@ import {
   fetchConversation,
   createConversation,
   askAgent,
+  saveToWiki,
+  shareToTeam,
 } from '../services/agentApi';
 import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
+import ShareToTeamModal from '../components/agent/ShareToTeamModal';
 
 const PANE_KEYS = ['team', 'mine'];
+const PANE_VISIBILITY = { team: 'team', mine: 'private' };
 
 // 출처 key가 없을 때 쓰는 기본값.
 // 백엔드 citations에는 document_version_id만 있고 출처 종류(공시/뉴스)가 없습니다.
 // 임의로 지어내면 잘못된 근거를 표시하게 되므로, 확인 불가임을 그대로 드러냅니다.
 const UNKNOWN_SOURCE = { name: '출처 확인 중', url: null, title: '출처 정보 없음' };
 
-export default function AgentPage() {
+export default function AgentPage({ profile }) {
   const [panes, setPanes] = useState(null);
   const [activePane, setActivePane] = useState('team');
   const [currentIds, setCurrentIds] = useState({ team: null, mine: null });
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  // 메시지별 "위키에 저장"/"팀에 공유" 진행 상태 — { [messageId]: { wiki, team } }
+  const [actionState, setActionState] = useState({});
+  const [shareTarget, setShareTarget] = useState(null); // 공유 모달 대상 메시지
+  const [sharing, setSharing] = useState(false);
+
+  const authorName = profile?.user_metadata?.full_name || profile?.email || '나';
+  const authorInitial = authorName.charAt(0).toUpperCase();
 
   // 최초 진입 시 대화 목록을 불러옵니다.
   useEffect(() => {
@@ -61,22 +75,23 @@ export default function AgentPage() {
   useEffect(() => {
     if (!current || current._loaded === undefined || current._loaded) return;
     let alive = true;
-    fetchConversation(current.id)
+    fetchConversation(current.id, activePane)
       .then(({ messages, evidence }) => {
         if (!alive) return;
-        updateConversation(current.id, (c) => ({ ...c, messages, evidence, _loaded: true }));
+        updateConversation(activePane, current.id, (c) => ({ ...c, messages, evidence, _loaded: true }));
       })
       .catch((e) => alive && setError(e.message || '대화를 불러오지 못했습니다.'));
     return () => { alive = false; };
   }, [current?.id]);
 
-  // 현재 pane의 대화 하나만 바꾸는 공용 헬퍼.
-  function updateConversation(id, fn) {
+  // 특정 pane의 대화 하나만 바꾸는 공용 헬퍼. pane을 인자로 받아서, 방금 전환한
+  // team pane처럼 activePane과 다른 pane도 갱신할 수 있게 합니다(공유 직후 등).
+  function updateConversation(paneKey, id, fn) {
     setPanes((prev) => ({
       ...prev,
-      [activePane]: {
-        ...prev[activePane],
-        conversations: prev[activePane].conversations.map((c) => (c.id !== id ? c : fn(c))),
+      [paneKey]: {
+        ...prev[paneKey],
+        conversations: prev[paneKey].conversations.map((c) => (c.id !== id ? c : fn(c))),
       },
     }));
   }
@@ -90,13 +105,13 @@ export default function AgentPage() {
     const optimistic = {
       role: 'me',
       text,
-      ...(activePane === 'team' ? { author: { initial: 'J', name: '김주현' } } : {}),
+      ...(activePane === 'team' ? { author: { initial: authorInitial, name: authorName } } : {}),
     };
-    updateConversation(current.id, (c) => ({ ...c, messages: [...c.messages, optimistic] }));
+    updateConversation(activePane, current.id, (c) => ({ ...c, messages: [...c.messages, optimistic] }));
 
     try {
-      const { aiMessage, evidence } = await askAgent(current.id, text);
-      updateConversation(current.id, (c) => ({
+      const { aiMessage, evidence } = await askAgent(current.id, text, activePane);
+      updateConversation(activePane, current.id, (c) => ({
         ...c,
         messages: [...c.messages, aiMessage],
         evidence: evidence.length ? evidence : c.evidence,
@@ -104,7 +119,7 @@ export default function AgentPage() {
     } catch (e) {
       setError(e.message || '답변을 가져오지 못했습니다.');
       // 실패한 질문은 되돌립니다.
-      updateConversation(current.id, (c) => ({ ...c, messages: c.messages.slice(0, -1) }));
+      updateConversation(activePane, current.id, (c) => ({ ...c, messages: c.messages.slice(0, -1) }));
     } finally {
       setSending(false);
     }
@@ -113,7 +128,7 @@ export default function AgentPage() {
   async function handleNewConversation() {
     const n = pane.conversations.length + 1;
     try {
-      const conv = await createConversation(`새 대화 ${n}`);
+      const conv = await createConversation(`새 대화 ${n}`, PANE_VISIBILITY[activePane]);
       setPanes((prev) => ({
         ...prev,
         [activePane]: {
@@ -127,6 +142,60 @@ export default function AgentPage() {
     }
   }
 
+  function setMessageAction(messageId, kind, state) {
+    setActionState((prev) => ({
+      ...prev,
+      [messageId]: { ...prev[messageId], [kind]: state },
+    }));
+  }
+
+  async function handleSaveToWiki(message) {
+    const messageId = message._id;
+    if (!messageId || !current) return;
+    setMessageAction(messageId, 'wiki', { status: 'loading' });
+    try {
+      await saveToWiki(current.id, messageId);
+      setMessageAction(messageId, 'wiki', { status: 'done' });
+    } catch (e) {
+      const errMessage = e.status === 400 ? '근거가 없어 저장할 수 없습니다' : (e.message || '저장하지 못했습니다.');
+      setMessageAction(messageId, 'wiki', { status: 'error', message: errMessage });
+    }
+  }
+
+  // "팀에 공유" 클릭 — 바로 공유하지 않고 모달을 열어 대상 팀 세션을 고르게 합니다.
+  function handleOpenShareModal(message) {
+    setShareTarget(message);
+  }
+
+  async function handleShareSelect(targetSessionId) {
+    const message = shareTarget;
+    const messageId = message?._id;
+    if (!messageId || !current) return;
+    setSharing(true);
+    setMessageAction(messageId, 'team', { status: 'loading' });
+    try {
+      const result = await shareToTeam(current.id, messageId, targetSessionId);
+      setMessageAction(messageId, 'team', { status: 'done' });
+      setShareTarget(null);
+
+      // 팀 pane 목록을 새로고침해서 방금 공유된(혹은 새로 만들어진) 대화가 보이게 하고,
+      // 그 세션으로 바로 전환해서 공유한 내용을 확인할 수 있게 합니다.
+      const fresh = await fetchAgentPanes();
+      setPanes((prev) => ({ ...prev, team: fresh.team }));
+      setActivePane('team');
+      setCurrentIds((prev) => ({ ...prev, team: result.targetSessionId }));
+    } catch (e) {
+      setMessageAction(messageId, 'team', { status: 'error', message: e.message || '공유하지 못했습니다.' });
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  function handleMessageAction(label, message) {
+    if (label === '위키에 저장') handleSaveToWiki(message);
+    if (label === '팀에 공유') handleOpenShareModal(message);
+  }
+
   if (error && !panes) {
     return (
       <section className="view on" id="v-agent">
@@ -135,7 +204,7 @@ export default function AgentPage() {
     );
   }
 
-  if (!panes || !current) {
+  if (!panes) {
     return (
       <section className="view on" id="v-agent">
         <div className="empty-conv">불러오는 중…</div>
@@ -190,7 +259,7 @@ export default function AgentPage() {
             {pane.conversations.map((c) => (
               <button
                 key={c.id}
-                className={`ag-conv${c.id === current.id ? ' on' : ''}`}
+                className={`ag-conv${c.id === current?.id ? ' on' : ''}`}
                 onClick={() => setCurrentIds((prev) => ({ ...prev, [activePane]: c.id }))}
               >
                 {c.title}<span className="d">{c.meta}</span>
@@ -201,27 +270,43 @@ export default function AgentPage() {
             </button>
           </div>
 
-          {/* 스레드 */}
-          <div className="thread">
-            {current.messages.length === 0 ? (
-              <div className="empty-conv">
-                「{current.title}」 대화입니다. 아래 입력창에 질문을 입력하면 위키에 축적된 문서만 근거로 답변합니다.
-              </div>
-            ) : (
-              current.messages.map((m, i) => (
-                <ChatMessage key={m._id ?? i} message={m} flag={pane.flag} flagPriv={pane.flagPriv} />
-              ))
-            )}
-            {sending && <div className="empty-conv">근거를 확인하는 중…</div>}
-          </div>
+          {/* 스레드 — 이 pane에 대화가 하나도 없을 수 있습니다(특히 아직 아무도 공유
+              안 한 워크스페이스의 team pane). current가 없으면 빈 상태를 보여줍니다. */}
+          {!current ? (
+            <div className="empty-conv">
+              아직 대화가 없습니다. "{pane.newLabel}"를 눌러 시작하세요.
+            </div>
+          ) : (
+            <div className="thread">
+              {current.messages.length === 0 ? (
+                <div className="empty-conv">
+                  「{current.title}」 대화입니다. 아래 입력창에 질문을 입력하면 위키에 축적된 문서만 근거로 답변합니다.
+                </div>
+              ) : (
+                current.messages.map((m, i) => (
+                  <ChatMessage
+                    key={m._id ?? i}
+                    message={m}
+                    flag={pane.flag}
+                    flagPriv={pane.flagPriv}
+                    onAction={handleMessageAction}
+                    actionState={m._id ? actionState[m._id] : undefined}
+                  />
+                ))
+              )}
+              {sending && <div className="empty-conv">근거를 확인하는 중…</div>}
+            </div>
+          )}
 
           {error && <div className="empty-conv">{error}</div>}
 
-          <ChatComposer
-            placeholder={pane.placeholder}
-            ariaLabel={pane.inputLabel}
-            onSend={handleSend}
-          />
+          {current && (
+            <ChatComposer
+              placeholder={pane.placeholder}
+              ariaLabel={pane.inputLabel}
+              onSend={handleSend}
+            />
+          )}
 
           <div className="hint">
             {pane.hints.map((h) => <span key={h}>{h}</span>)}
@@ -230,8 +315,8 @@ export default function AgentPage() {
 
         {/* 근거 원문 */}
         <div className="col">
-          <h5>근거 원문<span className="c">{current.evidence.length}</span></h5>
-          {current.evidence.map((e) => {
+          <h5>근거 원문<span className="c">{current?.evidence.length ?? 0}</span></h5>
+          {(current?.evidence ?? []).map((e) => {
             // e.key가 null일 수 있습니다(백엔드가 출처 종류를 주지 않는 경우).
             const src = (e.key && getSource(e.key)) || UNKNOWN_SOURCE;
             const isDoc = src.name.includes('공시') || src.name.includes('IR');
@@ -254,6 +339,14 @@ export default function AgentPage() {
           })}
         </div>
       </div>
+
+      <ShareToTeamModal
+        open={shareTarget !== null}
+        teamConversations={panes.team.conversations}
+        sharing={sharing}
+        onSelect={handleShareSelect}
+        onClose={() => setShareTarget(null)}
+      />
     </section>
   );
 }

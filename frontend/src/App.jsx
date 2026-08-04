@@ -377,7 +377,7 @@ export default function App() {
         {view === 'report' && <ReportPage onNavigate={navigateTo} />}
         {view === 'cat' && <CategoryPage />}
         {view === 'wiki' && <WikiPage docId={wikiDocId} />}
-        {view === 'agent' && <AgentPage />}
+        {view === 'agent' && <AgentPage profile={profile} />}
         {view === 'settings' && (
           <SettingsPage
             dark={dark}
