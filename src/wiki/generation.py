@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 from collections.abc import Callable
 
+from pydantic import ValidationError
 from supabase import Client
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
@@ -232,7 +233,19 @@ def _generate_topic_page(
             model=settings.model,
         )
     payload = parse_json_response(response_text)
-    result = WikiTopicLLMResult.model_validate(payload)
+    try:
+        result = WikiTopicLLMResult.model_validate(payload)
+    except ValidationError as exc:
+        # page_type만 스키마 밖 값이면(예: LLM이 지어낸 카테고리명) industry로 대체해
+        # 페이지 생성 자체가 막히지 않게 한다. 다른 필드 문제면 그대로 올린다.
+        if {e["loc"] for e in exc.errors()} != {("page_type",)}:
+            raise
+        logger.warning(
+            "wiki_topic_page_type_fallback",
+            extra={"issue_key": section.issue_key, "invalid_page_type": payload.get("page_type")},
+        )
+        payload = {**payload, "page_type": "industry"}
+        result = WikiTopicLLMResult.model_validate(payload)
 
     # LLM이 돌려준 식별자는 프롬프트에 보여준 값에서만 골라야 한다.
     allowed_document_version_ids = {

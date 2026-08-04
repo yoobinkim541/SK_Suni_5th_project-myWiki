@@ -18,7 +18,9 @@ from supabase import Client
 from .models import WikiSearchRequest, WikiSearchResult
 from .repository import search_wiki_contexts as _search_wiki_contexts
 
-PageType = Literal["industry", "company", "technology", "issue", "term"]
+PageType = Literal[
+    "industry", "company", "technology", "supply_chain", "policy", "market", "issue", "term"
+]
 SupportType = Literal["supports", "contradicts", "context"]
 ValidationStatus = Literal["pending", "passed", "failed"]
 ReviewDecision = Literal["approved", "rejected"]

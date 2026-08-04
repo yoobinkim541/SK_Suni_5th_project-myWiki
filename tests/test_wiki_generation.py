@@ -406,6 +406,44 @@ def test_generate_topic_page_creates_new_under_chosen_parent(monkeypatch):
     assert upsert_call[1] == ("ws-1", "hbm4-supply", "HBM4_수급현황", "technology", "page-parent")
 
 
+def test_generate_topic_page_falls_back_to_industry_on_invalid_page_type(monkeypatch):
+    """설계(2026-08-04, wiki-page-type-expansion): LLM이 스키마 밖 page_type을 지어내도
+    industry로 대체해 생성 자체는 막히지 않아야 한다."""
+    calls = []
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "create_new",
+                "slug": "market-mgmt-issue",
+                "title": "시장·경영 이슈",
+                "page_type": "market_management",  # 스키마(7종) 밖 값 — LLM이 지어낸 값
+                "parent_page_id": None,
+                "markdown": "# 시장·경영 이슈",
+                "change_summary": "최초 생성",
+                "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.85,
+            }
+        ),
+    )
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-new")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: "version-4")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "create_new"
+    assert page_id == "page-new"
+    upsert_call = next(call for call in calls if call[0] == "upsert")
+    assert upsert_call[1] == ("ws-1", "market-mgmt-issue", "시장·경영 이슈", "industry", None)
+
+
 def test_generate_topic_page_auto_publishes_even_when_confidence_low(monkeypatch):
     """설계 §5(2026-08-04 개정): 신뢰도 게이트 폐지 — confidence가 낮아도 항상 자동 승인·발행."""
     calls = []
