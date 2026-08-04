@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api import db
+from src.api import main as main_module
 from src.api.auth import get_current_user
 from src.api.main import app
 
@@ -307,3 +308,58 @@ def test_share_to_team_blocked_for_non_owner(make_client, monkeypatch):
     )
 
     assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# save-to-wiki
+# ---------------------------------------------------------------------------
+
+def test_save_to_wiki_without_citations_returns_400(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [])
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/save-to-wiki"
+    )
+
+    assert res.status_code == 400
+
+
+def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [SAMPLE_CITATION])
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+
+    captured = {}
+
+    def fake_upsert_wiki_page(workspace_id, slug, title, page_type):
+        captured["upsert_args"] = (workspace_id, slug, title, page_type)
+        return "page-1"
+
+    def fake_create_wiki_version(draft):
+        captured["draft"] = draft
+        return "version-1"
+
+    monkeypatch.setattr(main_module, "upsert_wiki_page", fake_upsert_wiki_page)
+    monkeypatch.setattr(main_module, "create_wiki_version", fake_create_wiki_version)
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/save-to-wiki"
+    )
+
+    assert res.status_code == 200
+    expected_slug = f"chat-{ASSISTANT_MESSAGE['id'][:8]}"
+    assert res.json() == {"page_id": "page-1", "version_id": "version-1", "slug": expected_slug}
+
+    assert captured["upsert_args"] == (WORKSPACE_ID, expected_slug, USER_QUESTION["content"][:80], "issue")
+
+    draft = captured["draft"]
+    assert draft.workspace_id == WORKSPACE_ID
+    assert draft.slug == expected_slug
+    assert draft.page_type == "issue"
+    assert draft.markdown == ASSISTANT_MESSAGE["content"]
+    assert len(draft.sources) == 1
+    assert draft.sources[0].document_version_id == SAMPLE_CITATION["document_version_id"]
+    assert draft.sources[0].claim_text == SAMPLE_CITATION["quoted_text"]
