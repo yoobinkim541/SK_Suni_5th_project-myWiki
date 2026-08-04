@@ -406,8 +406,8 @@ def test_generate_topic_page_creates_new_under_chosen_parent(monkeypatch):
     assert upsert_call[1] == ("ws-1", "hbm4-supply", "HBM4_수급현황", "technology", "page-parent")
 
 
-def test_generate_topic_page_marks_validation_passed_when_confidence_low(monkeypatch):
-    """설계 §5: validation은 항상 passed. 승인·게시만 신뢰도 게이트를 건다."""
+def test_generate_topic_page_auto_publishes_even_when_confidence_low(monkeypatch):
+    """설계 §5(2026-08-04 개정): 신뢰도 게이트 폐지 — confidence가 낮아도 항상 자동 승인·발행."""
     calls = []
     monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
     monkeypatch.setattr(
@@ -440,8 +440,9 @@ def test_generate_topic_page_marks_validation_passed_when_confidence_low(monkeyp
     assert action == "create_new"
     assert page_id == "page-new"
     assert version_id == "version-3"
-    assert not any(call[0] in ("review", "publish") for call in calls)
     assert ("validate", ("version-3", "passed", 0.3)) in calls
+    assert ("review", ("version-3", None, "approved")) in calls
+    assert ("publish", ("page-new", "version-3")) in calls
 
 
 # ---------------------------------------------------------------------------

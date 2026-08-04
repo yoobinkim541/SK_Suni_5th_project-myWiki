@@ -36,8 +36,6 @@ from .interface import (
 
 logger = logging.getLogger(__name__)
 
-AUTO_PUBLISH_CONFIDENCE_THRESHOLD = 0.6
-
 # (system_prompt, user_prompt, model) -> raw JSON 문자열.
 # src/report/composer.py의 llm_client 주입 패턴과 같은 형태의 호출 가능 객체다.
 WikiTopicLLMClient = Callable[[str, str, str | None], str]
@@ -309,14 +307,13 @@ def _generate_topic_page(
     )
     version_id = create_wiki_version(draft, supabase=supabase)
 
-    # 설계 §5: 검증 결과는 신뢰도와 무관하게 항상 'passed'로 기록하고,
-    # 승인·게시만 신뢰도 게이트를 건다. (그래야 나중에 사람이 review_wiki_version만
-    # 호출해도 게시가 가능하다.)
+    # 설계 §5(2026-08-04 개정): LLM 위키이므로 검증 통과 시 신뢰도와 무관하게 항상
+    # 자동 승인·발행한다. confidence_score는 계속 기록해서(표시·분석용) 남기되,
+    # 더 이상 발행 여부를 가르는 게이트로는 쓰지 않는다 — 이슈 페이지와 동일한 정책.
     confidence = result.confidence_score
     record_wiki_validation(version_id, "passed", confidence, supabase=supabase)
-    if confidence is not None and confidence >= AUTO_PUBLISH_CONFIDENCE_THRESHOLD:
-        review_wiki_version(version_id, None, "approved", supabase=supabase)
-        publish_wiki_version(page_id, version_id, supabase=supabase)
+    review_wiki_version(version_id, None, "approved", supabase=supabase)
+    publish_wiki_version(page_id, version_id, supabase=supabase)
 
     return result.action, page_id, version_id
 

@@ -16,7 +16,7 @@
 
 - **근거 없으면 쓰지 않는다.** LLM이 생성하는 모든 주장(claim)은 반드시 `document_version_id`를 명시해야 하고, 그 목록이 비어 있으면 해당 이슈의 주제 페이지 갱신 자체를 건너뛴다(이슈 페이지는 만들되, 주제 페이지는 갱신하지 않음).
 - **기존 문단을 삭제하지 않는다.** 주제 페이지 갱신은 새 버전을 추가하는 것이며, "변경 이력" 섹션에 이번 갱신 사유를 남긴다. 기존 서술을 지우고 다시 쓰는 게 아니라 통합·보강한다.
-- **자동 승인/발행은 신뢰도 게이트를 통과해야 한다.** confidence_score가 낮은 생성물은 공개하지 않고 사람 검토 대기(`pending`) 상태로 남긴다.
+- **검증을 통과하면 항상 자동 승인·발행한다** (2026-08-04 개정: 신뢰도 게이트 폐지 — 아래 §5 참고). `confidence_score`는 계속 기록하되 표시·분석용일 뿐, 더 이상 발행 여부를 가르지 않는다.
 
 ## 3. 트리거와 흐름 (2가지, 서로 독립)
 
@@ -81,23 +81,19 @@ def archive_stale_wiki_pages(
 
 ## 5. 자동 승인/발행
 
-**이슈 페이지**는 새 LLM 종합 없이 이미 검증된 분석 결과를 템플릿으로 조립한 것이므로, confidence 게이트 없이 항상 자동 발행한다(`record_wiki_validation(..., 'passed', confidence_score=None)` 후 바로 승인·발행).
+> **2026-08-04 개정**: 애초 설계는 주제 페이지에 신뢰도 게이트(`confidence_score >= 0.6`)를 두고, 미달 시 사람이 `review_wiki_version()`을 수동 호출해 게시하도록 남겨뒀다. 그런데 그 수동 검토 경로(UI·엔드포인트·스크립트 어디에도)가 실제로는 한 번도 만들어지지 않아서, 게이트 미달 생성물이 영구히 `pending`에 쌓이기만 하고 아무도 게시할 수 없는 상태가 됐다. myWiki는 "사람이 쓰는 위키"가 아니라 **LLM이 전량 생성하는 위키**이므로, 검토자를 나중에 두기보다 게이트 자체를 없애고 이슈 페이지와 동일하게 검증 통과 시 항상 자동 발행하는 쪽으로 정책을 바꿨다. 아래는 개정된 정책이다.
 
-**주제 페이지**는 LLM이 새로 종합한 서술이 들어가므로 아래 게이트를 거친다:
+**이슈 페이지**와 **주제 페이지** 모두, 새 버전을 만들면 검증을 거쳐 항상 자동 승인·발행한다(confidence 게이트 없음):
 
 ```
 create_wiki_version(draft)                                   # generated_by='llm'
-record_wiki_validation(version_id, 'passed', confidence_score)
-if confidence_score >= 0.6:
-    review_wiki_version(version_id, reviewer_id=None, decision='approved')
-    publish_wiki_version(page_id, version_id)
-else:
-    # review_status='pending' 상태로 남김 -> 사람이 review_wiki_version 수동 호출
-    pass
+record_wiki_validation(version_id, 'passed', confidence_score)  # confidence_score는 기록만, 게이트 아님
+review_wiki_version(version_id, reviewer_id=None, decision='approved')
+publish_wiki_version(page_id, version_id)
 ```
 
 - `review_wiki_version()`은 현재 `reviewer_id: str` 필수라 배치에서 못 쓴다. 시그니처를 `reviewer_id: str | None = None`으로만 넓힌다(하위 호환, 기존 호출부 영향 없음). `reviewed_by=NULL` + `generated_by='llm'` 조합 자체가 "자동 승인"이라는 표시가 된다 — `pipeline_jobs.requested_by=NULL`(배치)과 같은 기존 컨벤션.
-- 임계값 `0.6`은 상수로 빼서(`AUTO_PUBLISH_CONFIDENCE_THRESHOLD`) 나중에 조정 가능하게 한다.
+- `AUTO_PUBLISH_CONFIDENCE_THRESHOLD` 상수와 게이트 분기는 폐지 시점에 함께 제거했다(더 이상 쓰이지 않음).
 
 ## 6. 모듈 구조
 
@@ -126,7 +122,7 @@ scripts/
 - 기존 주제 페이지 매칭 → 갱신(변경 이력 포함) 확인
 - 신규 주제 생성 + 부모 배치(기존 최상위 목록에서 선택 / 최상위로 신규 생성 둘 다)
 - `claims` 비어있으면 주제 페이지 갱신 스킵, 이슈 페이지는 정상 생성
-- `confidence_score >= 0.6` → 자동 발행, `< 0.6` → `pending` 유지
+- `confidence_score`와 무관하게 검증 통과 시 항상 자동 발행 (2026-08-04 개정)
 - 이슈 1건 LLM 실패해도 나머지 이슈는 정상 처리
 - `archive_stale_wiki_pages`: 90일 경과 published만 archived로, draft/archived/최근 갱신 페이지는 그대로
 
