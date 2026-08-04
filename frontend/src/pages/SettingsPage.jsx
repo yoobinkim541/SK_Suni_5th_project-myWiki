@@ -16,9 +16,14 @@
 //   상단바 톱니바퀴 드롭다운(SettingsPanel)에도 같은 알림 토글이 새로 생겨서, 여기서만
 //   따로 상태를 들고 있으면 둘이 어긋납니다.
 //
-// 나머지(에이전트 참조 범위, 수집/리포트 시각 등)는 아직 백엔드가 없어서 이 페이지 안의
-// 로컬 상태로만 관리합니다. 리포트 생성 시간/Wiki 주기/대화 보관 기간은 원본 시안과 동일하게
-// localStorage에 저장해 새로고침해도 유지됩니다.
+// 에이전트 참조 범위·일일 리포트 생성 시간은 아직 백엔드가 없어서 이 페이지 안의
+// 로컬 상태로만 관리합니다(localStorage에 저장해 새로고침해도 유지).
+//
+// ⚠ 수정: Wiki 업데이트 주기 / 대화 보관 기간은 workspace_settings 테이블(GET·PATCH
+//   /settings)에 실제로 연결했습니다 — 예전엔 localStorage에만 저장돼서 드롭다운을
+//   바꿔도 실제 위키 갱신 주기(항상 6시간 고정)엔 아무 영향이 없었습니다. 이제 값을
+//   바꾸면 바로 서버에 저장되고, 다음 wiki-refresh-gate 배치부터 그 주기를 따릅니다.
+//   localStorage는 그대로 두되(오프라인/초기 렌더용 캐시), 마운트 시 서버 값으로 덮어씁니다.
 //
 // ⚠ 수정: "수집 소스" 표기를 services/settingsApi.js 경유로 바꿨습니다.
 //   기존 문구("네이버 뉴스 API · OpenDART · RSS 6개 매체" / "3종 연결됨")가
@@ -34,6 +39,9 @@ import {
   fetchCollectSources,
   formatSourceSummary,
   formatSourceCount,
+  fetchWorkspaceSettings,
+  updateWikiCycle,
+  updateChatRetention,
 } from '../services/settingsApi';
 
 function getInitial(key, fallback) {
@@ -76,6 +84,22 @@ export default function SettingsPage({
     };
   }, []);
 
+  // 실제 워크스페이스 설정으로 localStorage 초기값을 덮어씁니다(목업 모드거나 조회
+  // 실패 시에는 그대로 localStorage 값을 씁니다 — fetchWorkspaceSettings가 null 반환).
+  useEffect(() => {
+    let alive = true;
+    fetchWorkspaceSettings()
+      .then((settings) => {
+        if (!alive || !settings) return;
+        setWikiCycle(settings.wikiCycle);
+        setChatKeep(settings.chatKeep);
+      })
+      .catch(() => { /* 조회 실패 — localStorage 초기값 유지 */ });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   useEffect(() => {
     try { localStorage.setItem('mywiki-report-time', reportTime); } catch { /* noop */ }
   }, [reportTime]);
@@ -85,6 +109,17 @@ export default function SettingsPage({
   useEffect(() => {
     try { localStorage.setItem('mywiki-chat-keep', chatKeep); } catch { /* noop */ }
   }, [chatKeep]);
+
+  // 드롭다운을 바꾸면 즉시 서버에 저장합니다. 실패해도 화면 값은 그대로 두고
+  // 콘솔에만 남깁니다(재시도 UI는 이번 범위 밖).
+  function handleWikiCycleChange(value) {
+    setWikiCycle(value);
+    updateWikiCycle(value).catch((err) => console.error('Wiki 업데이트 주기 저장 실패', err));
+  }
+  function handleChatKeepChange(value) {
+    setChatKeep(value);
+    updateChatRetention(value).catch((err) => console.error('대화 보관 기간 저장 실패', err));
+  }
 
   return (
     <section className="view on" id="v-settings"
@@ -165,7 +200,7 @@ export default function SettingsPage({
           <select
             className="fld"
             value={wikiCycle}
-            onChange={(e) => setWikiCycle(e.target.value)}
+            onChange={(e) => handleWikiCycleChange(e.target.value)}
             aria-label="Wiki 업데이트 주기"
           >
             <option value="30m">30분</option>
@@ -180,7 +215,7 @@ export default function SettingsPage({
           <select
             className="fld"
             value={chatKeep}
-            onChange={(e) => setChatKeep(e.target.value)}
+            onChange={(e) => handleChatKeepChange(e.target.value)}
             aria-label="에이전트 대화 기록 보관 기간"
           >
             <option value="7">7일</option>
