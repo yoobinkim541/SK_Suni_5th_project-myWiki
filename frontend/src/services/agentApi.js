@@ -246,6 +246,16 @@ export async function saveToWiki(sessionId, messageId) {
 }
 
 /**
+ * 대화 제목 직접 수정. 성공하면 갱신된 제목을 돌려준다.
+ * @returns {Promise<string>}
+ */
+export async function renameConversation(sessionId, title) {
+  if (USE_MOCK) return title;
+  const updated = await agentApi.renameChatSession(sessionId, title);
+  return updated.title;
+}
+
+/**
  * 보관 토글. 성공하면 갱신된 archivedAt(없으면 null)을 돌려준다.
  * @returns {Promise<string|null>}
  */
