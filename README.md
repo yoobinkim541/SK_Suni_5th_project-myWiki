@@ -16,7 +16,7 @@ myWiki는 산업 관련 최신 정보를 자동으로 수집·정리하고,
 | 직무 트랙 | AI/DATA |
 | 프로젝트 주제 | 4. 산업 동향 자동 큐레이션 |
 | 프로젝트 기간 | `2026.07.20 ~ 2026.08.20` |
-| 프로젝트 상태 | `개발 착수 (Repository 스캐폴드 반영)` |
+| 프로젝트 상태 | `MVP 배포·운영 중` (mywiki.pe.kr, 2026-08-04 기준 — 4번 Key Features 참고) |
 | Repository | `SK_Suni_5th_project-myWiki` |
 | Notion | `??? 추가 요망` |
 
@@ -48,16 +48,21 @@ myWiki의 주요 목표는 다음과 같습니다.
 ---
 
 ## 4. Key Features
+> 아래는 실제 배포된 코드 기준 상태입니다(2026-08-04). `완료`는 프로덕션에서 스케줄·API로
+> 실제 동작 중인 것, `구현 완료`는 코드·테스트는 있지만 아직 스케줄/엔드포인트에 연결 안 된 것입니다.
+
 | 기능 | 설명 | 상태 |
 |---|---|---|
-| 정보 수집·통합 | 뉴스, 보고서, 공시 등 여러 산업 정보 소스를 자동 수집 | `예정` |
-| 데이터 정제 | 중복 데이터, 광고성 내용, 불필요한 문장 제거 | `예정` |
-| 데이터 검증 | 출처, 작성일, 핵심 내용 등 데이터 신뢰성 확인 | `예정` |
-| 정보 분류 | 산업, 기업, 기술, 시장 이슈 등의 기준으로 콘텐츠 분류 | `예정` |
-| 핵심 내용 요약 | 수집된 문서의 핵심 정보와 주요 시사점 요약 | `예정` |
-| 일일 보고서 생성 | 매일 수집된 정보를 기반으로 산업 동향 보고서 자동 생성 | `예정` |
-| Wiki 지식화 | 보고서와 관련 자료를 구조화하여 지식베이스에 축적 | `예정` |
-| Agent 질의응답 | 축적된 지식을 기반으로 사용자 질문에 답변 | `스캐폴드 완료 (src/agent, src/api)` |
+| 정보 수집·통합 | 네이버 검색 API·GNews·구글 뉴스 RSS(총 8개 쿼리)에서 반도체 뉴스 자동 수집, 2시간마다 실행 | `완료` |
+| 데이터 정제 | HTML→Markdown 변환, SHA-256 기반 중복 판별, 문서 버전 관리 | `완료` |
+| 데이터 검증(신뢰도 평가) | 출처 추적성·권위성·근거 독립성 등 5개 기준으로 신뢰도 점수 산정(LLM) | `완료` |
+| 정보 분류·중요도 평가 | 6개 카테고리 분류 + 사업 영향·긴급성 등 기준 중요도·랭킹 점수 산정, 2시간마다 실행 | `완료` |
+| 핵심 내용 요약 | 문서별 핵심 사실·시사점·주시 포인트 요약(LLM) | `완료` |
+| 일일 보고서 생성 | 후보 선정→그룹핑→조립→마크다운/PDF 산출물 생성 로직·테스트 | `구현 완료` (스케줄·REST API 미연결 — 프로덕션에선 미가동) |
+| Wiki 지식화 | 이슈·주제 페이지 자동 생성, 버전 관리(덮어쓰지 않고 추가), 검증 통과 시 자동 발행, 30분마다 갱신 여부 체크 | `완료` |
+| Agent 질의응답 | 위키 근거 기반 답변, 근거 없으면 명시적으로 알림, 팀 공유·위키 저장, 인용 출처 표시 | `완료` |
+| 브라우저 푸시 알림 | 위키 문서가 새로 발행되면 구독자에게 Web Push(VAPID)로 알림 | `완료` |
+| 로그인·온보딩 | Google/GitHub OAuth, 신규/기존 계정 구분, 관심 키워드 선호조사, 게스트 모드 | `완료` |
 | 신규 산출물 생성 | 주간 보고서, 기업 분석, 이슈 브리핑 등 추가 자료 생성 | `예정` |
 
 ---
@@ -260,36 +265,50 @@ flowchart LR
 ---
 
 ## 10. Repository Structure
+> 백엔드(`src/`, `scripts/`, `tests/`)는 `develop` 브랜치, 프론트엔드(`frontend/`)는
+> `develop-frontend` 브랜치에서 관리됩니다 — 두 브랜치는 공통 조상(`main`) 이후로 서로 다른
+> 히스토리를 갖습니다(9번 Deployment Pipeline 참고). 아래는 두 브랜치의 파일을 합쳐서 보여줍니다.
+
 ```text
 myWiki/
 ├── README.md
 ├── docs/
 │   ├── meeting-notes/
 │   ├── requirements/
-│   ├── architecture/        # DB 스키마(myWiki_v2_supabase.sql), ERD snapshot 등
-│   └── reports/
+│   ├── architecture/         # DB 스키마(myWiki_v2_supabase.sql), 프론트 연동 매핑 등
+│   ├── reports/
+│   └── superpowers/          # 설계 문서(specs)·구현 계획(plans)
 ├── data/
 │   ├── raw/
 │   ├── processed/
 │   └── samples/
-├── src/
-│   ├── collectors/          # 데이터 수집 담당
-│   ├── preprocessing/       # 데이터 정제·검증 담당
-│   ├── analysis/            # AI 요약·분석 담당
-│   ├── report/              # 보고서 생성 담당
-│   ├── wiki/                # Wiki·지식베이스 담당
-│   ├── agent/                # Agent·API 담당 (구현됨)
-│   └── api/                  # Agent·API 담당 (구현됨)
+├── src/                       # develop 브랜치
+│   ├── collectors/           # 데이터 수집 — 네이버/GNews/구글 RSS (구현됨)
+│   ├── preprocessing/        # 데이터 정제·중복 판별 (구현됨)
+│   ├── analysis/             # 분류·신뢰도·중요도·랭킹 (구현됨)
+│   ├── report/               # 일일 보고서 조립·PDF (구현됨, 미가동)
+│   ├── wiki/                 # Wiki 생성·버전관리·자동발행 (구현됨)
+│   ├── notifications/        # 위키 발행 브라우저 푸시 알림 (구현됨)
+│   ├── settings/             # 워크스페이스 설정(Wiki 갱신 주기 등) (구현됨)
+│   ├── agent/                 # Agent 질의응답 (구현됨)
+│   └── api/                   # FastAPI 서버·REST 라우터 (구현됨)
+├── frontend/                  # develop-frontend 브랜치 — React + Vite
+│   └── src/
+│       ├── pages/             # EntryFlow(랜딩·로그인·온보딩)/Dashboard/Report/Category/Wiki/Agent/Settings
+│       ├── api/                # 백엔드 REST 호출부([LIVE] 주석 = 실제 연결)
+│       ├── lib/                # 브라우저 API 오케스트레이션(푸시 알림 등)
+│       └── components/
 ├── tests/
 ├── config/
-├── scripts/
+├── scripts/                   # 배치 진입점(수집·분석·위키갱신·정리) — GitHub Actions cron이 실행
 ├── .env.example
 ├── requirements.txt
 └── LICENSE
 ```
 
-> 각 `src/` 하위 폴더에는 `README.md`(담당 테이블·역할 설명)와 `interface.py`(구현해야 할 함수 시그니처)가
-> 이미 들어 있습니다. `src/agent/`, `src/api/`만 실제 동작하는 코드이고, 나머지는 뼈대만 있는 상태입니다.
+> `src/` 하위 폴더에는 `README.md`(담당 테이블·역할 설명)와 `interface.py`(함수 시그니처)가
+> 들어 있습니다. `src/report/`만 코드·테스트는 완비돼 있지만 실제 스케줄/API에 연결되지
+> 않아 프로덕션에서는 동작하지 않습니다 — 나머지는 전부 실제 동작 중입니다.
 
 ---
 
@@ -303,16 +322,16 @@ myWiki/
 - [x] 기술 스택 확정 (9번 참고)
 
 ### Phase 2. 데이터 파이프라인 구축
-- [ ] 산업 정보 수집 기능 구현
-- [ ] 데이터 전처리 및 중복 제거
-- [ ] 데이터 출처 및 품질 검증
+- [x] 산업 정보 수집 기능 구현 (`src/collectors/`, 네이버·GNews·구글 RSS, 2시간마다 자동 실행)
+- [x] 데이터 전처리 및 중복 제거 (`src/preprocessing/`, SHA-256 content_hash 기반)
+- [x] 데이터 출처 및 품질 검증 (`src/analysis/`, 신뢰도 점수 산정)
 - [x] 분류 기준과 메타데이터 구조 설계 (DB 스키마 반영 완료)
 
 ### Phase 3. 보고서 및 Wiki 구축
-- [ ] 문서 요약 및 핵심 키워드 추출
-- [ ] 일일 동향 보고서 템플릿 설계
-- [ ] 보고서 자동 생성 기능 구현
-- [ ] Wiki 문서 저장 및 검색 기능 구현
+- [x] 문서 요약 및 핵심 키워드 추출 (`src/analysis/`, 카테고리·중요도·랭킹 자동 산정)
+- [x] 일일 동향 보고서 템플릿 설계 (`src/report/composer.py` 등)
+- [x] 보고서 자동 생성 기능 구현 (코드·테스트 완비 — 스케줄/API 미연결로 프로덕션 미가동, 4번 참고)
+- [x] Wiki 문서 저장 및 검색 기능 구현 (`src/wiki/`, 자동 발행 + Agent 조회 연동)
 
 ### Phase 4. Agent 구축
 - [x] 지식베이스 검색 기능 구현 (`src/agent/wiki_tools.py`)
@@ -321,10 +340,10 @@ myWiki/
 - [x] 답변 출처 표시 및 검증 기능 구현 (`message_citations` 연동)
 
 ### Phase 5. 테스트 및 최종 제출
-- [ ] 기능별 단위 테스트
+- [x] 기능별 단위 테스트 (`tests/`, pytest — 백엔드 대부분 영역 커버)
 - [ ] 통합 테스트
 - [ ] 결과 품질 평가
-- [ ] 사용자 피드백 반영
+- [x] 사용자 피드백 반영 (실사용자 테스트로 발견한 버그 다수 수정 — 로그인·위키 발행·푸시 알림 등)
 - [ ] 발표 자료 및 시연 영상 제작
 - [ ] 최종 README와 기술 문서 정리
 
@@ -342,11 +361,32 @@ cd SK_Suni_5th_project-myWiki
 ```bash
 cp .env.example .env
 ```
+`.env.example`(백엔드, 저장소 루트)에 이미 실제 사용 중인 항목이 정리돼 있습니다:
 ```env
+# Supabase 프로젝트 설정 (Settings > API, Settings > Data API > JWT Settings)
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_JWT_SECRET=
+
+# Claude API (Anthropic Console)
 ANTHROPIC_API_KEY=
+
+# OpenRouter API — 문서 요약·분류·신뢰도 평가 등 LLM 호출
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=deepseek/deepseek-v4-flash
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+```
+아래는 특정 배치 스크립트·기능에서만 필요한 키라 `.env.example`엔 없지만, 해당 기능을 로컬에서
+돌리려면 직접 추가해야 합니다:
+```env
+# src/collectors/ — 뉴스 수집
+NAVER_CLIENT_ID=
+NAVER_CLIENT_SECRET=
+GNEWS_API_KEY=
+
+# src/notifications/ — 위키 발행 브라우저 푸시 알림
+VAPID_PRIVATE_KEY=
+VAPID_CLAIMS_SUB=mailto:your-email@example.com
 ```
 
 ### Install Dependencies
@@ -355,23 +395,32 @@ pip install -r requirements.txt
 ```
 
 ### PDF Font Packaging
-- ??? PDF? `assets/fonts/NanumGothic-Regular.ttf`, `assets/fonts/NanumGothic-Bold.ttf`? PDF ??? ??????, ??? GitHub?? PDF ??? ???? ? ?? ?? ?? ?? ?? ??? ??? ???.
-- ?? ??? ???? PDF? ?? ????? Python ???(`reportlab`, `pypdf`) ??? ?????. ???? ?? ?? ??? ???? ????.
-- PDF ???? ??? ??? ??? ???? ?? ?? ??? ?????, ?? ??? ??? Git? ????? ???.
-  - `assets/fonts/NanumGothic-Regular.ttf`
-  - `assets/fonts/NanumGothic-Bold.ttf`
-  - `assets/fonts/NanumGothic-OFL.txt`
-- ? ?? ??? ??? ?? ??? ???? clone? ? PDF? ???? ? ?? ???? ??? ? ????.
+- 보고서 PDF 산출물(`src/report/`, `reportlab`)은 한글 렌더링을 위해 `assets/fonts/NanumGothic-Regular.ttf`,
+  `assets/fonts/NanumGothic-Bold.ttf` 폰트가 필요합니다.
+- 나눔고딕은 OFL(오픈 폰트 라이선스)이라 재배포가 허용돼서, 별도 다운로드 없이 폰트 파일 자체를
+  저장소에 커밋해뒀습니다 — `assets/fonts/NanumGothic-Regular.ttf`, `assets/fonts/NanumGothic-Bold.ttf`,
+  `assets/fonts/NanumGothic-OFL.txt`(라이선스 원문).
+- 그래서 저장소를 clone하기만 하면 별도 설치 없이 바로 PDF를 생성할 수 있습니다.
 
-### Run (Agent·API 서버)
+### Run — Backend (Agent·API 서버)
 ```bash
 uvicorn src.api.main:app --reload
+```
+서버 실행 후 `http://localhost:8000/docs`에서 전체 API 명세(Swagger UI)를 확인할 수 있습니다.
+
+### Run — Frontend
+프론트엔드는 `develop-frontend` 브랜치의 `frontend/` 디렉터리에 있습니다.
+```bash
+cd frontend
+cp .env.example .env.local   # VITE_API_BASE_URL, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY,
+                              # VITE_VAPID_PUBLIC_KEY 등 채우기 (VITE_USE_MOCK=true면 백엔드 없이도 목업으로 실행됨)
+npm install
+npm run dev
 ```
 
 ### Test
 ```bash
-# 실제 테스트 명령어로 수정
-pytest
+pytest tests/
 ```
 
 ---
@@ -415,8 +464,6 @@ pytest
 ---
 
 ## 16. Future Improvements
-- 사용자별 관심 산업 및 키워드 설정
-- 실시간 산업 이슈 알림
 - 기업별·산업별 자동 비교 분석
 - 보고서 형식 사용자 맞춤 설정
 - PDF, PPT, 이메일 등 다양한 출력 형식 지원
