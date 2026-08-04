@@ -169,6 +169,13 @@ export default function App() {
       setEntryStep(null);
     }
     function applySession(session) {
+      // 구글 로그인 등 OAuth 콜백은 access_token/refresh_token을 URL 해시에 실어 돌아온다.
+      // supabase-js(detectSessionInUrl)가 그 해시를 읽어 세션으로 파싱하긴 하지만, 파싱이
+      // 끝난 이 시점까지도 주소창엔 토큰이 그대로 남아 있을 수 있다 — 여기서 확실히 지운다.
+      // 앱은 라우팅에 URL 해시를 쓰지 않으므로(view는 React state) 안전하게 지울 수 있다.
+      if (window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
       setAuthed(!!session);
       setProfile(session?.user ?? null);
       determineEntryStep(session);
