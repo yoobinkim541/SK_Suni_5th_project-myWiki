@@ -12,6 +12,7 @@
 //     각주    = "이 문장의 근거 1건"      → 해당 출처 원문 한 곳으로 바로 이동
 //     키워드  = "이 단어와 엮인 근거 전체" → 공시·IR 원문 + 뉴스기사 목록을 모달로 모아 보여줌
 
+import ReactMarkdown from 'react-markdown';
 import CitationTag from './CitationTag';
 import { WIKI_KEYWORD_LINKS, getWikiKeywordList } from '../../data/mockWiki';
 
@@ -47,8 +48,7 @@ function linkifyKeywords(text, onKeyword, keyPrefix) {
 // 이 문서 본문에 실제로 등장하는 연동 키워드만 상단 칩으로 노출합니다.
 function collectDocKeywords(doc) {
   const body = doc.zones
-    .flatMap((z) => z.paragraphs)
-    .flat()
+    .flatMap((z) => (z.markdown ? [z.markdown] : z.paragraphs.flat()))
     .filter((p) => typeof p === 'string')
     .join(' ');
   return getWikiKeywordList().filter((k) => body.includes(k));
@@ -88,15 +88,21 @@ export default function WikiCard({ doc, onKeyword }) {
       {doc.zones.map((zone) => (
         <div key={zone.title}>
           <div className="zone">{zone.title}</div>
-          {zone.paragraphs.map((parts, pi) => (
-            <p key={pi}>
-              {parts.map((part, i) =>
-                typeof part === 'number'
-                  ? <CitationTag key={i} no={part} sourceKey={doc.sources[part - 1]?.key} />
-                  : linkifyKeywords(part, onKeyword, `${zone.title}-${pi}-${i}`)
-              )}
-            </p>
-          ))}
+          {zone.markdown ? (
+            <div className="md">
+              <ReactMarkdown>{zone.markdown}</ReactMarkdown>
+            </div>
+          ) : (
+            zone.paragraphs.map((parts, pi) => (
+              <p key={pi}>
+                {parts.map((part, i) =>
+                  typeof part === 'number'
+                    ? <CitationTag key={i} no={part} sourceKey={doc.sources[part - 1]?.key} />
+                    : linkifyKeywords(part, onKeyword, `${zone.title}-${pi}-${i}`)
+                )}
+              </p>
+            ))
+          )}
         </div>
       ))}
 
