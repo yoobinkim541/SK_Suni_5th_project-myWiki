@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any
@@ -286,6 +286,90 @@ def get_reliability_results(*, workspace_id: str, document_version_ids: list[str
         if stored.document_version_id not in latest_by_document:
             latest_by_document[stored.document_version_id] = stored
     return [latest_by_document[doc_id] for doc_id in document_version_ids if doc_id in latest_by_document]
+
+
+def get_documents_ready_for_classification(
+    *, workspace_id: str, limit: int = 20, since_days: int = 7, supabase: Client | None = None
+) -> list[str]:
+    """document_analysis_results 행이 아예 없는(분류를 한 번도 안 받은) document_version을 찾는다.
+
+    나머지 3단계(get_documents_ready_for_reliability/importance, ranking)는 기존
+    document_analysis_results 행의 상태 필드만 보면 되지만, 분류는 그 행 자체가 생기기
+    전 단계라 documents/document_versions에서 직접 찾아야 한다. 전체 이력을 매번 스캔하지
+    않도록 최근 since_days일로 창을 제한한다(수집 배치가 2시간마다 도니 충분히 넉넉하다).
+    """
+    db = supabase or get_supabase()
+    since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+
+    document_rows = (
+        db.table("documents")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .eq("status", "active")
+        .gte("created_at", since)
+        .execute()
+        .data
+    )
+    document_ids = [row["id"] for row in document_rows]
+    if not document_ids:
+        return []
+
+    version_rows = (
+        db.table("document_versions")
+        .select("id,created_at")
+        .in_("document_id", document_ids)
+        .order("created_at", desc=True)
+        .limit(limit * 5)
+        .execute()
+        .data
+    )
+    version_ids = [row["id"] for row in version_rows]
+    if not version_ids:
+        return []
+
+    analyzed_rows = (
+        db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+        .select("document_version_id")
+        .in_("document_version_id", version_ids)
+        .execute()
+        .data
+    )
+    already_analyzed = {row["document_version_id"] for row in analyzed_rows}
+
+    return [vid for vid in version_ids if vid not in already_analyzed][:limit]
+
+
+def get_documents_ready_for_ranking(*, workspace_id: str, limit: int = 20, supabase: Client | None = None) -> list[str]:
+    db = supabase or get_supabase()
+    try:
+        rows = (
+            db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+            .select("document_version_id,status,reliability_status,importance_status,ranking_status")
+            .eq("workspace_id", workspace_id)
+            .eq("status", "completed")
+            .eq("reliability_status", "completed")
+            .eq("importance_status", "completed")
+            .order("importance_evaluated_at", desc=True)
+            .order("updated_at", desc=True)
+            .limit(limit * 5)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        raise ClassificationLoadFailedError("RANKING_LOAD_FAILED") from exc
+
+    results: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        document_version_id = row.get("document_version_id")
+        if not document_version_id or document_version_id in seen:
+            continue
+        if row.get("ranking_status", "pending") in {"pending", "failed", None}:
+            results.append(document_version_id)
+            seen.add(document_version_id)
+        if len(results) >= limit:
+            break
+    return results
 
 
 def get_documents_ready_for_reliability(*, workspace_id: str, limit: int = 20, supabase: Client | None = None) -> list[str]:
