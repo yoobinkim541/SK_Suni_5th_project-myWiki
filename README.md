@@ -201,7 +201,7 @@ data: 반도체 산업 키워드 목록 업데이트
 ---
 
 ## 9. Tech Stack
-> 아래는 지금까지 검토·결정된 내용입니다. 팀 확정 전까지는 제안 단계로 보고, 바뀌면 이 표부터 갱신합니다.
+> 아래는 실제 배포된 인프라 기준입니다(2026-08-04). 바뀌면 이 표부터 갱신합니다.
 
 | 구분 | 기술 | 사용 목적 |
 |---|---|---|
@@ -211,12 +211,51 @@ data: 반도체 산업 키워드 목록 업데이트
 | LLM / AI | DeepSeek V4 Flash (OpenRouter) | 문서 요약, 분류, 신뢰도 평가, 답변 생성 |
 | Agent Framework | 별도 프레임워크 없이 OpenAI 호환 tool-use 직접 구현 | 위키 조회 → 근거 확인 → 답변/근거없음 판단 |
 | Database | Supabase (PostgreSQL) | 사용자·문서·위키·보고서 데이터 저장, RLS로 workspace 격리 |
+| Auth | Supabase Auth (OAuth: Google, GitHub) | 로그인·세션(JWT) 발급, 백엔드가 JWKS로 검증 |
 | Vector Database | **미사용** | Karpathy LLM Wiki 패턴 채택 — 위키 index를 Agent가 직접 조회하는 방식으로 대체 (규모가 커지면 `qmd` 같은 로컬 검색 도구 도입 검토) |
 | Wiki / Documentation | Markdown + Supabase Storage | 위키 본문·리포트 산출물 저장 (버전별 object_key 관리) |
-| Backend | Python, FastAPI | API 및 서비스 로직 구현 |
-| Frontend | React | 사용자 화면 구성 |
-| Deployment | AWS Lambda + EventBridge(배치 파이프라인), Vercel(프론트) | 서비스 배포 및 운영 |
+| Backend | Python, FastAPI, Docker | API 및 서비스 로직 구현·컨테이너화 |
+| Frontend | React + Vite, react-markdown | 사용자 화면 구성, 위키 본문 마크다운 렌더링 |
+| 프론트 호스팅 | Vercel | `develop-frontend` 브랜치 push 시 자동 배포 |
+| 백엔드 호스팅 | 오라클 클라우드 VM + Docker | `develop` 브랜치 push 시 GitHub Actions가 SSH로 자동 배포 |
+| 백엔드 노출 | Cloudflare Tunnel (named tunnel) | 포트 개방 없이 `api.mywiki.pe.kr`로 아웃바운드 터널 노출 |
+| DNS | Cloudflare | `mywiki.pe.kr` 네임서버 관리, 서브도메인 라우팅 |
+| CI/CD | GitHub Actions | 배포(프론트/백엔드) + 배치(수집·위키갱신·채팅정리) |
 | Collaboration | GitHub, Notion | 코드 및 프로젝트 문서 관리 |
+
+### System Architecture
+```mermaid
+flowchart LR
+    U[사용자 브라우저] -->|mywiki.pe.kr| V[Vercel<br/>React 프론트]
+    U -->|api.mywiki.pe.kr| CF[Cloudflare<br/>named tunnel]
+    CF --> API[오라클 VM<br/>Docker: FastAPI]
+    V -->|Bearer JWT| API
+    API --> SB[(Supabase<br/>Postgres·Auth·Storage)]
+    GA[GitHub Actions cron] -->|스크립트 직접 실행| SB
+    GA -->|push 시 자동 배포| V
+    GA -->|push 시 SSH 배포| API
+```
+
+### Domain Routing
+| 도메인 | 대상 | 방식 |
+|---|---|---|
+| `mywiki.pe.kr` | Vercel (프론트) | Cloudflare DNS → CNAME flatten → Vercel (DNS only, 프록시 꺼짐) |
+| `api.mywiki.pe.kr` | 오라클 VM (백엔드) | Cloudflare named tunnel — 포트 개방 없이 아웃바운드 터널로만 연결 |
+
+### Deployment Pipeline (CI/CD)
+| 브랜치 | 대상 | 트리거 시 동작 |
+|---|---|---|
+| `develop` | 백엔드 | push → `.github/workflows/deploy-backend.yml` → SSH로 VM 접속 → `git reset --hard` → `docker compose up -d --build` |
+| `develop-frontend` | 프론트 | push → Vercel Git 연동이 자동 빌드·배포 (별도 워크플로우 없음) |
+
+### Batch Pipeline
+백엔드에 상시 워커(Celery/Redis)는 없고, GitHub Actions cron이 파이썬 스크립트를 직접 실행합니다.
+
+| 워크플로우 | 주기 | 내용 |
+|---|---|---|
+| `scheduled-collection.yml` | 2시간마다 | 뉴스 수집 + 정제 (`scripts/run_pipeline.py`) |
+| `wiki-refresh-gate.yml` | 30분마다 | 위키 자동 갱신 판단 (`scripts/refresh_wiki_scheduled.py`) |
+| `chat-retention-cleanup.yml` | 매일 새벽 | 오래된 대화 정리 (`scripts/cleanup_old_chats.py`) |
 
 ---
 
