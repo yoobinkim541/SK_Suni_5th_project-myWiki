@@ -1247,6 +1247,13 @@ a.fn:hover{text-decoration:underline}
   animation:fadeUp var(--dur-base) var(--ease)}
 @media (max-width:768px){.dl-toast{bottom:78px;font-size:11.5px;max-width:88vw;text-align:center}}
 
+/* 설정 저장 토스트 — .dl-toast와 같은 애니메이션·톤, 위치만 우측 하단. */
+.settings-toast{position:fixed;right:24px;bottom:24px;z-index:120;
+  background:var(--ink);color:#fff;font-size:12.5px;font-weight:500;
+  padding:11px 18px;border-radius:10px;box-shadow:0 8px 26px rgba(0,0,0,.22);
+  animation:fadeUp var(--dur-base) var(--ease)}
+@media (max-width:768px){.settings-toast{right:16px;bottom:78px;font-size:11.5px;max-width:70vw}}
+
 /* ── (6) 카테고리 현황 — 키워드 원그래프 ─────────────────────────── */
 .pie-tabs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:20px}
 .pie-tab{font:inherit;font-size:11.5px;font-weight:500;color:var(--ink-2);cursor:pointer;
