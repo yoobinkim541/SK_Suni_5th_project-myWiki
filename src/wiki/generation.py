@@ -34,6 +34,7 @@ from .interface import (
     search_wiki_contexts,
     upsert_wiki_page,
 )
+from ..notifications.service import send_wiki_notification
 
 logger = logging.getLogger(__name__)
 
@@ -413,6 +414,16 @@ def generate_wiki_drafts_for_sections(
                 error_message=topic_error,
             )
         )
+
+    published_count = sum(
+        (1 if result.issue_page_id else 0) + (1 if result.topic_page_id is not None else 0)
+        for result in results
+    )
+    if published_count > 0:
+        try:
+            send_wiki_notification(workspace_id, published_count, supabase=supabase)
+        except Exception:  # noqa: BLE001
+            logger.exception("wiki_notification_failed", extra={"workspace_id": workspace_id})
 
     return results
 
