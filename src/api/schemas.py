@@ -30,6 +30,21 @@ class ShareToTeamRequest(BaseModel):
     target_session_id: Optional[str] = None
 
 
+class ParticipantOut(BaseModel):
+    user_id: str
+    display_name: Optional[str] = None
+
+
+class AddParticipantRequest(BaseModel):
+    user_id: str
+
+
+class WorkspaceMemberOut(BaseModel):
+    user_id: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+
+
 class CitationOut(BaseModel):
     id: str
     document_version_id: str

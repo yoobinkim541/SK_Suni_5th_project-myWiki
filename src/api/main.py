@@ -22,19 +22,23 @@ load_dotenv()
 from . import db
 from .auth import get_current_user
 from .schemas import (
+    AddParticipantRequest,
     ChatMessageOut,
     ChatSessionOut,
     CitationOut,
     CreateSessionRequest,
+    ParticipantOut,
     SaveToWikiResponse,
     SendMessageRequest,
     SendMessageResponse,
     ShareToTeamRequest,
+    WorkspaceMemberOut,
 )
 from .notifications_router import router as notifications_router
 from .settings_router import router as settings_router
 from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
+from ..agent.titling import generate_session_title
 from ..agent.wiki_tools import WikiTools
 from ..wiki.interface import (
     WikiDraftInput,
@@ -118,12 +122,21 @@ def send_message(
         for m in db.list_chat_messages(session_id)
         if m["id"] != user_message["id"]
     ]
+    is_first_message = not history
 
     wiki_tools = WikiTools(workspace_id=workspace_id)
     agent = WikiAgent(wiki_tools)
     result = agent.answer(body.content, history=history)
 
     assistant_message = db.save_agent_message(session_id, result)
+
+    # team 세션의 첫 질문/답변이면 주제를 뽑아 제목을 자동으로 채운다. 실패해도
+    # 응답 자체는 그대로 나가야 하므로(generate_session_title이 알아서 삼킨다),
+    # 여기서 별도 예외 처리를 하지 않는다.
+    if is_first_message and session["visibility"] == "team":
+        title = generate_session_title(body.content, assistant_message["content"])
+        if title:
+            db.update_chat_session_title(session_id, title)
 
     return SendMessageResponse(
         user_message=_to_message_out(user_message),
@@ -160,12 +173,14 @@ def share_message_to_team(
     if user_message is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="짝이 되는 질문 메시지를 찾을 수 없음")
 
+    is_new_target_session = False
     if body.target_session_id:
         target_session = db.get_chat_session(body.target_session_id, workspace_id, profile["id"])
         if target_session is None or target_session["visibility"] != "team":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="유효한 팀 공유 세션이 아님")
     else:
         target_session = db.create_chat_session(workspace_id, profile["id"], title="새 공유 대화", visibility="team")
+        is_new_target_session = True
 
     db.copy_chat_message(target_session["id"], user_message)
     copied_assistant = db.copy_chat_message(target_session["id"], message)
@@ -173,7 +188,59 @@ def share_message_to_team(
     citations = db.list_message_citations(message_id)
     db.copy_message_citations(copied_assistant["id"], citations)
 
+    # 새로 만든 공유 세션이면, 방금 옮긴 질문/답변에서 주제를 뽑아 제목을 채운다.
+    if is_new_target_session:
+        title = generate_session_title(user_message["content"], message["content"])
+        if title:
+            db.update_chat_session_title(target_session["id"], title)
+
     return _to_message_out(copied_assistant)
+
+
+@app.delete(
+    "/chat/sessions/{session_id}/messages/{message_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_message(session_id: str, message_id: str, profile: dict = Depends(get_current_user)):
+    """질문/답변 쌍 하나를 완전 삭제한다(soft-delete 없이 바로 지움). 정상 답변이어도
+    지울 수 있다 — 이미 위키에 저장했거나 팀에 공유한 답변은 그때 별도 행으로 복사돼
+    있으므로(copy_chat_message/upsert_wiki_page), 원본 쌍을 지워도 영향받지 않는다."""
+    workspace_id = _require_workspace(profile)
+    message = _get_owned_message(session_id, message_id, workspace_id, profile["id"])
+
+    user_message = db.get_preceding_user_message(session_id, message["created_at"])
+
+    db.delete_chat_message(message_id)
+    if user_message:
+        db.delete_chat_message(user_message["id"])
+
+
+@app.post("/chat/sessions/{session_id}/messages/{message_id}/regenerate", response_model=ChatMessageOut)
+def regenerate_message(session_id: str, message_id: str, profile: dict = Depends(get_current_user)):
+    """다시 생성 — 같은 질문으로 Agent를 다시 호출해 답변 행을 그 자리에서 교체한다.
+    (프론트가 새 Q&A를 아래에 덧붙이는 방식도 가능하지만, 그러면 새로고침 시 옛 답변이
+    DB에 남아 있어 다시 나타난다 — 진짜 "다시 생성"이 되려면 in-place 교체가 필요하다.)"""
+    workspace_id = _require_workspace(profile)
+    message = _get_owned_message(session_id, message_id, workspace_id, profile["id"])
+
+    user_message = db.get_preceding_user_message(session_id, message["created_at"])
+    if user_message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="짝이 되는 질문 메시지를 찾을 수 없음")
+
+    # 재답변 시점에 이 질문/답변 쌍은 이력에서 빼야 한다 — 안 그러면 Agent가 자기 자신의
+    # 옛 답변을 맥락으로 다시 참고하게 된다.
+    history = [
+        {"role": "user" if m["role"] == "user" else "assistant", "content": m["content"]}
+        for m in db.list_chat_messages(session_id)
+        if m["id"] not in (user_message["id"], message_id)
+    ]
+
+    wiki_tools = WikiTools(workspace_id=workspace_id)
+    agent = WikiAgent(wiki_tools)
+    result = agent.answer(user_message["content"], history=history)
+
+    updated = db.update_agent_message(message_id, result)
+    return _to_message_out(updated)
 
 
 @app.post("/chat/sessions/{session_id}/messages/{message_id}/save-to-wiki", response_model=SaveToWikiResponse)
@@ -246,6 +313,76 @@ def delete_session(session_id: str, profile: dict = Depends(get_current_user)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="세션 생성자만 삭제할 수 있음")
 
     db.soft_delete_chat_session(session_id)
+
+
+@app.get("/chat/sessions/{session_id}/participants", response_model=list[ParticipantOut])
+def list_participants(session_id: str, profile: dict = Depends(get_current_user)):
+    workspace_id = _require_workspace(profile)
+    session = db.get_chat_session(session_id, workspace_id, profile["id"])
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
+
+    rows = db.list_chat_session_participants(session_id)
+    return [ParticipantOut(user_id=r["user_id"], display_name=r.get("display_name")) for r in rows]
+
+
+@app.post(
+    "/chat/sessions/{session_id}/participants",
+    response_model=ParticipantOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_participant(
+    session_id: str, body: AddParticipantRequest, profile: dict = Depends(get_current_user)
+):
+    """참여자 추가는 이미 참여 중인 사람이면 누구나 할 수 있다(get_chat_session이 이미
+    참여자만 통과시키므로 별도 체크가 필요 없다). 추가 대상은 같은 워크스페이스
+    소속이어야 한다 — 안 그러면 다른 워크스페이스 사람을 끌어들일 수 있다."""
+    workspace_id = _require_workspace(profile)
+    session = db.get_chat_session(session_id, workspace_id, profile["id"])
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
+    if session["visibility"] != "team":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="팀 공유 세션에서만 참여자를 관리할 수 있음")
+
+    if db.get_default_workspace_id(body.user_id) != workspace_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="같은 워크스페이스 멤버만 추가할 수 있음")
+
+    db.add_chat_session_participant(session_id, body.user_id)
+    added_profile = db.get_profile(body.user_id)
+    return ParticipantOut(
+        user_id=body.user_id, display_name=added_profile.get("display_name") if added_profile else None
+    )
+
+
+@app.delete(
+    "/chat/sessions/{session_id}/participants/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_participant(session_id: str, user_id: str, profile: dict = Depends(get_current_user)):
+    """본인 탈퇴는 항상 허용한다. 다른 사람을 빼는 건 세션 생성자만 가능하다 —
+    참여자끼리 서로 쫓아내지 못하게 막는다."""
+    workspace_id = _require_workspace(profile)
+    session = db.get_chat_session(session_id, workspace_id, profile["id"])
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
+    if session["visibility"] != "team":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="팀 공유 세션에서만 참여자를 관리할 수 있음")
+
+    if user_id != profile["id"] and session["user_id"] != profile["id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="다른 참여자는 세션 생성자만 뺄 수 있음")
+
+    db.remove_chat_session_participant(session_id, user_id)
+
+
+@app.get("/workspace/members", response_model=list[WorkspaceMemberOut])
+def list_members(profile: dict = Depends(get_current_user)):
+    """참여자 추가 UI가 "누구를 추가할지" 고를 목록으로 쓴다."""
+    workspace_id = _require_workspace(profile)
+    rows = db.list_workspace_members(workspace_id)
+    return [
+        WorkspaceMemberOut(user_id=r["user_id"], display_name=r.get("display_name"), email=r.get("email"))
+        for r in rows
+    ]
 
 
 @app.get("/health")
