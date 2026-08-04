@@ -2,13 +2,17 @@
 // WikiPage.jsx가 지금 쓰는 목업(TREE, SOURCES, LINKED_DOCS, TIMELINE)을 이 함수들로 교체한다.
 import { apiFetch } from './client';
 
-// wiki_pages.page_type(DB CHECK 제약 5종)만 실제로 존재하는 분류값이다.
-// WikiPage.jsx의 TREE 목업 그룹명(제품·기술/경쟁사/고객·수요산업/공급망·생산)은
-// 이 5종과 1:1로 안 맞는다 — 화면 쪽 그룹 라벨을 아래 5종 기준으로 다시 맞춰야 한다.
+// wiki_pages.page_type(DB CHECK 제약 8종)만 실제로 존재하는 분류값이다.
+// 2026-08-04: supply_chain/policy/market 추가 — 리포트 6종 카테고리와 1:1로 맞춰졌다
+// (제품·기술→technology, 경쟁사→company, 고객·수요산업→industry, 공급망·생산→supply_chain,
+//  정책·규제→policy, 시장·경영→market).
 export const WIKI_PAGE_TYPE_LABELS = {
   industry: '산업',
   company: '기업',
   technology: '제품·기술',
+  supply_chain: '공급망·생산',
+  policy: '정책·규제',
+  market: '시장·경영',
   issue: '이슈',
   term: '용어',
 };
