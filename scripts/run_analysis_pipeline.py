@@ -50,44 +50,51 @@ def log(msg: str) -> None:
     print(f"[run_analysis_pipeline] {msg}", flush=True)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="분류/신뢰도/중요도/랭킹 배치 실행")
-    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="단계별 최대 처리 건수")
-    args = parser.parse_args()
+def run_analysis_pipeline(workspace_id: str, *, limit: int = DEFAULT_LIMIT) -> None:
+    """분류->신뢰도->중요도->랭킹 4단계를 순서대로 실행한다.
 
-    # collect()·preprocess()와 같은 계약: 문서 1건 실패는 로그로만 남기고 배치 자체는
-    # 항상 성공(0)으로 끝낸다 — run_pipeline.py/refresh_wiki_scheduled.py와 동일한 관례.
-    # 그렇지 않으면 10건 중 1건만 실패해도 매번 CI가 빨간불이 되어 신호가 무뎌진다.
-    workspace_id = get_workspace_id()
+    scripts/refresh_data_scheduled.py(게이트)가 수집 직후 이 함수를 그대로 가져다 쓴다 —
+    CLI(main())와 게이트 양쪽에서 로직이 갈라지지 않도록 함수로 분리해뒀다.
 
-    pending_classify = get_documents_ready_for_classification(workspace_id=workspace_id, limit=args.limit)
+    collect()·preprocess()와 같은 계약: 문서 1건 실패는 로그로만 남기고 배치 자체는
+    예외를 던지지 않는다 — run_pipeline.py/refresh_wiki_scheduled.py와 동일한 관례.
+    그렇지 않으면 10건 중 1건만 실패해도 매번 호출부가 실패로 취급해 신호가 무뎌진다.
+    """
+    pending_classify = get_documents_ready_for_classification(workspace_id=workspace_id, limit=limit)
     log(f"분류 대상 {len(pending_classify)}건")
     if pending_classify:
         results = classify_document_versions(workspace_id=workspace_id, document_version_ids=pending_classify)
         failed = [r for r in results if r.status != "completed"]
         log(f"분류 완료 {len(results) - len(failed)}건, 실패 {len(failed)}건")
 
-    pending_reliability = get_documents_ready_for_reliability(workspace_id=workspace_id, limit=args.limit)
+    pending_reliability = get_documents_ready_for_reliability(workspace_id=workspace_id, limit=limit)
     log(f"신뢰도 평가 대상 {len(pending_reliability)}건")
     if pending_reliability:
         results = evaluate_reliability_for_documents(workspace_id=workspace_id, document_version_ids=pending_reliability)
         failed = [r for r in results if r.reliability_status != "completed"]
         log(f"신뢰도 평가 완료 {len(results) - len(failed)}건, 실패 {len(failed)}건")
 
-    pending_importance = get_documents_ready_for_importance(workspace_id=workspace_id, limit=args.limit)
+    pending_importance = get_documents_ready_for_importance(workspace_id=workspace_id, limit=limit)
     log(f"중요도 평가 대상 {len(pending_importance)}건")
     if pending_importance:
         results = evaluate_and_save_importances(workspace_id=workspace_id, document_version_ids=pending_importance)
         failed = [r for r in results if r.importance_status != "completed"]
         log(f"중요도 평가 완료 {len(results) - len(failed)}건, 실패 {len(failed)}건")
 
-    pending_ranking = get_documents_ready_for_ranking(workspace_id=workspace_id, limit=args.limit)
+    pending_ranking = get_documents_ready_for_ranking(workspace_id=workspace_id, limit=limit)
     log(f"랭킹 대상 {len(pending_ranking)}건")
     if pending_ranking:
         results = rank_analysis_results(workspace_id=workspace_id, document_version_ids=pending_ranking)
         selected = [r for r in results if r.selected_for_report]
         log(f"랭킹 완료 {len(results)}건, 리포트 선정 {len(selected)}건")
 
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="분류/신뢰도/중요도/랭킹 배치 실행")
+    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="단계별 최대 처리 건수")
+    args = parser.parse_args()
+
+    run_analysis_pipeline(get_workspace_id(), limit=args.limit)
     return 0
 
 
