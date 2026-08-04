@@ -51,12 +51,20 @@ function toEvidence(citations = []) {
   }));
 }
 
-// 백엔드 메시지 하나 → 화면 메시지 하나
-function toViewMessage(msg) {
+// author_name → 화면 author{initial, name}. 백엔드가 이름을 안 주면(과거 메시지 등) 생략합니다.
+function toAuthor(authorName) {
+  if (!authorName) return undefined;
+  return { initial: authorName.charAt(0).toUpperCase(), name: authorName };
+}
+
+// 백엔드 메시지 하나 → 화면 메시지 하나.
+// scope='mine'인 답변에만 "팀에 공유"를 붙입니다 — 이미 team 세션에 있는 답변을 다시
+// 팀에 공유하는 건 의미가 없고, 백엔드 share-to-team도 개인 세션 기준입니다.
+function toViewMessage(msg, scope) {
   const role = toViewRole(msg.role);
 
   if (role === 'me') {
-    return { role: 'me', text: msg.content, _id: msg.id };
+    return { role: 'me', text: msg.content, author: toAuthor(msg.author_name), _id: msg.id };
   }
 
   // 근거 부족 응답
@@ -75,7 +83,7 @@ function toViewMessage(msg) {
     role: 'ai',
     paragraphs: [[msg.content]],
     cites: toCites(msg.citations),
-    acts: ['위키에 저장', '복사', '다시 생성'],
+    acts: scope === 'mine' ? ['팀에 공유', '위키에 저장', '복사', '다시 생성'] : ['위키에 저장', '복사', '다시 생성'],
     _id: msg.id,
   };
 }
@@ -110,31 +118,37 @@ function formatMeta(iso) {
 
 /**
  * 팀/개인 두 pane 전체.
- * 백엔드에 세션 소유(팀 공유 vs 개인) 구분이 없어, 실제 세션은 전부 'mine'에 넣습니다.
- * 'team' pane은 백엔드가 소유 구분을 지원할 때까지 목업을 유지합니다.
+ * label/ctx/hints 같은 화면 문구는 백엔드가 내려주지 않는 고정 UI 카피라 목업(MOCK_AGENT_PANES)
+ * 값을 그대로 쓰고, conversations만 실제 세션 목록(scope=mine|team)으로 교체합니다.
+ * team 세션은 여러 개일 수 있고(공유할 때마다 고르거나 새로 만듦), 0개일 수도 있습니다
+ * (아직 아무도 공유한 적 없는 워크스페이스) — 0개인 경우는 AgentPage.jsx가 빈 상태로 보여줍니다.
  */
 export async function fetchAgentPanes() {
   if (USE_MOCK) return MOCK_AGENT_PANES;
 
-  // TODO: 백엔드에 세션 목록 조회 엔드포인트가 없습니다(생성/메시지만 있음).
-  // 목록 API가 추가되면 아래 주석을 해제하고 목업 대체를 제거합니다.
-  // const sessions = await agentApi.fetchChatSessions();
-  // return {
-  //   ...MOCK_AGENT_PANES,
-  //   mine: { ...MOCK_AGENT_PANES.mine, conversations: sessions.map(toViewConversation) },
-  // };
+  const [teamSessions, mineSessions] = await Promise.all([
+    agentApi.fetchChatSessions('team'),
+    agentApi.fetchChatSessions('mine'),
+  ]);
 
-  return MOCK_AGENT_PANES;
+  return {
+    team: { ...MOCK_AGENT_PANES.team, conversations: teamSessions.map(toViewConversation) },
+    mine: { ...MOCK_AGENT_PANES.mine, conversations: mineSessions.map(toViewConversation) },
+  };
 }
 
-/** 대화방 하나의 메시지 + 근거 원문을 불러옵니다. */
-export async function fetchConversation(sessionId) {
+/**
+ * 대화방 하나의 메시지 + 근거 원문을 불러옵니다.
+ * @param {string} sessionId
+ * @param {'team'|'mine'} scope 어느 pane의 대화인지 — "팀에 공유" 버튼 노출 여부에 씁니다.
+ */
+export async function fetchConversation(sessionId, scope) {
   if (USE_MOCK) {
     return { messages: [], evidence: [] };
   }
 
   const raw = await agentApi.fetchChatMessages(sessionId);
-  const messages = raw.map(toViewMessage);
+  const messages = raw.map((m) => toViewMessage(m, scope));
 
   // 근거 원문 컬럼은 마지막 AI 응답의 citations를 씁니다.
   const lastAi = [...raw].reverse().find((m) => m.role === 'assistant');
@@ -143,8 +157,11 @@ export async function fetchConversation(sessionId) {
   return { messages, evidence };
 }
 
-/** 새 대화 생성. */
-export async function createConversation(title) {
+/**
+ * 새 대화 생성.
+ * @param {'team'|'private'} visibility
+ */
+export async function createConversation(title, visibility = 'private') {
   if (USE_MOCK) {
     return {
       id: `local-${Date.now()}`,
@@ -155,15 +172,16 @@ export async function createConversation(title) {
     };
   }
 
-  const session = await agentApi.createChatSession(title || '새 대화');
+  const session = await agentApi.createChatSession(title || '새 대화', visibility);
   return toViewConversation(session);
 }
 
 /**
  * 질문 전송. 사용자 메시지와 AI 응답을 화면 shape으로 함께 돌려줍니다.
+ * @param {'team'|'mine'} scope 방금 보낸 pane — 응답의 "팀에 공유" 버튼 노출 여부에 씁니다.
  * @returns {Promise<{userMessage, aiMessage, evidence, hasAnswer}>}
  */
-export async function askAgent(sessionId, content) {
+export async function askAgent(sessionId, content, scope) {
   if (USE_MOCK) {
     return {
       userMessage: { role: 'me', text: content },
@@ -175,9 +193,32 @@ export async function askAgent(sessionId, content) {
 
   const res = await agentApi.sendChatMessage(sessionId, content);
   return {
-    userMessage: toViewMessage(res.user_message),
-    aiMessage: toViewMessage(res.assistant_message),
+    userMessage: toViewMessage(res.user_message, scope),
+    aiMessage: toViewMessage(res.assistant_message, scope),
     evidence: toEvidence(res.assistant_message?.citations),
     hasAnswer: res.has_answer,
   };
+}
+
+/**
+ * "팀에 공유" — 개인 세션의 답변(질문 쌍)을 팀 공유 세션으로 복사합니다.
+ * @param {string} [targetSessionId] 지정하면 그 팀 세션으로, 생략하면 새 팀 세션을 만듭니다.
+ * @returns {Promise<{message: object, targetSessionId: string}>} 복사된 메시지(화면 shape)와
+ *   실제로 사용된(혹은 새로 만들어진) 팀 세션 id — 호출부가 그 세션으로 전환할 때 씁니다.
+ */
+export async function shareToTeam(sessionId, messageId, targetSessionId) {
+  if (USE_MOCK) return null;
+  const copied = await agentApi.shareMessageToTeam(sessionId, messageId, targetSessionId);
+  return { message: toViewMessage(copied, 'team'), targetSessionId: copied.session_id };
+}
+
+/**
+ * "위키에 저장" — 답변을 위키 문서로 저장합니다.
+ * citation이 없는 답변(근거 부족 응답)이면 백엔드가 400을 던지므로, 호출부에서
+ * ApiError를 잡아 "근거가 없어 저장할 수 없습니다" 같은 안내로 보여줘야 합니다.
+ * @returns {Promise<{page_id: string, version_id: string, slug: string}>}
+ */
+export async function saveToWiki(sessionId, messageId) {
+  if (USE_MOCK) return { page_id: 'mock-page', version_id: 'mock-version', slug: 'mock-slug' };
+  return agentApi.saveMessageToWiki(sessionId, messageId);
 }
