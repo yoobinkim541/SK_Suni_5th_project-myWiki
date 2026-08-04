@@ -1,0 +1,27 @@
+name: Wiki Dedup Batch
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 매일 1회(한국시간 새벽 3시) — 급하지 않은 정리 작업
+  workflow_dispatch: {}
+
+jobs:
+  dedup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run wiki dedup batch
+        run: python scripts/dedup_wiki_scheduled.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
