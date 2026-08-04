@@ -41,10 +41,13 @@ export function fetchWikiPages({ pageType, q, limit = 50, offset = 0 } = {}) {
  *   generated_by, generator_model, created_at,
  *   sources: {document_version_id, citation_order, claim_text, support_type, source_start_line, source_end_line}[],
  *   versions: {id, version_no, change_summary, created_at}[],
+ *   related_pages: {page_id, slug, title, page_type, shared_source_count}[],
  * } | null>}
  *
+ * related_pages(연결된 문서): 별도 관계 테이블 없이, 같은 원문(document_version_id)을
+ * 근거로 인용하는 다른 위키를 조회 시점에 계산해서 공유 건수 내림차순 상위 5개만 준다.
+ *
  * 주의(아직 없는 항목 — 화면 목업엔 있지만 스키마/API에 대응 없음):
- *  - "연결된 문서"(LINKED_DOCS, 상호링크): wiki_pages 간 링크 테이블이 없음. 필요하면 스키마 논의 먼저.
  *  - 근거 출처 라벨("공시 원문 · 07.21" 같은 것): sources[]는 document_version_id만 줌.
  *    문서 제목·날짜를 붙이려면 documents/document_versions 조인이 필요 — collectors 파트 확인 필요.
  *  - markdown은 raw 텍스트 하나. 화면의 "개요/쟁점" 같은 zone 나누기는 프론트에서

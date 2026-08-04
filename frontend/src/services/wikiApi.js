@@ -53,7 +53,6 @@ export function toTree(pages) {
 //  - zones: markdown이 raw 텍스트 한 덩어리라 "개요/쟁점" 구역을 나눌 근거가 없습니다.
 //    heading 파싱 규칙이 정해지기 전까지는 본문 전체를 zone 하나(markdown 필드)로 보여주고,
 //    WikiCard.jsx가 react-markdown으로 렌더링합니다.
-//  - links(연결된 문서): wiki_pages 간 링크를 표현하는 테이블이 없습니다. 빈 배열.
 //  - meta의 "평균 신뢰도"는 근거 문서 중 하나라도 점수가 있을 때만 넣습니다.
 function toDoc(content) {
   const sources = content.sources.map((s, i) => ({
@@ -88,8 +87,12 @@ function toDoc(content) {
     })),
     sourceCount: sources.length,
     sources,
-    // TODO: 위키 간 상호 링크 테이블이 생기면 채운다. 그 전까지는 빈 배열.
-    links: [],
+    // related_pages: 같은 원문을 근거로 인용하는 다른 위키(공유 근거 기반, 조회 시점 계산).
+    links: (content.related_pages || []).map((p) => ({
+      id: p.slug,
+      title: p.title,
+      desc: ` · 공유 근거 ${p.shared_source_count}건 · ${WIKI_PAGE_TYPE_LABELS[p.page_type] || p.page_type}`,
+    })),
   };
 }
 
