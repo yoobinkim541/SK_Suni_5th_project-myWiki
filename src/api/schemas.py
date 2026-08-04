@@ -26,6 +26,10 @@ class SendMessageRequest(BaseModel):
     content: str
 
 
+class RenameSessionRequest(BaseModel):
+    title: str
+
+
 class ShareToTeamRequest(BaseModel):
     target_session_id: Optional[str] = None
 

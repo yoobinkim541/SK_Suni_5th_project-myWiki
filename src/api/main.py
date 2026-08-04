@@ -7,6 +7,7 @@ Agent·API 담당 FastAPI 서버.
 """
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -19,6 +20,11 @@ from fastapi.middleware.cors import CORSMiddleware
 # 이 문제가 안 드러났었다). 여기서 한 번 로드해두면 실행 방식과 무관하게 항상 채워진다.
 load_dotenv()
 
+# 앱 전역에 logging 설정이 하나도 없으면, 핸들러가 없는 로거는 Python의 "handler of
+# last resort"로 떨어지는데 이건 WARNING 이상만 찍는다 — logger.info는 아무 설정 없이는
+# 콘솔에 전혀 안 찍힌다. 여기서 명시적으로 INFO까지 보이게 설정한다.
+logging.basicConfig(level=logging.INFO)
+
 from . import db
 from .auth import get_current_user
 from .schemas import (
@@ -28,6 +34,7 @@ from .schemas import (
     CitationOut,
     CreateSessionRequest,
     ParticipantOut,
+    RenameSessionRequest,
     SaveToWikiResponse,
     SendMessageRequest,
     SendMessageResponse,
@@ -38,7 +45,6 @@ from .notifications_router import router as notifications_router
 from .settings_router import router as settings_router
 from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
-from ..agent.titling import generate_session_title
 from ..agent.wiki_tools import WikiTools
 from ..wiki.interface import (
     WikiDraftInput,
@@ -49,6 +55,8 @@ from ..wiki.interface import (
     review_wiki_version,
     upsert_wiki_page,
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="myWiki Agent API")
 app.add_middleware(
@@ -66,6 +74,17 @@ app.add_middleware(
 app.include_router(wiki_router)
 app.include_router(settings_router)
 app.include_router(notifications_router)
+
+
+TITLE_MAX_LEN = 40
+
+
+def _truncate_title(text: str) -> str:
+    """팀 세션 자동 제목 — 첫 질문 텍스트를 그대로 잘라 쓴다(LLM 요약 없음)."""
+    text = text.strip()
+    if len(text) <= TITLE_MAX_LEN:
+        return text
+    return text[:TITLE_MAX_LEN].rstrip() + "…"
 
 
 def _require_workspace(profile: dict) -> str:
@@ -130,13 +149,14 @@ def send_message(
 
     assistant_message = db.save_agent_message(session_id, result)
 
-    # team 세션의 첫 질문/답변이면 주제를 뽑아 제목을 자동으로 채운다. 실패해도
-    # 응답 자체는 그대로 나가야 하므로(generate_session_title이 알아서 삼킨다),
-    # 여기서 별도 예외 처리를 하지 않는다.
+    # team 세션의 첫 질문이면 그 질문 텍스트를 잘라 제목으로 채운다. LLM으로 주제를
+    # 요약해 보려 했으나(agent/titling.py, 삭제됨) 이 모델이 호출마다 reasoning 토큰을
+    # 0~280개 사이로 불규칙하게 써서 안정적으로 응답을 못 받는 문제가 반복됐다 — 그래서
+    # 매번 API를 호출하는 대신, 단순히 첫 질문을 잘라서 쓰는 결정적인 방식으로 바꿨다.
     if is_first_message and session["visibility"] == "team":
-        title = generate_session_title(body.content, assistant_message["content"])
-        if title:
-            db.update_chat_session_title(session_id, title)
+        title = _truncate_title(body.content)
+        db.update_chat_session_title(session_id, title)
+        logger.info("auto title set from first question: session_id=%s title=%r", session_id, title)
 
     return SendMessageResponse(
         user_message=_to_message_out(user_message),
@@ -188,11 +208,9 @@ def share_message_to_team(
     citations = db.list_message_citations(message_id)
     db.copy_message_citations(copied_assistant["id"], citations)
 
-    # 새로 만든 공유 세션이면, 방금 옮긴 질문/답변에서 주제를 뽑아 제목을 채운다.
+    # 새로 만든 공유 세션이면, 방금 옮긴 질문을 잘라 제목으로 채운다.
     if is_new_target_session:
-        title = generate_session_title(user_message["content"], message["content"])
-        if title:
-            db.update_chat_session_title(target_session["id"], title)
+        db.update_chat_session_title(target_session["id"], _truncate_title(user_message["content"]))
 
     return _to_message_out(copied_assistant)
 
@@ -286,6 +304,31 @@ def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depen
     publish_wiki_version(page_id, version_id)
 
     return SaveToWikiResponse(page_id=page_id, version_id=version_id, slug=slug)
+
+
+MANUAL_TITLE_MAX_LEN = 100
+
+
+@app.patch("/chat/sessions/{session_id}/title", response_model=ChatSessionOut)
+def rename_session(session_id: str, body: RenameSessionRequest, profile: dict = Depends(get_current_user)):
+    """대화 제목을 사용자가 직접 바꾼다 — 첫 질문에서 자동으로 채워진 제목을 언제든
+    덮어쓸 수 있다. 보관과 같은 접근 규칙(개인은 소유자만, 팀은 참여자 누구나)을 쓴다."""
+    workspace_id = _require_workspace(profile)
+    session = db.get_chat_session(session_id, workspace_id, profile["id"])
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
+
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="제목을 입력해야 함")
+    if len(title) > MANUAL_TITLE_MAX_LEN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"제목은 {MANUAL_TITLE_MAX_LEN}자를 넘을 수 없음"
+        )
+
+    db.update_chat_session_title(session_id, title)
+    updated = db.get_chat_session(session_id, workspace_id, profile["id"])
+    return ChatSessionOut(**updated)
 
 
 @app.patch("/chat/sessions/{session_id}/archive", response_model=ChatSessionOut)
