@@ -23,6 +23,7 @@ from .schemas import (
     SendMessageRequest,
     SendMessageResponse,
 )
+from .notifications_router import router as notifications_router
 from .settings_router import router as settings_router
 from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 app.include_router(wiki_router)
 app.include_router(settings_router)
+app.include_router(notifications_router)
 
 
 def _require_workspace(profile: dict) -> str:
