@@ -26,8 +26,10 @@ def _settings(**overrides) -> WorkspaceSettings:
     base = dict(
         workspace_id=WORKSPACE_ID,
         wiki_update_cycle_minutes=360,
+        data_refresh_cycle_minutes=120,
         chat_retention_days=90,
         last_wiki_refresh_at=None,
+        last_data_refresh_at=None,
         updated_at="2026-08-03T00:00:00Z",
     )
     base.update(overrides)
@@ -57,6 +59,25 @@ def test_patch_settings_updates_wiki_cycle(client, monkeypatch):
 
 def test_patch_settings_rejects_invalid_cycle(client):
     res = client.patch("/settings", json={"wiki_update_cycle_minutes": 45})
+    assert res.status_code == 422
+
+
+def test_patch_settings_updates_data_refresh_cycle(client, monkeypatch):
+    captured = {}
+
+    def fake_update(workspace_id, **kwargs):
+        captured.update(kwargs)
+        return _settings(data_refresh_cycle_minutes=kwargs.get("data_refresh_cycle_minutes", 120))
+
+    monkeypatch.setattr(settings_service, "update_workspace_settings", fake_update)
+    res = client.patch("/settings", json={"data_refresh_cycle_minutes": 60})
+    assert res.status_code == 200
+    assert res.json()["data_refresh_cycle_minutes"] == 60
+    assert captured["updated_by"] == "user-1"
+
+
+def test_patch_settings_rejects_invalid_data_refresh_cycle(client):
+    res = client.patch("/settings", json={"data_refresh_cycle_minutes": 45})
     assert res.status_code == 422
 
 

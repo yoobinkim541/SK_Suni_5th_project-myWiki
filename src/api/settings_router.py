@@ -31,6 +31,8 @@ def patch_settings(body: UpdateWorkspaceSettingsRequest, profile: dict = Depends
     kwargs: dict = {"updated_by": profile["id"]}
     if body.wiki_update_cycle_minutes is not None:
         kwargs["wiki_update_cycle_minutes"] = body.wiki_update_cycle_minutes
+    if body.data_refresh_cycle_minutes is not None:
+        kwargs["data_refresh_cycle_minutes"] = body.data_refresh_cycle_minutes
     if "chat_retention_days" in body.model_fields_set:
         if (
             body.chat_retention_days is not None

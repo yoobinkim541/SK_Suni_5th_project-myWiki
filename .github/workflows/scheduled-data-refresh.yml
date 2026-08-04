@@ -1,0 +1,36 @@
+name: Scheduled Data Refresh
+
+# scheduled-collection.yml + scheduled-analysis.yml을 대체한다. 수집과 분석을
+# 사용자 설정(workspace_settings.data_refresh_cycle_minutes)에 맞춰 한 실행 안에서
+# 순서대로(수집 -> 정제 -> 분류 -> 신뢰도 -> 중요도 -> 랭킹) 돈다 — 두 워크플로우로
+# 나눠서 따로 게이트를 태우면 분석이 그 직전 수집 결과를 못 받는 레이스가 생길 수 있어서
+# 하나로 합쳤다. wiki-refresh-gate.yml과 동일한 패턴(30분마다 깨서 주기만 체크).
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # 30분마다 — 실제 실행 여부는 스크립트 안에서 주기 설정을 보고 판단
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run data refresh gate (collect -> preprocess -> analyze)
+        run: python scripts/refresh_data_scheduled.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

@@ -10,8 +10,10 @@ load_dotenv()
 from src.settings.models import WorkspaceSettings
 from src.settings.service import (
     CHAT_RETENTION_DAYS_CHOICES,
+    DATA_REFRESH_CYCLE_MINUTES_CHOICES,
     WIKI_UPDATE_CYCLE_MINUTES_CHOICES,
     get_workspace_settings,
+    mark_data_refreshed,
     mark_wiki_refreshed,
     update_workspace_settings,
 )
@@ -34,6 +36,7 @@ def workspace_id() -> str:
 
 def test_choices_match_check_constraints():
     assert WIKI_UPDATE_CYCLE_MINUTES_CHOICES == (30, 60, 180, 360, 720, 1440)
+    assert DATA_REFRESH_CYCLE_MINUTES_CHOICES == (30, 60, 120, 180, 360, 720, 1440)
     assert CHAT_RETENTION_DAYS_CHOICES == (7, 30, 90)
 
 
@@ -54,6 +57,19 @@ def test_update_workspace_settings_changes_wiki_cycle(workspace_id):
     finally:
         update_workspace_settings(
             workspace_id, wiki_update_cycle_minutes=original.wiki_update_cycle_minutes, updated_by=None
+        )
+
+
+def test_update_workspace_settings_changes_data_refresh_cycle(workspace_id):
+    original = get_workspace_settings(workspace_id)
+    try:
+        updated = update_workspace_settings(workspace_id, data_refresh_cycle_minutes=60, updated_by=None)
+        assert updated.data_refresh_cycle_minutes == 60
+        refetched = get_workspace_settings(workspace_id)
+        assert refetched.data_refresh_cycle_minutes == 60
+    finally:
+        update_workspace_settings(
+            workspace_id, data_refresh_cycle_minutes=original.data_refresh_cycle_minutes, updated_by=None
         )
 
 
@@ -87,3 +103,9 @@ def test_mark_wiki_refreshed_sets_timestamp(workspace_id):
     mark_wiki_refreshed(workspace_id)
     settings = get_workspace_settings(workspace_id)
     assert settings.last_wiki_refresh_at is not None
+
+
+def test_mark_data_refreshed_sets_timestamp(workspace_id):
+    mark_data_refreshed(workspace_id)
+    settings = get_workspace_settings(workspace_id)
+    assert settings.last_data_refresh_at is not None

@@ -129,11 +129,14 @@ class WorkspaceSettingsOut(BaseModel):
 
     workspace_id: str
     wiki_update_cycle_minutes: int
+    data_refresh_cycle_minutes: int
     chat_retention_days: Optional[int]
     last_wiki_refresh_at: Optional[str]
+    last_data_refresh_at: Optional[str]
     updated_at: str
 
 
 class UpdateWorkspaceSettingsRequest(BaseModel):
     wiki_update_cycle_minutes: Optional[Literal[30, 60, 180, 360, 720, 1440]] = None
+    data_refresh_cycle_minutes: Optional[Literal[30, 60, 120, 180, 360, 720, 1440]] = None
     chat_retention_days: Optional[int] = None
