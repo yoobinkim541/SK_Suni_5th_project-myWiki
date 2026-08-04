@@ -407,6 +407,82 @@ def test_generate_topic_page_creates_new_under_chosen_parent(monkeypatch):
     assert upsert_call[1] == ("ws-1", "hbm4-supply", "HBM4_수급현황", "technology", "page-parent")
 
 
+def test_generate_topic_page_skips_when_title_duplicates_issue_title(monkeypatch):
+    """토픽 제목이 이슈 제목(section.title)과 사실상 같으면(자기 자신을 참조하는 꼴)
+    LLM이 create_new를 반환해도 페이지를 만들지 않고 skip으로 처리해야 한다 —
+    실사용 데이터에서 발견된 이슈/토픽 중복 생성 버그의 회귀 테스트."""
+    calls = []
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "create_new",
+                "slug": "hbm4-supply-shortage-2026",
+                "title": "HBM4 공급 부족 심화",  # _section()의 title과 완전히 동일
+                "page_type": "market",
+                "parent_page_id": None,
+                "markdown": "# HBM4 공급 부족 심화",
+                "change_summary": "최초 생성",
+                "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.85,
+            }
+        ),
+    )
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-new")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: calls.append(("create", draft.slug)) or "version-4")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: calls.append(("validate", a)))
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: calls.append(("review", a)))
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: calls.append(("publish", a)))
+
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "skip"
+    assert page_id is None
+    assert version_id is None
+    assert calls == []  # DB에 아무것도 쓰지 않아야 한다
+
+
+def test_generate_topic_page_creates_when_title_meaningfully_broader(monkeypatch):
+    """제목이 이슈와 다르면(넓은 주제) 정상적으로 create_new가 진행되어야 한다 —
+    중복 가드가 정당한 create_new까지 막지 않는지 확인."""
+    calls = []
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "action": "create_new",
+                "slug": "hbm4-supply",
+                "title": "HBM4_수급현황",
+                "page_type": "technology",
+                "parent_page_id": None,
+                "markdown": "# HBM4_수급현황",
+                "change_summary": "최초 생성",
+                "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+                "confidence_score": 0.85,
+            }
+        ),
+    )
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-new")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: "version-4")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "create_new"
+    assert page_id == "page-new"
+    assert calls  # upsert가 호출됨
+
+
 def test_generate_topic_page_falls_back_to_industry_on_invalid_page_type(monkeypatch):
     """설계(2026-08-04, wiki-page-type-expansion): LLM이 스키마 밖 page_type을 지어내도
     industry로 대체해 생성 자체는 막히지 않아야 한다."""
