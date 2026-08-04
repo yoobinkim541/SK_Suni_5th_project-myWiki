@@ -30,7 +30,6 @@ import SettingsGroup from '../components/settings/SettingsGroup';
 import SettingsRow from '../components/settings/SettingsRow';
 import ToggleSwitch from '../components/common/ToggleSwitch';
 import SegmentedControl from '../components/common/SegmentedControl';
-import { ACCOUNT } from '../data/mockAccount';
 import {
   fetchCollectSources,
   formatSourceSummary,
@@ -52,6 +51,7 @@ export default function SettingsPage({
   onToggleNotiReport = () => {},
   notiWiki = true,
   onToggleNotiWiki = () => {},
+  profile = null,
   onLogout,
   onResetInterests,
 }) {
@@ -62,6 +62,9 @@ export default function SettingsPage({
 
   // 수집 소스 — 백엔드 조회 엔드포인트가 열리면 settingsApi 쪽만 바뀝니다.
   const [sources, setSources] = useState([]);
+
+  const accountName = profile?.user_metadata?.full_name || profile?.user_metadata?.name || profile?.email || '';
+  const accountEmail = profile?.email || '';
 
   useEffect(() => {
     let alive = true;
@@ -95,18 +98,18 @@ export default function SettingsPage({
 
       {/* ⚠ 수정: "계정 설정" → "계정". 편집 기능(이미지 변경·이름/이메일 입력·비밀번호 변경)을
           전부 빼고, 로그인 계정 정보를 그대로 보여주기만 하는 읽기 전용 섹션으로 바꿨습니다.
-          TODO: 인증 API가 붙으면 아래 ACCOUNT 상수를 로그인 세션 정보로 교체하면 됩니다. */}
+          App.jsx가 실제 Supabase 세션(profile)을 내려준다. */}
       <SettingsGroup title="계정">
         <SettingsRow label="프로필" desc="에이전트 답변·리포트에 표시되는 프로필입니다">
           <div className="set-av">
-            <span className="av">{ACCOUNT.name.charAt(0)}</span>
+            <span className="av">{accountName.charAt(0).toUpperCase()}</span>
           </div>
         </SettingsRow>
         <SettingsRow label="이름" desc="워크스페이스에 표시되는 이름">
-          <div className="vl">{ACCOUNT.name}</div>
+          <div className="vl">{accountName}</div>
         </SettingsRow>
         <SettingsRow label="이메일" desc="로그인 계정 · 알림 수신 주소">
-          <div className="vl">{ACCOUNT.email}</div>
+          <div className="vl">{accountEmail}</div>
         </SettingsRow>
       </SettingsGroup>
 
