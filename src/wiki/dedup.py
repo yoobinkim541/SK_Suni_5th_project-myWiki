@@ -8,7 +8,7 @@ from supabase import Client
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
 from .dedup_models import DedupCandidatePair, DedupResult, WikiDedupLLMResult
 from .dedup_prompts import WIKI_DEDUP_SYSTEM_PROMPT, build_wiki_dedup_user_prompt
-from .dedup_repository import reparent_children
+from .dedup_repository import find_duplicate_candidate_pairs, reparent_children
 from .generation_repository import archive_wiki_page
 from .interface import (
     WikiDraftInput,
@@ -19,6 +19,7 @@ from .interface import (
     record_wiki_validation,
     review_wiki_version,
 )
+from .query import get_published_wiki_page
 
 logger = logging.getLogger(__name__)
 
@@ -108,3 +109,45 @@ def _judge_and_merge(
         archived_page_id=other_info.page_id,
         version_id=version_id,
     )
+
+
+def run_wiki_dedup_batch(
+    workspace_id: str,
+    *,
+    max_pairs: int = 20,
+    requested_by: str | None = None,
+    supabase: Client | None = None,
+    llm_client: WikiDedupLLMClient | None = None,
+) -> list[DedupResult]:
+    """중복 후보를 찾아 페어마다 LLM 판단+병합을 시도한다.
+
+    한 배치 안에서 앞선 페어 처리로 이미 아카이빙된 페이지는 get_published_wiki_page가
+    None을 반환하므로 자연스럽게 건너뛴다(다시 조회하지 않아도 최신 상태 반영).
+    """
+    pairs = find_duplicate_candidate_pairs(workspace_id, max_pairs=max_pairs, supabase=supabase)
+    results: list[DedupResult] = []
+
+    for pair in pairs:
+        content_a = get_published_wiki_page(workspace_id, pair.page_a.slug)
+        content_b = get_published_wiki_page(workspace_id, pair.page_b.slug)
+        if content_a is None or content_b is None:
+            continue
+
+        try:
+            result = _judge_and_merge(
+                pair, content_a, content_b,
+                workspace_id=workspace_id, requested_by=requested_by,
+                supabase=supabase, llm_client=llm_client,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "wiki_dedup_pair_failed",
+                extra={"page_a": pair.page_a.slug, "page_b": pair.page_b.slug},
+            )
+            result = DedupResult(
+                page_a_id=pair.page_a.page_id, page_b_id=pair.page_b.page_id,
+                decision="failed", error_message=str(exc),
+            )
+        results.append(result)
+
+    return results
