@@ -144,6 +144,53 @@ def test_list_chat_sessions_team_visible_to_any_member(fake_db):
 
 
 # ---------------------------------------------------------------------------
+# 1b. user_id/author_name 왕복 — insert 인자를 그대로 캡처하는 최소 fake
+# ---------------------------------------------------------------------------
+
+class FakeInsertQuery:
+    def __init__(self, sink: list[dict], row: dict):
+        self._row = {**row, "id": f"generated-{len(sink)}"}
+        sink.append(self._row)
+
+    def execute(self):
+        return FakeResult([self._row])
+
+
+class FakeInsertTable:
+    def __init__(self, sink: list[dict]):
+        self._sink = sink
+
+    def insert(self, row: dict):
+        return FakeInsertQuery(self._sink, row)
+
+
+class FakeInsertClient:
+    def __init__(self):
+        self.inserted: dict[str, list[dict]] = {}
+
+    def table(self, name: str):
+        return FakeInsertTable(self.inserted.setdefault(name, []))
+
+
+def test_save_user_message_includes_user_id(monkeypatch):
+    client = FakeInsertClient()
+    monkeypatch.setattr(db, "get_supabase", lambda: client)
+
+    db.save_user_message("sess-1", "HBM4가 뭐야?", OWNER_ID)
+
+    assert client.inserted["chat_messages"][0]["user_id"] == OWNER_ID
+
+
+def test_copy_chat_message_preserves_original_author(monkeypatch):
+    client = FakeInsertClient()
+    monkeypatch.setattr(db, "get_supabase", lambda: client)
+
+    db.copy_chat_message("target-session", {**USER_QUESTION, "user_id": OWNER_ID})
+
+    assert client.inserted["chat_messages"][0]["user_id"] == OWNER_ID
+
+
+# ---------------------------------------------------------------------------
 # 2. 라우터 계층 — db.* 함수를 직접 monkeypatch
 # ---------------------------------------------------------------------------
 
@@ -207,6 +254,20 @@ def test_get_messages_team_session_allowed_for_any_member(make_client, monkeypat
     assert res.json() == []
 
 
+def test_get_messages_includes_author_name(make_client, monkeypatch):
+    """팀 공유 대화에서 각 질문을 누가 보냈는지 표시하기 위한 author_name 왕복."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(
+        db, "list_chat_messages",
+        lambda sid: [{"id": "msg-1", "session_id": sid, "role": "user", "content": "질문", "author_name": "김주현", "created_at": "2026-08-01T00:00:00Z"}],
+    )
+
+    res = make_client(OTHER_USER_ID).get(f"/chat/sessions/{TEAM_SESSION['id']}/messages")
+
+    assert res.status_code == 200
+    assert res.json()[0]["author_name"] == "김주현"
+
+
 # ---------------------------------------------------------------------------
 # share-to-team
 # ---------------------------------------------------------------------------
@@ -239,10 +300,24 @@ SAMPLE_CITATION = {
 
 @pytest.fixture
 def share_setup(monkeypatch):
-    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    def fake_get_chat_session(sid, wid, uid):
+        if sid == PRIVATE_SESSION["id"] and uid == OWNER_ID:
+            return PRIVATE_SESSION
+        if sid == TEAM_SESSION["id"]:
+            return TEAM_SESSION
+        return None
+
+    monkeypatch.setattr(db, "get_chat_session", fake_get_chat_session)
     monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
     monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
-    monkeypatch.setattr(db, "get_or_create_team_session", lambda wid, uid: {**TEAM_SESSION, "id": "team-session-1"})
+
+    create_calls: list[tuple] = []
+
+    def fake_create_chat_session(workspace_id, user_id, title=None, visibility="private"):
+        create_calls.append((workspace_id, user_id, title, visibility))
+        return {**TEAM_SESSION, "id": "new-team-session"}
+
+    monkeypatch.setattr(db, "create_chat_session", fake_create_chat_session)
 
     copy_calls: list[tuple[str, str]] = []
 
@@ -266,10 +341,15 @@ def share_setup(monkeypatch):
         lambda target_message_id, citations: citation_copy_calls.append((target_message_id, citations)),
     )
 
-    return {"copy_calls": copy_calls, "citation_calls": citation_calls, "citation_copy_calls": citation_copy_calls}
+    return {
+        "create_calls": create_calls,
+        "copy_calls": copy_calls,
+        "citation_calls": citation_calls,
+        "citation_copy_calls": citation_copy_calls,
+    }
 
 
-def test_share_to_team_copies_message_pair_and_citations(make_client, share_setup):
+def test_share_to_team_without_target_creates_new_team_session(make_client, share_setup):
     res = make_client(OWNER_ID).post(
         f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/share-to-team"
     )
@@ -281,11 +361,43 @@ def test_share_to_team_copies_message_pair_and_citations(make_client, share_setu
     assert body["content"] == ASSISTANT_MESSAGE["content"]
     assert body["citations"][0]["document_version_id"] == "dv-1"
 
-    # user 질문 -> assistant 답변 순서로 팀 세션에 복사됐는지 확인
-    assert share_setup["copy_calls"] == [("team-session-1", "user"), ("team-session-1", "assistant")]
+    assert share_setup["create_calls"] == [(WORKSPACE_ID, OWNER_ID, "새 공유 대화", "team")]
+    # user 질문 -> assistant 답변 순서로 새로 만든 팀 세션에 복사됐는지 확인
+    assert share_setup["copy_calls"] == [("new-team-session", "user"), ("new-team-session", "assistant")]
     # 원본 메시지에서 citation을 읽고, 응답 조립 시 복사본 메시지 기준으로 다시 읽는다
     assert share_setup["citation_calls"] == [ASSISTANT_MESSAGE["id"], "copied-assistant"]
     assert share_setup["citation_copy_calls"] == [("copied-assistant", [SAMPLE_CITATION])]
+
+
+def test_share_to_team_with_target_uses_existing_team_session(make_client, share_setup):
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/share-to-team",
+        json={"target_session_id": TEAM_SESSION["id"]},
+    )
+
+    assert res.status_code == 200
+    assert share_setup["create_calls"] == []
+    assert share_setup["copy_calls"] == [(TEAM_SESSION["id"], "user"), (TEAM_SESSION["id"], "assistant")]
+
+
+def test_share_to_team_with_unknown_target_returns_400(make_client, share_setup):
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/share-to-team",
+        json={"target_session_id": "does-not-exist"},
+    )
+
+    assert res.status_code == 400
+    assert share_setup["copy_calls"] == []
+
+
+def test_share_to_team_with_non_team_target_returns_400(make_client, share_setup):
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/share-to-team",
+        json={"target_session_id": PRIVATE_SESSION["id"]},
+    )
+
+    assert res.status_code == 400
+    assert share_setup["copy_calls"] == []
 
 
 def test_share_to_team_without_matching_question_returns_404(make_client, monkeypatch):
