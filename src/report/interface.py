@@ -38,8 +38,17 @@ except ZoneInfoNotFoundError:
 
 class ReportSelectionConfig(BaseModel):
     max_candidates: int | None = Field(default=None, ge=1)
-    min_reliability_score: int = Field(default=70, ge=0, le=100)
-    min_importance_score: int = Field(default=70, ge=0, le=100)
+    # 2026-08-04 개정: 원래 70(= ReliabilityLevel.HIGH/ImportanceLevel.HIGH 하한, 둘 다
+    # analysis/*_models.py의 LOW(0-39)/MEDIUM(40-69)/HIGH(70-100) 3단계 기준 공유)이었다.
+    # 그런데 실제 수집되는 반도체 뉴스는 대부분 비공식·단일 출처라서
+    # reliability_scoring.py의 source_authority_max/independent_evidence_max 상한 때문에
+    # HIGH(70+)를 사실상 못 넘긴다 — 라이브 데이터 확인 결과 reliability_score가 70을 넘긴
+    # 행이 하나도 없었고(최고 63), 그 결과 리포트·위키 후보 선정이 매번 0건이었다("HIGH만"
+    # 요구하는 게 사실상 "전부 거부"와 같았음). 채점 로직 자체는 설계대로 정상 동작 중이므로,
+    # 로직을 고치는 대신 기준을 MEDIUM 이상(40)으로 낮췄다 — LOW(명백히 부실한 단일신호/충돌
+    # 정황 등으로 캡이 걸린 건)만 걸러내고 MEDIUM 이상은 통과시킨다.
+    min_reliability_score: int = Field(default=40, ge=0, le=100)
+    min_importance_score: int = Field(default=40, ge=0, le=100)
     min_ranking_score: Decimal | None = Field(default=None, ge=0, le=100)
     category_limits: dict[Category, int] | None = None
 
