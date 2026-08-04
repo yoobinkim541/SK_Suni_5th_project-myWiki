@@ -21,3 +21,16 @@ export async function getCurrentSession() {
 // 저장할 컬럼이 없다(현재 profiles: id, display_name, department, created_at, updated_at).
 // prefs jsonb 컬럼 추가 여부는 스키마 변경이라 팀 확인 후 진행 — 그 전까지는
 // SurveyScreen의 localStorage 저장 방식을 그대로 두는 게 맞다(임의로 만들지 않음).
+
+// OAuth 콜백 직후 세션인지(=방금 가입한 계정인지) 판단한다.
+// EntryFlow 진입 시점에 선호조사(3단계)를 보여줄지, 곧장 대시보드로 보낼지 가르는 데 쓴다.
+// 판단할 정보가 없으면 신규로 본다(최악의 경우 이미 온보딩한 사용자가 한 번 더 보는 정도라 안전).
+const NEW_ACCOUNT_WINDOW_MS = 5 * 60 * 1000; // 5분
+
+export function isNewAccount(session) {
+  const createdAt = session?.user?.created_at;
+  const lastSignInAt = session?.user?.last_sign_in_at;
+  if (!createdAt || !lastSignInAt) return true;
+  const diffMs = Math.abs(new Date(lastSignInAt).getTime() - new Date(createdAt).getTime());
+  return diffMs <= NEW_ACCOUNT_WINDOW_MS;
+}
