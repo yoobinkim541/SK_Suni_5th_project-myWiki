@@ -15,6 +15,7 @@ feedparser>=6.0           # RSS/Atom 파싱 (GeekNews·구글 RSS)
 beautifulsoup4>=4.12      # HTML 노이즈 제거 (표준 html.parser 사용 -> lxml 불필요)
 markdownify>=0.13         # HTML -> Markdown 변환
 googlenewsdecoder>=0.1.7  # 구글 뉴스 RSS 링크(JS 리다이렉트) -> 언론사 원문 주소 디코딩
+pywebpush>=2.0            # 위키 발행 브라우저 푸시 알림(표준 Web Push, VAPID)
 
 # 테스트
 pytest>=8.0

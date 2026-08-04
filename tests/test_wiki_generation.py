@@ -244,6 +244,7 @@ def test_generate_wiki_drafts_threads_evidence_texts_into_both_pages(monkeypatch
 
     monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
     monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
 
     generation.generate_wiki_drafts_for_sections(
         [_section("issue-ok")],
@@ -793,6 +794,7 @@ def test_generate_wiki_drafts_for_sections_threads_injected_clients(monkeypatch)
 
     monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
     monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
 
     generation.generate_wiki_drafts_for_sections(
         [_section("issue-ok")],
@@ -850,6 +852,7 @@ def test_generate_wiki_drafts_for_sections_isolates_issue_page_failures(monkeypa
 
     monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
     monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
 
     results = generation.generate_wiki_drafts_for_sections(
         [section_ok, section_fail],
@@ -876,6 +879,7 @@ def test_generate_wiki_drafts_for_sections_isolates_topic_page_failures(monkeypa
 
     monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
     monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
 
     results = generation.generate_wiki_drafts_for_sections(
         [_section("issue-ok")],
@@ -904,6 +908,7 @@ def test_generate_wiki_drafts_for_sections_links_issue_page_to_resolved_topic(mo
         return "page-issue", "version-issue"
 
     monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
 
     generation.generate_wiki_drafts_for_sections(
         [_section("issue-ok")],
@@ -925,6 +930,7 @@ def test_generate_wiki_drafts_for_sections_passes_matching_wiki_contexts(monkeyp
     monkeypatch.setattr(
         generation, "_generate_issue_page", lambda section, **kwargs: ("page-1", "version-1")
     )
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
 
     wiki_context = WikiContext(wiki_page_id="page-existing", title="HBM4_수급현황", content="본문")
     generation.generate_wiki_drafts_for_sections(
@@ -1025,3 +1031,77 @@ def test_refresh_wiki_from_recent_analysis_passes_empty_list_through_all_stages(
     # 후보가 없어도 조기 종료하지 않는다: 각 단계가 빈 리스트를 그대로 받아
     # 예외 없이 no-op으로 통과하며, 마지막 단계까지 전부 호출된다.
     assert calls == ["select", "group", "enrich", "compose", "wiki"]
+
+
+def test_generate_wiki_drafts_for_sections_sends_one_notification_for_batch(monkeypatch):
+    """이슈 1건 + 주제 1건이 발행되면 알림은 딱 한 번, 합산 건수(2)로 호출된다."""
+    calls = []
+    monkeypatch.setattr(
+        generation, "_generate_topic_page",
+        lambda section, wiki_contexts, **kwargs: ("create_new", "page-topic", "version-topic"),
+    )
+    monkeypatch.setattr(
+        generation, "_generate_issue_page",
+        lambda section, **kwargs: ("page-issue", "version-issue"),
+    )
+    monkeypatch.setattr(
+        generation, "send_wiki_notification",
+        lambda workspace_id, count, **kwargs: calls.append((workspace_id, count)),
+    )
+
+    generation.generate_wiki_drafts_for_sections(
+        [_section("issue-ok")],
+        [_enriched_group("issue-ok")],
+        workspace_id="ws-1",
+    )
+
+    assert calls == [("ws-1", 2)]
+
+
+def test_generate_wiki_drafts_for_sections_skips_notification_when_nothing_published(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        generation, "_generate_topic_page",
+        lambda section, wiki_contexts, **kwargs: ("skip", None, None),
+    )
+    monkeypatch.setattr(
+        generation, "_generate_issue_page",
+        lambda section, **kwargs: (_ for _ in ()).throw(RuntimeError("실패")),
+    )
+    monkeypatch.setattr(
+        generation, "send_wiki_notification",
+        lambda workspace_id, count, **kwargs: calls.append((workspace_id, count)),
+    )
+
+    generation.generate_wiki_drafts_for_sections(
+        [_section("issue-fail")],
+        [_enriched_group("issue-fail")],
+        workspace_id="ws-1",
+    )
+
+    assert calls == []
+
+
+def test_generate_wiki_drafts_for_sections_survives_notification_failure(monkeypatch):
+    monkeypatch.setattr(
+        generation, "_generate_topic_page",
+        lambda section, wiki_contexts, **kwargs: ("skip", None, None),
+    )
+    monkeypatch.setattr(
+        generation, "_generate_issue_page",
+        lambda section, **kwargs: ("page-issue", "version-issue"),
+    )
+
+    def raising_notification(*a, **k):
+        raise RuntimeError("푸시 발송 실패")
+
+    monkeypatch.setattr(generation, "send_wiki_notification", raising_notification)
+
+    results = generation.generate_wiki_drafts_for_sections(
+        [_section("issue-ok")],
+        [_enriched_group("issue-ok")],
+        workspace_id="ws-1",
+    )
+
+    assert len(results) == 1
+    assert results[0].issue_page_id == "page-issue"

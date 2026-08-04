@@ -137,3 +137,17 @@ class WorkspaceSettingsOut(BaseModel):
 class UpdateWorkspaceSettingsRequest(BaseModel):
     wiki_update_cycle_minutes: Optional[Literal[30, 60, 180, 360, 720, 1440]] = None
     chat_retention_days: Optional[int] = None
+
+
+# ---------------------------------------------------------------------------
+# 위키 발행 브라우저 푸시 알림 — POST/DELETE /notifications/subscribe 전용
+# ---------------------------------------------------------------------------
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class SubscribeRequest(BaseModel):
+    endpoint: str
+    keys: PushSubscriptionKeys
