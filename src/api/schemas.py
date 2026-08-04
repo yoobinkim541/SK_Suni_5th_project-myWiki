@@ -17,6 +17,7 @@ class ChatSessionOut(BaseModel):
     user_id: str
     title: Optional[str]
     visibility: str
+    archived_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

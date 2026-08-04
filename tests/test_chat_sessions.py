@@ -70,6 +70,13 @@ class FakeQuery:
         self._rows = [r for r in self._rows if r.get(key) < value]
         return self
 
+    def is_(self, key, value):
+        if value == "null":
+            self._rows = [r for r in self._rows if r.get(key) is None]
+        else:
+            self._rows = [r for r in self._rows if r.get(key) is not None]
+        return self
+
     def order(self, key, desc: bool = False):
         self._rows = sorted(self._rows, key=lambda r: r.get(key), reverse=desc)
         return self
@@ -88,12 +95,32 @@ class FakeQuery:
         return FakeResult(list(self._rows))
 
 
+class FakeUpdateQuery:
+    def __init__(self, rows: list[dict], patch: dict):
+        self._rows = rows
+        self._patch = patch
+        self._filters: list[tuple] = []
+
+    def eq(self, key, value):
+        self._filters.append((key, value))
+        return self
+
+    def execute(self):
+        matched = [r for r in self._rows if all(r.get(k) == v for k, v in self._filters)]
+        for r in matched:
+            r.update(self._patch)
+        return FakeResult(matched)
+
+
 class FakeTable:
     def __init__(self, rows: list[dict]):
         self._rows = rows
 
     def select(self, *_args, **_kwargs):
         return FakeQuery(list(self._rows))
+
+    def update(self, patch: dict):
+        return FakeUpdateQuery(self._rows, patch)
 
 
 class FakeSupabaseClient:
@@ -106,7 +133,8 @@ class FakeSupabaseClient:
 
 @pytest.fixture
 def fake_db(monkeypatch):
-    client = FakeSupabaseClient({"chat_sessions": [PRIVATE_SESSION, TEAM_SESSION]})
+    # 세션마다 새 dict로 복사 — update()가 그대로 mutate하므로 테스트 간 상태가 새지 않게 한다.
+    client = FakeSupabaseClient({"chat_sessions": [dict(PRIVATE_SESSION), dict(TEAM_SESSION)]})
     monkeypatch.setattr(db, "get_supabase", lambda: client)
     return client
 
@@ -140,6 +168,39 @@ def test_list_chat_sessions_mine_excludes_others_private(fake_db):
 
 def test_list_chat_sessions_team_visible_to_any_member(fake_db):
     result = db.list_chat_sessions(WORKSPACE_ID, OTHER_USER_ID, "team")
+    assert [r["id"] for r in result] == ["sess-team"]
+
+
+def test_list_chat_sessions_excludes_deleted(fake_db):
+    db.soft_delete_chat_session("sess-team")
+
+    result = db.list_chat_sessions(WORKSPACE_ID, OTHER_USER_ID, "team")
+
+    assert result == []
+
+
+def test_get_chat_session_returns_none_for_deleted(fake_db):
+    db.soft_delete_chat_session("sess-private")
+
+    result = db.get_chat_session("sess-private", WORKSPACE_ID, OWNER_ID)
+
+    assert result is None
+
+
+def test_set_chat_session_archived_toggles(fake_db):
+    archived = db.set_chat_session_archived("sess-private", archived=True)
+    assert archived["archived_at"] is not None
+
+    unarchived = db.set_chat_session_archived("sess-private", archived=False)
+    assert unarchived["archived_at"] is None
+
+
+def test_list_chat_sessions_still_includes_archived(fake_db):
+    """보관은 숨김이 아니다 — 목록에서 빠지는 건 삭제된 세션뿐이다."""
+    db.set_chat_session_archived("sess-team", archived=True)
+
+    result = db.list_chat_sessions(WORKSPACE_ID, OTHER_USER_ID, "team")
+
     assert [r["id"] for r in result] == ["sess-team"]
 
 
@@ -510,3 +571,110 @@ def test_save_to_wiki_auto_publishes_version(make_client, monkeypatch):
         ("review_wiki_version", ("version-1", None, "approved")),
         ("publish_wiki_version", ("page-1", "version-1")),
     ]
+
+
+# ---------------------------------------------------------------------------
+# 보관/삭제
+# ---------------------------------------------------------------------------
+
+def test_archive_session_owner_can_toggle_private_session(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+
+    captured = {}
+
+    def fake_set_archived(session_id, archived):
+        captured["args"] = (session_id, archived)
+        return {**PRIVATE_SESSION, "archived_at": "2026-08-05T00:00:00Z" if archived else None}
+
+    monkeypatch.setattr(db, "set_chat_session_archived", fake_set_archived)
+
+    res = make_client(OWNER_ID).patch(f"/chat/sessions/{PRIVATE_SESSION['id']}/archive")
+
+    assert res.status_code == 200
+    assert captured["args"] == (PRIVATE_SESSION["id"], True)
+    assert res.json()["archived_at"] is not None
+
+
+def test_archive_session_blocked_for_non_owner_of_private_session(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+
+    res = make_client(OTHER_USER_ID).patch(f"/chat/sessions/{PRIVATE_SESSION['id']}/archive")
+
+    assert res.status_code == 404
+
+
+def test_archive_session_any_team_member_can_toggle(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(
+        db, "set_chat_session_archived",
+        lambda session_id, archived: {**TEAM_SESSION, "archived_at": "2026-08-05T00:00:00Z" if archived else None},
+    )
+
+    res = make_client(OTHER_USER_ID).patch(f"/chat/sessions/{TEAM_SESSION['id']}/archive")
+
+    assert res.status_code == 200
+    assert res.json()["archived_at"] is not None
+
+
+def test_archive_session_unarchives_when_already_archived(make_client, monkeypatch):
+    already_archived = {**PRIVATE_SESSION, "archived_at": "2026-08-01T00:00:00Z"}
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: already_archived)
+
+    captured = {}
+
+    def fake_set_archived(session_id, archived):
+        captured["args"] = (session_id, archived)
+        return {**already_archived, "archived_at": None}
+
+    monkeypatch.setattr(db, "set_chat_session_archived", fake_set_archived)
+
+    res = make_client(OWNER_ID).patch(f"/chat/sessions/{PRIVATE_SESSION['id']}/archive")
+
+    assert res.status_code == 200
+    assert captured["args"] == (PRIVATE_SESSION["id"], False)
+    assert res.json()["archived_at"] is None
+
+
+def test_delete_session_creator_can_delete(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION)
+
+    calls = []
+    monkeypatch.setattr(db, "soft_delete_chat_session", lambda session_id: calls.append(session_id))
+
+    res = make_client(OWNER_ID).delete(f"/chat/sessions/{PRIVATE_SESSION['id']}")
+
+    assert res.status_code == 204
+    assert calls == [PRIVATE_SESSION["id"]]
+
+
+def test_delete_session_blocked_for_non_owner_of_private_session(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+
+    res = make_client(OTHER_USER_ID).delete(f"/chat/sessions/{PRIVATE_SESSION['id']}")
+
+    assert res.status_code == 404
+
+
+def test_delete_session_blocked_for_non_creator_team_member(make_client, monkeypatch):
+    """팀 세션은 보관과 달리, 멤버라고 아무나 지울 수 없다 — 생성자만 가능하다."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+
+    calls = []
+    monkeypatch.setattr(db, "soft_delete_chat_session", lambda session_id: calls.append(session_id))
+
+    res = make_client(OTHER_USER_ID).delete(f"/chat/sessions/{TEAM_SESSION['id']}")
+
+    assert res.status_code == 403
+    assert calls == []
+
+
+def test_delete_session_creator_can_delete_own_team_session(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+
+    calls = []
+    monkeypatch.setattr(db, "soft_delete_chat_session", lambda session_id: calls.append(session_id))
+
+    res = make_client(OWNER_ID).delete(f"/chat/sessions/{TEAM_SESSION['id']}")
+
+    assert res.status_code == 204
+    assert calls == [TEAM_SESSION["id"]]
