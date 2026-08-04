@@ -1,29 +1,21 @@
-// 일일 리포트 전용 — 주요 이슈(+즉시 다운로드) + 리포트 보관 · 내보내기
+// 일일 리포트 전용 — 오늘 리포트 카드 + 리포트 히스토리
 //
-// ⚠ 수정사항 5) 반영 내용:
-//  1) "주요 이슈" 섹션이 리포트에서 사실상 첫 본문 섹션이 됐습니다.
-//     (이슈 목록 위에 있던 다운로드 바는 5-1에서 이슈별 다운로드 버튼으로 대체됐습니다 — 아래 참고)
-//  2) 아래 "리포트 보관 · 내보내기" 섹션은 그대로 유지합니다.
-//     · 전체 다운로드(오늘 리포트 3개 포맷 + 전체 묶음)
-//     · 이전 리포트 보관함(.rlist, 30일 이전은 토글로 펼침)
+// ⚠ 이번 개편 내용:
+//  1) "주요 이슈" 섹션(IssueList 4건)을 없앴습니다.
+//     → 리포트를 여는 목적은 "오늘 리포트를 통째로 보는 것"이라, 이슈를 미리 4건만
+//       흩뿌려 보여주는 대신 오늘 리포트 카드 하나로 진입점을 모았습니다.
+//  2) 오늘 리포트를 큰 카드 하나로 띄웁니다. 카드를 누르면 전체 리포트 모달이 뜨고,
+//     카드 우측 다운로드 버튼(Word/PDF/PPT)은 카드 클릭과 분리돼 있습니다.
+//  3) 분류·오늘의 키워드(ReportSummary)를 '오늘 리포트' 제목과 큰 카드 사이에 넣었습니다.
+//  4) 리포트 히스토리는 큰 카드 절반 크기로 2열 배치하고, 아래에 페이지 넘김을 붙였습니다.
+//     → 기존 "30일 이전 리포트 보기" 토글(archive의 old 플래그)을 대체합니다.
+//       일자가 계속 쌓이면 토글로는 감당이 안 되기 때문입니다.
 //
-// ⚠ 수정사항 5-1) 주요 이슈 섹션 개편:
-//  a) 이슈 목록 위에 있던 다운로드 바(.dlbar.tight)를 없애고, 각 이슈 행 .meta 안에
-//     그 이슈 바로 아래로 다운로드 버튼(Word/PDF/PPT)을 붙였습니다 — IssueList의
-//     downloadFormats/onDownload prop으로 전달합니다. (버튼은 stopPropagation이라
-//     눌러도 아래 b)의 모달이 같이 열리지 않습니다)
-//  b) 이슈 행을 클릭하면 리포트 히스토리 카드와 같은 전체 리포트 모달이 뜹니다.
-//     카드형 목록이 아니라 총평에 이어 이슈들이 이어지는 본문 텍스트 + 출처 원문만 보여주고,
-//     그 이슈 문단은 제목 색으로만 강조합니다(ReportDetailModal.jsx 참고).
-//     히스토리 카드도 같은 모달을 씁니다 — "카드를 누르면 전체 리포트와 출처를 볼 수 있습니다"
-//     안내문이 말만 있고 실제 핸들러가 없던 것도 이번에 같이 붙였습니다.
-//
-//  주요 이슈는 대시보드와 같은 IssueList를 그대로 재사용합니다
-//  (신뢰도 "신뢰도 : 구간명" 표기와 하단 신뢰도 필터 범례까지 함께 따라옵니다).
+// 모달은 기존 ReportDetailModal을 그대로 씁니다 — 오늘 카드와 히스토리 카드가 공유합니다.
 
-import { useEffect, useState } from 'react';
-import IssueList from '../dashboard/IssueList';
+import { useEffect, useMemo, useState } from 'react';
 import ReportDetailModal from './ReportDetailModal';
+import ReportSummary from './ReportSummary';
 import { downloadReport, fetchReportDetail } from '../../services/reportApi';
 
 const FORMATS = [
@@ -35,6 +27,9 @@ const FORMATS = [
 const LEVEL_LABEL = { high: '높음', mid: '보통', low: '낮음' };
 const LEVEL_CLASS = { high: '', mid: 'mid', low: 'low' };
 
+// 히스토리 한 페이지에 보여줄 개수 (2열 × 3줄). 숫자만 바꾸면 됩니다.
+const PAGE_SIZE = 6;
+
 function DownloadIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -45,17 +40,34 @@ function DownloadIcon() {
   );
 }
 
-export default function ReportSection({ issues, archive, today, onSelectWiki }) {
-  const [showOld, setShowOld] = useState(false);
+export default function ReportSection({ archive, today, summary, onSelectWiki }) {
   const [notice, setNotice] = useState('');
-  const oldCount = archive.filter((r) => r.old).length;
+  const [page, setPage] = useState(1);
 
   // ── 전체 리포트 모달 상태 ──
   // open : { date, highlightId } — 어떤 날짜 리포트를, 어떤 이슈를 강조한 채로 열지
-  // detail : fetchReportDetail 결과. 날짜가 바뀔 때마다 다시 받아옵니다.
-  //          undefined = 아직 불러오는 중, null = 그 날짜 리포트가 없음.
+  // detail : fetchReportDetail 결과. undefined = 불러오는 중, null = 그 날짜 리포트 없음.
   const [open, setOpen] = useState(null);
   const [detail, setDetail] = useState(undefined);
+
+  // 오늘 리포트는 히스토리에서 빼고 위쪽 큰 카드로만 보여줍니다(중복 방지).
+  const history = useMemo(
+    () => archive.filter((r) => r.date !== today?.date),
+    [archive, today]
+  );
+
+  const todayCard = useMemo(
+    () => archive.find((r) => r.date === today?.date) ?? null,
+    [archive, today]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
+  const pageItems = history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // 목록이 줄어 현재 페이지가 사라지면 마지막 페이지로 되돌립니다.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   useEffect(() => {
     if (!open) return;
@@ -84,64 +96,77 @@ export default function ReportSection({ issues, archive, today, onSelectWiki }) 
     handleDownload._t = window.setTimeout(() => setNotice(''), 3200);
   }
 
-  // 이슈별 다운로드 버튼 — 실제 파일은 그 날짜 리포트 전체로 나가지만(백엔드 미연동이라
-  // 이슈 단위 파일 분리는 아직 없음), 토스트 라벨에는 어떤 이슈에서 눌렀는지 남깁니다.
-  function handleIssueDownload(issue, format) {
-    handleDownload(today.date, format.key, `${issue.title} · ${format.label}${format.ext}`);
-  }
-
   return (
     <>
-      {/* ── 주요 이슈 (다운로드 버튼 동봉) ── */}
+      {/* ── 오늘 리포트 (큰 카드) ── */}
       <section className="sec">
-        <div className="sh">
-          <span className="t">주요 이슈</span>
-          <span className="c">{issues.length}건</span>
-          <span className="s">신뢰도 → 제목 → 출처 순</span>
+        <div className="sh big">
+          <span className="t">오늘 리포트</span>
+          <span className="s">카드를 누르면 전체 리포트와 출처를 볼 수 있습니다</span>
         </div>
 
-        <IssueList
-          items={issues}
-          onSelectWiki={onSelectWiki}
-          onOpenIssue={(issue) => openReport(today.date, issue.id)}
-          downloadFormats={FORMATS}
-          onDownload={handleIssueDownload}
-        />
-      </section>
+        {/* ── 분류 · 오늘의 키워드 ── 오늘 리포트 제목과 큰 카드 사이 */}
+        {summary && <ReportSummary summary={summary} />}
 
-      {/* ── 리포트 보관 · 내보내기 (전체 다운로드 + 보관함 유지) ── */}
-      <section className="sec">
-        <div className="sh">
-          <span className="t">리포트 보관 · 내보내기</span>
-          <span className="s">최근 30일 노출 · 이전 보관함 별도 조회</span>
-        </div>
-
-        {/* 전체 다운로드 */}
-        <div className="dlbar">
-          <span className="lb">전체 다운로드 · {today.label}</span>
-          {FORMATS.map((f) => (
-            <button
-              className="dlbtn"
-              key={f.key}
-              onClick={() => handleDownload(today.date, f.key, `전체 ${f.label}${f.ext}`)}
-            >
-              <DownloadIcon />
-              {f.label} <span className="ext">{f.ext}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* 30일 보관함 */}
-        <div className="arch">
-          <div className="arch-hd">
-            <span className="t">리포트 히스토리</span>
-            <span className="s">카드를 누르면 전체 리포트와 출처를 볼 수 있습니다</span>
+        <article
+          className="ritem today"
+          role="button"
+          tabIndex={0}
+          onClick={() => openReport(today.date)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openReport(today.date);
+            }
+          }}
+        >
+          <div className="rhd">
+            <span className="rd">{todayCard?.label ?? today.label}</span>
+            {todayCard?.day && <span className="rk">{todayCard.day}</span>}
           </div>
 
-          <div className={`rlist${showOld ? ' show-old' : ''}`}>
-            {archive.map((r) => (
+          {todayCard && (
+            <>
+              <h4 className="rt">{todayCard.title}</h4>
+              <p className="rsum">{todayCard.summary}</p>
+              <div className="rmeta">
+                이슈 {todayCard.issues}건 · 위키 갱신 {todayCard.wiki}
+                <span className={`cf ${LEVEL_CLASS[todayCard.level]}`.trim()}>
+                  <i></i>신뢰도 : {LEVEL_LABEL[todayCard.level]}
+                </span>
+              </div>
+            </>
+          )}
+
+          {/* 카드 클릭(모달 열기)과 분리 — 버튼을 눌러도 모달이 뜨지 않습니다. */}
+          <div className="rdl wide" onClick={(e) => e.stopPropagation()}>
+            {FORMATS.map((f) => (
+              <button
+                className="dlbtn"
+                key={f.key}
+                onClick={() => handleDownload(today.date, f.key, `전체 ${f.label}${f.ext}`)}
+              >
+                <DownloadIcon />
+                {f.label} <span className="ext">{f.ext}</span>
+              </button>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      {/* ── 리포트 히스토리 (2열 · 페이지 넘김) ── */}
+      <section className="sec">
+        <div className="sh big">
+          <span className="t">리포트 히스토리</span>
+          <span className="c">{history.length}건</span>
+          <span className="s">날짜를 누르면 그 날짜 리포트가 열립니다</span>
+        </div>
+
+        <div className="arch">
+          <div className="rlist show-old">
+            {pageItems.map((r) => (
               <article
-                className={`ritem${r.old ? ' old' : ''}`}
+                className="ritem"
                 key={r.date}
                 role="button"
                 tabIndex={0}
@@ -180,17 +205,44 @@ export default function ReportSection({ issues, archive, today, onSelectWiki }) 
             ))}
           </div>
 
-          {oldCount > 0 && (
-            <button className={`archtoggle${showOld ? ' open' : ''}`} onClick={() => setShowOld((v) => !v)}>
-              {showOld ? '이전 리포트 접기' : '30일 이전 리포트 보기'}
-              <span className="cnt">{oldCount}</span>
-              <span className="chev">▾</span>
-            </button>
+          {history.length === 0 && (
+            <div className="rlist-empty">이전 리포트가 아직 없습니다.</div>
+          )}
+
+          {totalPages > 1 && (
+            <nav className="rpage" aria-label="리포트 히스토리 페이지">
+              <button
+                className="rpage-btn"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                aria-label="이전 페이지"
+              >
+                ‹
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <button
+                  className={`rpage-btn${n === page ? ' on' : ''}`}
+                  key={n}
+                  onClick={() => setPage(n)}
+                  aria-current={n === page ? 'page' : undefined}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                className="rpage-btn"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                aria-label="다음 페이지"
+              >
+                ›
+              </button>
+            </nav>
           )}
         </div>
       </section>
 
-      {/* 전체 리포트 모달 — 이슈 행 · 히스토리 카드가 공유합니다 */}
+      {/* 전체 리포트 모달 — 오늘 카드 · 히스토리 카드가 공유합니다 */}
       {open && (
         <ReportDetailModal
           detail={detail ?? null}
