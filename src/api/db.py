@@ -13,6 +13,10 @@ from supabase import Client, create_client
 
 from ..agent.core import AgentResult
 
+# 근거 부족(has_answer=False) 응답의 content 접두사 — save_agent_message/update_agent_message가
+# 여기 붙여서 저장하고, main.py의 삭제 엔드포인트가 이 접두사로 "지워도 되는 실패 응답"인지 판별한다.
+NO_ANSWER_PREFIX = "[근거 부족]"
+
 
 @lru_cache
 def get_supabase() -> Client:
@@ -63,11 +67,28 @@ def create_chat_session(
         })
         .execute()
     )
-    return res.data[0]
+    session = res.data[0]
+    if visibility == "team":
+        # team 세션은 참여자 기반 접근 제어라, 만든 사람 본인도 참여자로 넣어두지
+        # 않으면 자기가 방금 만든 세션을 자기가 못 보는 상태가 된다.
+        add_chat_session_participant(session["id"], user_id)
+    return session
+
+
+def _participant_session_ids(user_id: str) -> list[str]:
+    res = (
+        get_supabase()
+        .table("chat_session_participants")
+        .select("session_id")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return [r["session_id"] for r in res.data]
 
 
 def list_chat_sessions(workspace_id: str, user_id: str, scope: str) -> list[dict]:
-    """scope='mine': 본인 소유 비공개 세션만. scope='team': workspace 전체 공유 세션.
+    """scope='mine': 본인 소유 비공개 세션만. scope='team': 본인이 참여자인 공유 세션만
+    (워크스페이스 멤버 전체가 아니다 — chat_session_participants 참여자 기반 접근 제어).
     삭제된(deleted_at IS NOT NULL) 세션은 기본적으로 목록에서 제외한다 — 보관된
     세션은 계속 보인다(보관은 숨김이 아니라 상태 표시일 뿐)."""
     query = (
@@ -80,7 +101,10 @@ def list_chat_sessions(workspace_id: str, user_id: str, scope: str) -> list[dict
     if scope == "mine":
         query = query.eq("visibility", "private").eq("user_id", user_id)
     else:
-        query = query.eq("visibility", "team")
+        session_ids = _participant_session_ids(user_id)
+        if not session_ids:
+            return []
+        query = query.eq("visibility", "team").in_("id", session_ids)
     res = query.order("updated_at", desc=True).execute()
     return res.data
 
@@ -89,7 +113,8 @@ def get_chat_session(session_id: str, workspace_id: str, user_id: str) -> Option
     """
     visibility='private'인 세션은 소유자(user_id)만 접근 가능하다 — 워크스페이스 소속이라는
     이유만으로 타인의 비공개 세션을 ID만 알면 읽을 수 있던 문제를 여기서 막는다.
-    visibility='team'인 세션은 같은 workspace 멤버 전원이 접근 가능하다.
+    visibility='team'인 세션은 chat_session_participants에 있는 참여자만 접근 가능하다
+    (워크스페이스 멤버 전체가 아니다 — 2026-08-05 참여자 관리 기능으로 좁혀졌다).
     권한이 없으면 존재 여부를 알려주지 않도록 조회 실패(None)와 동일하게 취급한다.
     """
     res = (
@@ -108,7 +133,112 @@ def get_chat_session(session_id: str, workspace_id: str, user_id: str) -> Option
         return None
     if session["visibility"] == "private" and session["user_id"] != user_id:
         return None
+    if session["visibility"] == "team" and not is_chat_session_participant(session_id, user_id):
+        return None
     return session
+
+
+def is_chat_session_participant(session_id: str, user_id: str) -> bool:
+    res = (
+        get_supabase()
+        .table("chat_session_participants")
+        .select("id")
+        .eq("session_id", session_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    return res.data is not None
+
+
+def add_chat_session_participant(session_id: str, user_id: str) -> dict:
+    res = (
+        get_supabase()
+        .table("chat_session_participants")
+        .upsert(
+            {"session_id": session_id, "user_id": user_id},
+            on_conflict="session_id,user_id",
+            ignore_duplicates=True,
+        )
+        .execute()
+    )
+    if res.data:
+        return res.data[0]
+    # 이미 참여자였으면 upsert(ignore_duplicates)가 빈 결과를 주므로 다시 조회한다.
+    existing = (
+        get_supabase()
+        .table("chat_session_participants")
+        .select("*")
+        .eq("session_id", session_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    return existing.data
+
+
+def remove_chat_session_participant(session_id: str, user_id: str) -> None:
+    get_supabase().table("chat_session_participants").delete().eq(
+        "session_id", session_id
+    ).eq("user_id", user_id).execute()
+
+
+def _flatten_display_name(row: dict) -> dict:
+    profile = row.pop("profiles", None) or {}
+    row["display_name"] = profile.get("display_name")
+    return row
+
+
+def list_chat_session_participants(session_id: str) -> list[dict]:
+    res = (
+        get_supabase()
+        .table("chat_session_participants")
+        .select("*, profiles(display_name)")
+        .eq("session_id", session_id)
+        .order("created_at")
+        .execute()
+    )
+    return [_flatten_display_name(row) for row in res.data]
+
+
+def _get_email(user_id: str) -> Optional[str]:
+    """profiles에는 email이 없다(auth.users에만 있음) — Admin API로 조회한다.
+    사람 수만큼 개별 호출이라, 꼭 필요한 사람(동명이인)만 부른다."""
+    try:
+        res = get_supabase().auth.admin.get_user_by_id(user_id)
+        return res.user.email if res and res.user else None
+    except Exception:
+        return None
+
+
+def list_workspace_members(workspace_id: str) -> list[dict]:
+    """참여자 추가 UI에서 "이 워크스페이스에 누가 있는지" 고를 때 쓴다.
+    display_name이 같은 사람이 여럿이면(동명이인) 구분할 수 있게 email(전체 이메일
+    주소)을 붙인다 — 겹치지 않는 사람은 Admin API를 안 부른다."""
+    res = (
+        get_supabase()
+        .table("workspace_members")
+        .select("user_id, profiles(display_name)")
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+    rows = [_flatten_display_name(row) for row in res.data]
+
+    name_counts: dict[Optional[str], int] = {}
+    for r in rows:
+        name_counts[r["display_name"]] = name_counts.get(r["display_name"], 0) + 1
+
+    for r in rows:
+        r["email"] = (
+            _get_email(r["user_id"])
+            if r["display_name"] and name_counts[r["display_name"]] > 1
+            else None
+        )
+    return rows
+
+
+def update_chat_session_title(session_id: str, title: str) -> None:
+    get_supabase().table("chat_sessions").update({"title": title}).eq("id", session_id).execute()
 
 
 def set_chat_session_archived(session_id: str, archived: bool) -> dict:
@@ -174,7 +304,7 @@ def save_agent_message(session_id: str, result: AgentResult, prompt_version: str
     """
     db = get_supabase()
     content = result.answer if result.has_answer else (
-        f"[근거 부족] {result.no_answer_reason}"
+        f"{NO_ANSWER_PREFIX} {result.no_answer_reason}"
     )
     msg_res = (
         db.table("chat_messages")
@@ -207,6 +337,46 @@ def save_agent_message(session_id: str, result: AgentResult, prompt_version: str
     return message
 
 
+def update_agent_message(message_id: str, result: AgentResult, prompt_version: str = "v1") -> dict:
+    """다시 생성 — 기존 assistant 메시지 행을 새 답변으로 그 자리에서 덮어쓴다(새 행을
+    추가하지 않음 — 새로고침해도 옛 답변이 다시 보이지 않아야 하므로). created_at은
+    그대로 둔다 — 메시지 순서/짝(get_preceding_user_message)이 시간순 비교에 의존한다.
+    citations는 옛 것을 지우고 새로 채운다(citation_order가 답변마다 달라져서 갱신보다
+    삭제 후 재삽입이 단순하다)."""
+    db = get_supabase()
+    content = result.answer if result.has_answer else (
+        f"{NO_ANSWER_PREFIX} {result.no_answer_reason}"
+    )
+    msg_res = (
+        db.table("chat_messages")
+        .update({
+            "content": content,
+            "model_name": result.model_name,
+            "prompt_version": prompt_version,
+        })
+        .eq("id", message_id)
+        .execute()
+    )
+    message = msg_res.data[0]
+
+    db.table("message_citations").delete().eq("message_id", message_id).execute()
+    if result.has_answer and result.citations:
+        rows = [
+            {
+                "message_id": message_id,
+                "document_version_id": c.document_version_id,
+                "quoted_text": c.quote,
+                "relevance_score": c.relevance_score,
+                "citation_order": i,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            for i, c in enumerate(result.citations, start=1)
+        ]
+        db.table("message_citations").insert(rows).execute()
+
+    return message
+
+
 def _flatten_citation_source_url(row: dict) -> dict:
     """document_versions(document_id) -> documents(canonical_url) 임베드 결과를 source_url로 펼친다."""
     document_versions = row.pop("document_versions", None) or {}
@@ -225,6 +395,14 @@ def list_message_citations(message_id: str) -> list[dict]:
         .execute()
     )
     return [_flatten_citation_source_url(row) for row in res.data]
+
+
+def delete_chat_message(message_id: str) -> None:
+    """message_citations에 FK(ON DELETE CASCADE 없음)가 걸려 있어, 있을 수도 있는 citation을
+    먼저 지우고 메시지를 지운다(근거 부족 답변은 보통 citation이 없지만, 방어적으로 처리)."""
+    db = get_supabase()
+    db.table("message_citations").delete().eq("message_id", message_id).execute()
+    db.table("chat_messages").delete().eq("id", message_id).execute()
 
 
 def get_chat_message(message_id: str) -> Optional[dict]:
