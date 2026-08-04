@@ -67,8 +67,16 @@ def create_chat_session(
 
 
 def list_chat_sessions(workspace_id: str, user_id: str, scope: str) -> list[dict]:
-    """scope='mine': 본인 소유 비공개 세션만. scope='team': workspace 전체 공유 세션."""
-    query = get_supabase().table("chat_sessions").select("*").eq("workspace_id", workspace_id)
+    """scope='mine': 본인 소유 비공개 세션만. scope='team': workspace 전체 공유 세션.
+    삭제된(deleted_at IS NOT NULL) 세션은 기본적으로 목록에서 제외한다 — 보관된
+    세션은 계속 보인다(보관은 숨김이 아니라 상태 표시일 뿐)."""
+    query = (
+        get_supabase()
+        .table("chat_sessions")
+        .select("*")
+        .eq("workspace_id", workspace_id)
+        .is_("deleted_at", "null")
+    )
     if scope == "mine":
         query = query.eq("visibility", "private").eq("user_id", user_id)
     else:
@@ -96,9 +104,30 @@ def get_chat_session(session_id: str, workspace_id: str, user_id: str) -> Option
     session = res.data
     if session is None:
         return None
+    if session.get("deleted_at") is not None:
+        return None
     if session["visibility"] == "private" and session["user_id"] != user_id:
         return None
     return session
+
+
+def set_chat_session_archived(session_id: str, archived: bool) -> dict:
+    """보관 토글. archived=True면 archived_at을 지금 시각으로, False면 NULL로 되돌린다."""
+    archived_at = datetime.now(timezone.utc).isoformat() if archived else None
+    res = (
+        get_supabase()
+        .table("chat_sessions")
+        .update({"archived_at": archived_at})
+        .eq("id", session_id)
+        .execute()
+    )
+    return res.data[0]
+
+
+def soft_delete_chat_session(session_id: str) -> None:
+    get_supabase().table("chat_sessions").update(
+        {"deleted_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", session_id).execute()
 
 
 def _flatten_author_name(row: dict) -> dict:

@@ -221,6 +221,33 @@ def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depen
     return SaveToWikiResponse(page_id=page_id, version_id=version_id, slug=slug)
 
 
+@app.patch("/chat/sessions/{session_id}/archive", response_model=ChatSessionOut)
+def archive_session(session_id: str, profile: dict = Depends(get_current_user)):
+    """보관 토글 — 개인 세션은 소유자만, 팀 세션은 워크스페이스 멤버 누구나 가능하다
+    (get_chat_session의 기존 접근 규칙을 그대로 재사용)."""
+    workspace_id = _require_workspace(profile)
+    session = db.get_chat_session(session_id, workspace_id, profile["id"])
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
+
+    updated = db.set_chat_session_archived(session_id, archived=session.get("archived_at") is None)
+    return ChatSessionOut(**updated)
+
+
+@app.delete("/chat/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(session_id: str, profile: dict = Depends(get_current_user)):
+    """소프트 삭제 — 개인/팀 세션 모두 생성자만 삭제할 수 있다(팀 세션은 보관과 달리
+    아무 멤버나 지울 수 없도록 get_chat_session 통과 후 소유자 여부를 별도로 확인한다)."""
+    workspace_id = _require_workspace(profile)
+    session = db.get_chat_session(session_id, workspace_id, profile["id"])
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
+    if session["user_id"] != profile["id"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="세션 생성자만 삭제할 수 있음")
+
+    db.soft_delete_chat_session(session_id)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
