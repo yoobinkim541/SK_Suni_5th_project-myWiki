@@ -8,7 +8,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from pywebpush import WebPushException
+
 from src.notifications import service as notifications_service
+from src.notifications import service as _svc_module
 
 
 @pytest.fixture(scope="module")
@@ -68,3 +71,116 @@ def test_delete_subscription_removes_row(workspace_id, user_id):
     db = notifications_service._get_client()
     rows = db.table("push_subscriptions").select("*").eq("endpoint", endpoint).execute()
     assert rows.data == []
+
+
+def test_send_wiki_notification_sends_to_all_workspace_subscriptions(monkeypatch):
+    calls = []
+
+    class FakeTable:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def select(self, *_a, **_k):
+            return self
+
+        def eq(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            class R:
+                data = self.rows
+            return R()
+
+    class FakeClient:
+        def table(self, name):
+            assert name == "push_subscriptions"
+            return FakeTable([
+                {"id": "sub-1", "endpoint": "https://ep/1", "p256dh": "p1", "auth": "a1"},
+                {"id": "sub-2", "endpoint": "https://ep/2", "p256dh": "p2", "auth": "a2"},
+            ])
+
+    def fake_webpush(*, subscription_info, data, vapid_private_key, vapid_claims):
+        calls.append(subscription_info["endpoint"])
+
+    monkeypatch.setattr(_svc_module, "webpush", fake_webpush)
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "fake-key")
+
+    notifications_service.send_wiki_notification("ws-1", 3, supabase=FakeClient())
+
+    assert calls == ["https://ep/1", "https://ep/2"]
+
+
+def test_send_wiki_notification_deletes_expired_subscription(monkeypatch):
+    deleted = []
+
+    class FakeDeleteQuery:
+        def __init__(self, sink):
+            self.sink = sink
+
+        def eq(self, field, value):
+            self.sink.append(value)
+            return self
+
+        def execute(self):
+            return None
+
+    class FakeTable:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def select(self, *_a, **_k):
+            return self
+
+        def eq(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            class R:
+                data = self.rows
+            return R()
+
+        def delete(self):
+            return FakeDeleteQuery(deleted)
+
+    class FakeClient:
+        def table(self, name):
+            return FakeTable([{"id": "sub-expired", "endpoint": "https://ep/1", "p256dh": "p1", "auth": "a1"}])
+
+    class FakeResponse:
+        status_code = 410
+
+    def fake_webpush(**kwargs):
+        raise WebPushException("gone", response=FakeResponse())
+
+    monkeypatch.setattr(_svc_module, "webpush", fake_webpush)
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "fake-key")
+
+    notifications_service.send_wiki_notification("ws-1", 1, supabase=FakeClient())
+
+    assert deleted == ["sub-expired"]
+
+
+def test_send_wiki_notification_skips_when_no_vapid_key(monkeypatch):
+    calls = []
+    monkeypatch.setattr(_svc_module, "webpush", lambda **kwargs: calls.append(1))
+    monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
+
+    class FakeTable:
+        def select(self, *_a, **_k):
+            return self
+
+        def eq(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            class R:
+                data = [{"id": "sub-1", "endpoint": "https://ep/1", "p256dh": "p1", "auth": "a1"}]
+            return R()
+
+    class FakeClient:
+        def table(self, name):
+            return FakeTable()
+
+    notifications_service.send_wiki_notification("ws-1", 1, supabase=FakeClient())
+
+    assert calls == []
