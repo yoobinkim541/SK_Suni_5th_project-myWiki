@@ -25,6 +25,7 @@ import {
   saveToWiki,
   shareToTeam,
   toggleArchive,
+  renameConversation,
   deleteConversation,
   listParticipants,
   addParticipant,
@@ -234,6 +235,22 @@ export default function AgentPage({ profile }) {
       setMessageAction(messageId, 'team', { status: 'error', message: e.message || '공유하지 못했습니다.' });
     } finally {
       setSharing(false);
+    }
+  }
+
+  async function handleRenameConversation(conversationId) {
+    setOpenMenuId(null);
+    const target = pane?.conversations.find((c) => c.id === conversationId);
+    const next = window.prompt('새 대화 제목을 입력하세요.', target?.title || '');
+    if (next === null) return; // 취소
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === target?.title) return;
+
+    try {
+      const title = await renameConversation(conversationId, trimmed);
+      updateConversation(activePane, conversationId, (c) => ({ ...c, title }));
+    } catch (e) {
+      setError(e.message || '제목을 바꾸지 못했습니다.');
     }
   }
 
@@ -493,6 +510,15 @@ export default function AgentPage({ profile }) {
                 </span>
                 {c.id === openMenuId && (
                   <div className="ag-conv-menu" role="menu">
+                    <span
+                      role="menuitem"
+                      tabIndex={0}
+                      className="ag-conv-menu-item"
+                      onClick={() => handleRenameConversation(c.id)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleRenameConversation(c.id)}
+                    >
+                      이름 변경
+                    </span>
                     <span
                       role="menuitem"
                       tabIndex={0}

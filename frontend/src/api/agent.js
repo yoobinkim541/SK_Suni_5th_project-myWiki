@@ -95,6 +95,15 @@ export function saveMessageToWiki(sessionId, messageId) {
 }
 
 /**
+ * 대화 제목 직접 수정. 개인 세션은 소유자만, 팀 세션은 참여자 누구나 호출할 수 있다.
+ * 빈 제목이거나 100자를 넘으면 백엔드가 400을 던진다.
+ * @returns {Promise<{id, workspace_id, user_id, title, visibility, archived_at, created_at, updated_at}>}
+ */
+export function renameChatSession(sessionId, title) {
+  return apiFetch(`/chat/sessions/${sessionId}/title`, { method: 'PATCH', body: { title } });
+}
+
+/**
  * 보관 토글. 개인 세션은 소유자만, 팀 세션은 워크스페이스 멤버 누구나 호출할 수 있다
  * (백엔드가 권한 없으면 404를 던진다).
  * @returns {Promise<{id, workspace_id, user_id, title, visibility, archived_at, created_at, updated_at}>}
