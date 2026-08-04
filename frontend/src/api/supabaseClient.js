@@ -19,7 +19,10 @@ function getClient() {
       'Supabase 환경변수가 없습니다. .env.local에 VITE_SUPABASE_URL과 VITE_SUPABASE_ANON_KEY를 설정하세요.'
     );
   }
-  if (!client) client = createClient(url, anonKey);
+  // detectSessionInUrl: true가 기본값이라 원래도 켜져 있지만(supabase-js v2), OAuth 콜백
+  // (구글 로그인 등)이 돌아왔을 때 주소창의 access_token/refresh_token 해시를 자동으로
+  // 파싱·세션 저장하는 핵심 옵션이라 향후 라이브러리 기본값이 바뀌어도 깨지지 않게 명시한다.
+  if (!client) client = createClient(url, anonKey, { auth: { detectSessionInUrl: true } });
   return client;
 }
 
