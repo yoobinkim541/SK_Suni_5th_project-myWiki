@@ -72,3 +72,20 @@ export function saveMessageToWiki(sessionId, messageId) {
     method: 'POST',
   });
 }
+
+/**
+ * 보관 토글. 개인 세션은 소유자만, 팀 세션은 워크스페이스 멤버 누구나 호출할 수 있다
+ * (백엔드가 권한 없으면 404를 던진다).
+ * @returns {Promise<{id, workspace_id, user_id, title, visibility, archived_at, created_at, updated_at}>}
+ */
+export function archiveChatSession(sessionId) {
+  return apiFetch(`/chat/sessions/${sessionId}/archive`, { method: 'PATCH' });
+}
+
+/**
+ * 소프트 삭제. 개인/팀 세션 모두 생성자만 가능하다(팀 세션이어도 다른 멤버는 403).
+ * 성공하면 204라 apiFetch가 null을 돌려준다.
+ */
+export function deleteChatSession(sessionId) {
+  return apiFetch(`/chat/sessions/${sessionId}`, { method: 'DELETE' });
+}

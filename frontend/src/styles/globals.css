@@ -608,6 +608,22 @@ input[type="text"].fld,input[type="email"].fld{min-width:196px}
 .ag-conv.on .d{color:var(--green)}
 .ag-conv.new{border-style:dashed;color:var(--muted)}
 
+.ag-conv-row{position:relative;display:inline-flex;align-items:center;gap:2px}
+.ag-conv-menu-btn{opacity:0;transition:opacity .15s;cursor:pointer;
+  padding:3px 7px;border-radius:6px;font-size:13px;line-height:1;color:var(--faint)}
+.ag-conv-row:hover .ag-conv-menu-btn,
+.ag-conv-menu-btn.open{opacity:1}
+.ag-conv-menu-btn:hover{background:var(--hair-3);color:var(--ink-2)}
+.ag-conv-menu{position:absolute;top:100%;right:0;z-index:20;margin-top:4px;
+  display:flex;flex-direction:column;min-width:96px;padding:4px;
+  background:var(--panel);border:1px solid var(--hair);border-radius:10px;
+  box-shadow:0 6px 20px rgba(20,20,20,.12)}
+.ag-conv-menu-item{font-size:12px;font-weight:500;color:var(--ink-2);text-align:left;
+  padding:7px 10px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.ag-conv-menu-item:hover{background:var(--hair-3)}
+.ag-conv-menu-item.danger{color:#c0392b}
+.ag-conv-menu-item.danger:hover{background:rgba(192,57,43,.08)}
+
 /* ---------- 모달 (계정 설정 · 리포트 상세) ---------- */
 .mw-scrim{position:fixed;inset:0;z-index:150;background:rgba(16,20,22,.42);
   opacity:0;visibility:hidden;

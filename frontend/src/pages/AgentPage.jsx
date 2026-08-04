@@ -13,7 +13,7 @@
 // team 세션은 여러 개일 수 있습니다(공유할 때마다 고르거나 새로 만듦) — "팀에 공유"는
 // ShareToTeamModal로 대상을 고르게 하고, 성공하면 팀 탭으로 전환해 그 세션을 보여줍니다.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getSource } from '../services/wikiApi';
 import {
   fetchAgentPanes,
@@ -22,6 +22,8 @@ import {
   askAgent,
   saveToWiki,
   shareToTeam,
+  toggleArchive,
+  deleteConversation,
 } from '../services/agentApi';
 import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
@@ -45,6 +47,20 @@ export default function AgentPage({ profile }) {
   const [actionState, setActionState] = useState({});
   const [shareTarget, setShareTarget] = useState(null); // 공유 모달 대상 메시지
   const [sharing, setSharing] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState(null); // 대화 목록의 "⋯" 드롭다운이 열려 있는 대화 id
+  const menuRef = useRef(null);
+
+  // 드롭다운이 열려 있는 동안, 그 바깥을 클릭하면 닫습니다.
+  useEffect(() => {
+    if (openMenuId === null) return;
+    function handleOutsideClick(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setOpenMenuId(null);
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [openMenuId]);
 
   const authorName = profile?.user_metadata?.full_name || profile?.email || '나';
   const authorInitial = authorName.charAt(0).toUpperCase();
@@ -191,6 +207,38 @@ export default function AgentPage({ profile }) {
     }
   }
 
+  async function handleArchiveToggle(conversationId) {
+    setOpenMenuId(null);
+    try {
+      const archivedAt = await toggleArchive(conversationId);
+      updateConversation(activePane, conversationId, (c) => ({ ...c, archivedAt }));
+    } catch (e) {
+      setError(e.message || '보관 상태를 바꾸지 못했습니다.');
+    }
+  }
+
+  async function handleDeleteConversation(conversationId) {
+    setOpenMenuId(null);
+    const target = pane?.conversations.find((c) => c.id === conversationId);
+    const label = target?.title || '이 대화';
+    if (!window.confirm(`"${label}"를 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+
+    try {
+      await deleteConversation(conversationId);
+      // 삭제된 항목을 목록에서 지운다 — 이게 currentIds가 가리키던 항목이었다면,
+      // current 계산의 기존 fallback(conversations[0])이 알아서 다음 대화로 넘어간다.
+      setPanes((prev) => ({
+        ...prev,
+        [activePane]: {
+          ...prev[activePane],
+          conversations: prev[activePane].conversations.filter((c) => c.id !== conversationId),
+        },
+      }));
+    } catch (e) {
+      setError(e.message || '삭제하지 못했습니다.');
+    }
+  }
+
   function handleMessageAction(label, message) {
     if (label === '위키에 저장') handleSaveToWiki(message);
     if (label === '팀에 공유') handleOpenShareModal(message);
@@ -257,13 +305,56 @@ export default function AgentPage({ profile }) {
           <div className="ag-list">
             <span className="lb">{pane.listLabel}</span>
             {pane.conversations.map((c) => (
-              <button
+              <div
+                className="ag-conv-row"
                 key={c.id}
-                className={`ag-conv${c.id === current?.id ? ' on' : ''}`}
-                onClick={() => setCurrentIds((prev) => ({ ...prev, [activePane]: c.id }))}
+                ref={c.id === openMenuId ? menuRef : null}
               >
-                {c.title}<span className="d">{c.meta}</span>
-              </button>
+                <button
+                  className={`ag-conv${c.id === current?.id ? ' on' : ''}`}
+                  onClick={() => setCurrentIds((prev) => ({ ...prev, [activePane]: c.id }))}
+                >
+                  {c.title}{c.archivedAt && <span className="d"> · 보관됨</span>}<span className="d">{c.meta}</span>
+                </button>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${c.title} 옵션`}
+                  aria-haspopup="true"
+                  aria-expanded={c.id === openMenuId}
+                  className={`ag-conv-menu-btn${c.id === openMenuId ? ' open' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); setOpenMenuId((prev) => (prev === c.id ? null : c.id)); }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    e.stopPropagation();
+                    setOpenMenuId((prev) => (prev === c.id ? null : c.id));
+                  }}
+                >
+                  ⋯
+                </span>
+                {c.id === openMenuId && (
+                  <div className="ag-conv-menu" role="menu">
+                    <span
+                      role="menuitem"
+                      tabIndex={0}
+                      className="ag-conv-menu-item"
+                      onClick={() => handleArchiveToggle(c.id)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleArchiveToggle(c.id)}
+                    >
+                      {c.archivedAt ? '보관 해제' : '보관'}
+                    </span>
+                    <span
+                      role="menuitem"
+                      tabIndex={0}
+                      className="ag-conv-menu-item danger"
+                      onClick={() => handleDeleteConversation(c.id)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleDeleteConversation(c.id)}
+                    >
+                      삭제
+                    </span>
+                  </div>
+                )}
+              </div>
             ))}
             <button className="ag-conv new" onClick={handleNewConversation}>
               {pane.newLabel}
