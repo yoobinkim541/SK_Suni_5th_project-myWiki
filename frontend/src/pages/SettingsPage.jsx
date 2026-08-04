@@ -29,6 +29,12 @@
 //   기존 문구("네이버 뉴스 API · OpenDART · RSS 6개 매체" / "3종 연결됨")가
 //   scripts/register_sources.py의 실제 등록 내용과 달라서(GNews 누락, RSS는 1건)
 //   화면이 근거 없는 숫자를 단정하고 있었습니다.
+//
+// ⚠ 수정(2026-08-04): "일일 수집 시각"(고정 텍스트 "08:00", 백엔드 미연결)을 걷어내고
+//   "데이터 갱신 주기" 드롭다운으로 교체했습니다 — Wiki 업데이트 주기와 동일하게
+//   workspace_settings.data_refresh_cycle_minutes에 실제로 연결됩니다.
+//   설정 저장 성공 시 우측 하단 토스트(.settings-toast)로 피드백을 줍니다 — Wiki 업데이트
+//   주기·대화 보관 기간 저장도 동일하게 토스트가 뜨도록 통일했습니다.
 
 import { useState, useEffect } from 'react';
 import SettingsGroup from '../components/settings/SettingsGroup';
@@ -41,6 +47,7 @@ import {
   formatSourceCount,
   fetchWorkspaceSettings,
   updateWikiCycle,
+  updateDataRefreshCycle,
   updateChatRetention,
 } from '../services/settingsApi';
 
@@ -66,7 +73,17 @@ export default function SettingsPage({
   const [agentScope, setAgentScope] = useState('all');
   const [reportTime, setReportTime] = useState(() => getInitial('mywiki-report-time', '08:30'));
   const [wikiCycle, setWikiCycle] = useState(() => getInitial('mywiki-wiki-cycle', '6h'));
+  const [dataCycle, setDataCycle] = useState(() => getInitial('mywiki-data-cycle', '2h'));
   const [chatKeep, setChatKeep] = useState(() => getInitial('mywiki-chat-keep', '90'));
+
+  // 설정 저장 성공 토스트 — 우측 하단, 2.8초 뒤 자동 소멸(report/ReportSection.jsx의
+  // .dl-toast와 같은 패턴이지만 위치만 다름).
+  const [toast, setToast] = useState('');
+  function showToast(message) {
+    setToast(message);
+    window.clearTimeout(showToast._t);
+    showToast._t = window.setTimeout(() => setToast(''), 2800);
+  }
 
   // 수집 소스 — 백엔드 조회 엔드포인트가 열리면 settingsApi 쪽만 바뀝니다.
   const [sources, setSources] = useState([]);
@@ -92,6 +109,7 @@ export default function SettingsPage({
       .then((settings) => {
         if (!alive || !settings) return;
         setWikiCycle(settings.wikiCycle);
+        setDataCycle(settings.dataCycle);
         setChatKeep(settings.chatKeep);
       })
       .catch(() => { /* 조회 실패 — localStorage 초기값 유지 */ });
@@ -107,18 +125,31 @@ export default function SettingsPage({
     try { localStorage.setItem('mywiki-wiki-cycle', wikiCycle); } catch { /* noop */ }
   }, [wikiCycle]);
   useEffect(() => {
+    try { localStorage.setItem('mywiki-data-cycle', dataCycle); } catch { /* noop */ }
+  }, [dataCycle]);
+  useEffect(() => {
     try { localStorage.setItem('mywiki-chat-keep', chatKeep); } catch { /* noop */ }
   }, [chatKeep]);
 
-  // 드롭다운을 바꾸면 즉시 서버에 저장합니다. 실패해도 화면 값은 그대로 두고
-  // 콘솔에만 남깁니다(재시도 UI는 이번 범위 밖).
+  // 드롭다운을 바꾸면 즉시 서버에 저장합니다. 성공하면 우측 하단에 토스트를 띄우고,
+  // 실패해도 화면 값은 그대로 두고 콘솔에만 남깁니다(재시도 UI는 이번 범위 밖).
   function handleWikiCycleChange(value) {
     setWikiCycle(value);
-    updateWikiCycle(value).catch((err) => console.error('Wiki 업데이트 주기 저장 실패', err));
+    updateWikiCycle(value)
+      .then(() => showToast('Wiki 업데이트 주기가 저장됐습니다'))
+      .catch((err) => console.error('Wiki 업데이트 주기 저장 실패', err));
+  }
+  function handleDataCycleChange(value) {
+    setDataCycle(value);
+    updateDataRefreshCycle(value)
+      .then(() => showToast('데이터 갱신 주기가 저장됐습니다'))
+      .catch((err) => console.error('데이터 갱신 주기 저장 실패', err));
   }
   function handleChatKeepChange(value) {
     setChatKeep(value);
-    updateChatRetention(value).catch((err) => console.error('대화 보관 기간 저장 실패', err));
+    updateChatRetention(value)
+      .then(() => showToast('대화 보관 기간이 저장됐습니다'))
+      .catch((err) => console.error('대화 보관 기간 저장 실패', err));
   }
 
   return (
@@ -184,8 +215,21 @@ export default function SettingsPage({
             onChange={setAgentScope}
           />
         </SettingsRow>
-        <SettingsRow label="일일 수집 시각" desc="무인 파이프라인 실행 시각 · 백엔드 연동">
-          <div className="vl">08:00</div>
+        <SettingsRow label="데이터 갱신 주기" desc="뉴스 수집·분석을 실행하는 주기">
+          <select
+            className="fld"
+            value={dataCycle}
+            onChange={(e) => handleDataCycleChange(e.target.value)}
+            aria-label="데이터 갱신 주기"
+          >
+            <option value="30m">30분</option>
+            <option value="1h">1시간</option>
+            <option value="2h">2시간</option>
+            <option value="3h">3시간</option>
+            <option value="6h">6시간</option>
+            <option value="12h">12시간</option>
+            <option value="24h">24시간</option>
+          </select>
         </SettingsRow>
         <SettingsRow label="일일 리포트 생성 시간" desc="수집 완료 후 일일 동향 보고서를 생성할 시각">
           <input
@@ -239,6 +283,8 @@ export default function SettingsPage({
       </SettingsGroup>
 
       <div className="set-ver">myWiki · SK SUNI 5기 Team 5 · 버전 0.4 화면 시안</div>
+
+      {toast && <div className="settings-toast" role="status">{toast}</div>}
     </section>
   );
 }

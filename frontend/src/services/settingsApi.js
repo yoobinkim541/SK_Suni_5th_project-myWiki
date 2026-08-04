@@ -50,6 +50,13 @@ const MINUTES_TO_WIKI_CYCLE = Object.fromEntries(
   Object.entries(WIKI_CYCLE_TO_MINUTES).map(([label, minutes]) => [minutes, label])
 );
 
+// 데이터(수집·분석) 갱신 주기 — DATA_REFRESH_CYCLE_MINUTES_CHOICES와 1:1로 맞춤.
+// 2시간(2h)이 위키 주기엔 없는 선택지라 여기만 따로 둔다.
+const DATA_CYCLE_TO_MINUTES = { '30m': 30, '1h': 60, '2h': 120, '3h': 180, '6h': 360, '12h': 720, '24h': 1440 };
+const MINUTES_TO_DATA_CYCLE = Object.fromEntries(
+  Object.entries(DATA_CYCLE_TO_MINUTES).map(([label, minutes]) => [minutes, label])
+);
+
 // chat_retention_days: null이면 "영구 보관". CHAT_RETENTION_DAYS_CHOICES=(7,30,90)과 맞춤.
 const CHAT_KEEP_TO_DAYS = { 7: 7, 30: 30, 90: 90 };
 
@@ -68,6 +75,7 @@ export async function fetchWorkspaceSettings() {
   const data = await workspaceSettingsApi.fetchWorkspaceSettings();
   return {
     wikiCycle: MINUTES_TO_WIKI_CYCLE[data.wiki_update_cycle_minutes] || '6h',
+    dataCycle: MINUTES_TO_DATA_CYCLE[data.data_refresh_cycle_minutes] || '2h',
     chatKeep: daysToChatKeep(data.chat_retention_days),
   };
 }
@@ -78,6 +86,14 @@ export async function updateWikiCycle(wikiCycle) {
   const minutes = WIKI_CYCLE_TO_MINUTES[wikiCycle];
   if (!minutes) return;
   await workspaceSettingsApi.updateWorkspaceSettings({ wiki_update_cycle_minutes: minutes });
+}
+
+/** 데이터(수집·분석) 갱신 주기 저장. dataCycle은 <select>의 값('30m'|'1h'|'2h'|...)을 그대로 받는다. */
+export async function updateDataRefreshCycle(dataCycle) {
+  if (USE_MOCK) return;
+  const minutes = DATA_CYCLE_TO_MINUTES[dataCycle];
+  if (!minutes) return;
+  await workspaceSettingsApi.updateWorkspaceSettings({ data_refresh_cycle_minutes: minutes });
 }
 
 /** 대화 보관 기간 저장. chatKeep은 <select>의 값('7'|'30'|'90'|'forever')을 그대로 받는다. */
