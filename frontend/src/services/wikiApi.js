@@ -51,7 +51,8 @@ export function toTree(pages) {
 //
 // 대응이 안 되는 필드는 만들어내지 않고 빈 값/생략으로 남깁니다:
 //  - zones: markdown이 raw 텍스트 한 덩어리라 "개요/쟁점" 구역을 나눌 근거가 없습니다.
-//    heading 파싱 규칙이 정해지기 전까지는 본문 전체를 zone 하나로 보여줍니다.
+//    heading 파싱 규칙이 정해지기 전까지는 본문 전체를 zone 하나(markdown 필드)로 보여주고,
+//    WikiCard.jsx가 react-markdown으로 렌더링합니다.
 //  - links(연결된 문서): wiki_pages 간 링크를 표현하는 테이블이 없습니다. 빈 배열.
 //  - meta의 "평균 신뢰도"는 근거 문서 중 하나라도 점수가 있을 때만 넣습니다.
 function toDoc(content) {
@@ -78,7 +79,7 @@ function toDoc(content) {
     category: WIKI_PAGE_TYPE_LABELS[content.page_type] || content.page_type,
     updated: formatDate(content.published_at),
     meta,
-    zones: [{ title: '본문', paragraphs: [[content.markdown]] }],
+    zones: [{ title: '본문', markdown: content.markdown }],
     timeline: content.versions.map((v, i) => ({
       date: formatDate(v.created_at),
       text: `버전 ${v.version_no}`,
