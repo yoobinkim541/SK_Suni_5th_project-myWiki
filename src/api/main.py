@@ -45,6 +45,7 @@ from .notifications_router import router as notifications_router
 from .settings_router import router as settings_router
 from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
+from ..agent.titling import generate_session_title
 from ..agent.wiki_tools import WikiTools
 from ..wiki.interface import (
     WikiDraftInput,
@@ -80,11 +81,19 @@ TITLE_MAX_LEN = 40
 
 
 def _truncate_title(text: str) -> str:
-    """팀 세션 자동 제목 — 첫 질문 텍스트를 그대로 잘라 쓴다(LLM 요약 없음)."""
+    """자동 제목 폴백 — LLM 요약이 실패하면(generate_session_title이 None) 첫 질문
+    텍스트를 그대로 잘라 쓴다. 실패해도 제목이 계속 "새 대화 N"으로 남는 일이 없게 한다."""
     text = text.strip()
     if len(text) <= TITLE_MAX_LEN:
         return text
     return text[:TITLE_MAX_LEN].rstrip() + "…"
+
+
+def _auto_title(question: str) -> str:
+    """첫 질문으로 세션 제목을 정한다 — LLM 요약을 먼저 시도하고, 실패하면(예외/빈 응답)
+    단순 truncate로 대체한다. generate_session_title은 모든 예외를 자체적으로 삼키므로
+    여기서 별도 예외 처리가 필요 없다."""
+    return generate_session_title(question) or _truncate_title(question)
 
 
 def _require_workspace(profile: dict) -> str:
@@ -149,12 +158,11 @@ def send_message(
 
     assistant_message = db.save_agent_message(session_id, result)
 
-    # team 세션의 첫 질문이면 그 질문 텍스트를 잘라 제목으로 채운다. LLM으로 주제를
-    # 요약해 보려 했으나(agent/titling.py, 삭제됨) 이 모델이 호출마다 reasoning 토큰을
-    # 0~280개 사이로 불규칙하게 써서 안정적으로 응답을 못 받는 문제가 반복됐다 — 그래서
-    # 매번 API를 호출하는 대신, 단순히 첫 질문을 잘라서 쓰는 결정적인 방식으로 바꿨다.
-    if is_first_message and session["visibility"] == "team":
-        title = _truncate_title(body.content)
+    # 세션의 첫 질문이면(개인/팀 공통) LLM으로 그 질문을 요약해 제목으로 채운다.
+    # 실패하면(reasoning 토큰 과다 소비 등으로 LLM 응답을 못 받으면) _auto_title이
+    # 알아서 단순 truncate로 대체하므로, 제목이 "새 대화 N"으로 계속 남는 일은 없다.
+    if is_first_message:
+        title = _auto_title(body.content)
         db.update_chat_session_title(session_id, title)
         logger.info("auto title set from first question: session_id=%s title=%r", session_id, title)
 
@@ -208,9 +216,9 @@ def share_message_to_team(
     citations = db.list_message_citations(message_id)
     db.copy_message_citations(copied_assistant["id"], citations)
 
-    # 새로 만든 공유 세션이면, 방금 옮긴 질문을 잘라 제목으로 채운다.
+    # 새로 만든 공유 세션이면, 방금 옮긴 질문을 요약해 제목으로 채운다.
     if is_new_target_session:
-        db.update_chat_session_title(target_session["id"], _truncate_title(user_message["content"]))
+        db.update_chat_session_title(target_session["id"], _auto_title(user_message["content"]))
 
     return _to_message_out(copied_assistant)
 

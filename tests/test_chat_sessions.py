@@ -543,6 +543,10 @@ def share_setup(monkeypatch):
         lambda target_message_id, citations: citation_copy_calls.append((target_message_id, citations)),
     )
 
+    # 실제 OpenRouter를 부르지 않게 막는다 — 기본은 실패(None)로 둬서 _auto_title이
+    # truncate 폴백을 쓰게 한다. LLM 성공 경로는 별도 테스트에서 이 값을 오버라이드한다.
+    monkeypatch.setattr(main_module, "generate_session_title", lambda question: None)
+
     title_calls: list[str] = []
     monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: title_calls.append(session_id))
 
@@ -588,8 +592,29 @@ def test_share_to_team_with_target_uses_existing_team_session(make_client, share
     assert share_setup["title_calls"] == []
 
 
-def test_share_to_team_new_session_gets_title_from_question(make_client, share_setup, monkeypatch):
-    """LLM 없이, 옮겨진 질문 텍스트를 그대로 잘라 제목으로 쓴다."""
+def test_share_to_team_new_session_uses_llm_generated_title(make_client, share_setup, monkeypatch):
+    captured = {}
+
+    def fake_generate_title(question):
+        captured["question"] = question
+        return "HBM4 주간 정리"
+
+    monkeypatch.setattr(main_module, "generate_session_title", fake_generate_title)
+    titled: list[tuple[str, str]] = []
+    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: titled.append((session_id, title)))
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/share-to-team"
+    )
+
+    assert res.status_code == 200
+    assert captured["question"] == USER_QUESTION["content"]
+    assert titled == [("new-team-session", "HBM4 주간 정리")]
+
+
+def test_share_to_team_new_session_falls_back_to_truncated_question_when_llm_fails(make_client, share_setup, monkeypatch):
+    """generate_session_title이 None을 돌려주면(LLM 실패, share_setup 기본값) 질문 텍스트를
+    그대로 잘라 쓴다."""
     titled: list[tuple[str, str]] = []
     monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: titled.append((session_id, title)))
 
@@ -1112,15 +1137,43 @@ def send_message_setup(monkeypatch):
     monkeypatch.setattr(db, "list_message_citations", lambda mid: [])
     monkeypatch.setattr(main_module, "WikiAgent", FakeAgent)
 
+    # 실제 OpenRouter를 부르지 않게 막는다 — 기본은 실패(None)로 둬서 _auto_title이
+    # truncate 폴백을 쓰게 한다. LLM 성공 경로는 별도 테스트에서 이 값을 오버라이드한다.
+    monkeypatch.setattr(main_module, "generate_session_title", lambda question: None)
+
     titled: list[tuple[str, str]] = []
     monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: titled.append((session_id, title)))
     return {"titled": titled}
 
 
-def test_send_message_first_team_message_triggers_titling(make_client, monkeypatch, send_message_setup):
-    """LLM 없이, 첫 질문 텍스트를 그대로 잘라 제목으로 쓴다."""
+def test_send_message_first_team_message_uses_llm_generated_title(make_client, monkeypatch, send_message_setup):
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
     monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])  # 이번 게 처음이라 기록이 없음
+
+    captured = {}
+
+    def fake_generate_title(question):
+        captured["question"] = question
+        return "HBM4 주간 정리"
+
+    monkeypatch.setattr(main_module, "generate_session_title", fake_generate_title)
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{TEAM_SESSION['id']}/messages", json={"content": "HBM4가 뭐야?"}
+    )
+
+    assert res.status_code == 200
+    assert captured["question"] == "HBM4가 뭐야?"
+    assert send_message_setup["titled"] == [(TEAM_SESSION["id"], "HBM4 주간 정리")]
+
+
+def test_send_message_first_team_message_falls_back_to_truncated_question_when_llm_fails(
+    make_client, monkeypatch, send_message_setup
+):
+    """generate_session_title이 None을 돌려주면(LLM 실패, send_message_setup 기본값)
+    질문 텍스트를 그대로 잘라 쓴다."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])
 
     res = make_client(OWNER_ID).post(
         f"/chat/sessions/{TEAM_SESSION['id']}/messages", json={"content": "HBM4가 뭐야?"}
@@ -1156,8 +1209,8 @@ def test_send_message_non_first_team_message_does_not_retitle(make_client, monke
     assert send_message_setup["titled"] == []
 
 
-def test_send_message_private_session_first_message_does_not_retitle(make_client, monkeypatch, send_message_setup):
-    """자동 제목은 팀 공유 대화 전용이다 — 개인 대화는 첫 메시지여도 안 건드린다."""
+def test_send_message_private_session_first_message_also_retitles(make_client, monkeypatch, send_message_setup):
+    """자동 제목은 개인/팀 공통이다 — 개인 대화도 첫 메시지면 제목이 채워진다."""
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION)
     monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])
 
@@ -1166,7 +1219,7 @@ def test_send_message_private_session_first_message_does_not_retitle(make_client
     )
 
     assert res.status_code == 200
-    assert send_message_setup["titled"] == []
+    assert send_message_setup["titled"] == [(PRIVATE_SESSION["id"], "HBM4가 뭐야?")]
 
 
 # ---------------------------------------------------------------------------
