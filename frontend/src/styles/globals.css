@@ -1313,3 +1313,155 @@ a.fn:hover{text-decoration:underline}
 .rdm-p a.doc{color:var(--green);font-weight:700}
 .rdm-p a.w::before{content:"위키 · ";color:var(--faint);font-weight:300}
 .rdm-empty{font-size:12px;font-weight:300;color:var(--muted);padding:14px 2px;line-height:1.7}
+/* ===== 리포트 개편 추가분 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 오늘 리포트 큰 카드 — 히스토리 카드(.ritem)를 그대로 쓰되 한 줄 전체를 차지합니다. */
+.ritem.today {
+  grid-column: 1 / -1;
+  padding: 22px 24px;
+}
+.ritem.today .rt {
+  font-size: 20px;
+  line-height: 1.4;
+  margin: 10px 0 8px;
+}
+.ritem.today .rsum {
+  font-size: 15px;
+}
+
+/* 큰 카드의 다운로드 줄 — 확장자까지 함께 보여줍니다. */
+.rdl.wide {
+  margin-top: 16px;
+  padding-top: 16px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.rdl.wide .dlbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+}
+.rdl.wide .dlbtn svg {
+  width: 16px;
+  height: 16px;
+}
+.rdl.wide .ext {
+  opacity: .55;
+  font-size: 12px;
+}
+
+/* 히스토리가 비었을 때 */
+.rlist-empty {
+  padding: 28px 4px;
+  color: var(--muted, #8a8f8d);
+  font-size: 14px;
+}
+
+/* 페이지 넘김 */
+.rpage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 20px;
+}
+.rpage-btn {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.rpage-btn:hover:not(:disabled) {
+  border-color: var(--green);
+}
+.rpage-btn.on {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+  font-weight: 600;
+}
+.rpage-btn:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+/* 모바일에서는 히스토리를 1열로 */
+@media (max-width: 760px) {
+  .ritem.today {
+    padding: 18px 16px;
+  }
+  .ritem.today .rt {
+    font-size: 17px;
+  }
+  .rdl.wide .ext {
+    display: none;
+  }
+}
+
+/* 섹션 제목 키우기 — 오늘 리포트 / 리포트 히스토리 */
+.sh.big .t {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.sh.big .c {
+  font-size: 14px;
+}
+.sh.big .s {
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .sh.big .t {
+    font-size: 18px;
+  }
+}
+
+/* 분류·오늘의 키워드(ReportSummary)가 '오늘 리포트' 섹션 안으로 들어오면서
+   .sec 안에 .sec가 겹칩니다 — 안쪽 섹션의 여백·테두리·배경만 지웁니다. */
+.sec .sec {
+  padding: 0;
+  margin: 0 0 18px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 모달 안 다운로드 버튼 (.rdm-dl) */
+.rdm-item {
+  margin-bottom: 4px;
+}
+.rdm-dl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -4px 0 18px;
+  padding-left: 2px;
+}
+.rdm-dl .dlbtn {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.rdm-dl.whole {
+  margin: 14px 0 18px;
+  padding: 12px 0;
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+}
+.rdm-dl.whole .lb {
+  font-size: 13px;
+  font-weight: 600;
+  margin-right: 4px;
+}
+.rdm-dl .ext {
+  opacity: .55;
+  font-size: 12px;
+}
+
+.sh.big .t { color: var(--green); }

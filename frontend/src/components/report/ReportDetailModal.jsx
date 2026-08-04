@@ -1,8 +1,8 @@
 // 전체 리포트 상세 모달 (수정사항 5-1)
 //
 // 어디서 뜨는가:
-//  · 주요 이슈 목록의 이슈 행 클릭 (그 이슈 문단이 강조된 상태로 열립니다)
-//  · 리포트 보관 · 내보내기 → 리포트 히스토리 카드 클릭
+//  · 오늘 리포트 큰 카드 클릭
+//  · 리포트 히스토리 카드 클릭
 //  두 곳 모두 같은 컴포넌트를 씁니다.
 //
 // ⚠ 카드형 목록이 아니라 그냥 이어지는 본문 + 출처만 보여줍니다.
@@ -10,11 +10,15 @@
 //   총평 문단 뒤에 이슈 문단들이 이어지는 읽는 글 형태로 뒀습니다. 강조도 박스가 아니라
 //   문단 안 제목 색만 바꿉니다.)
 //
+// ⚠ 추가: 각 이슈 문단 아래에 다운로드 버튼(Word/PDF/PPT)을 붙였습니다.
+//   백엔드가 아직 이슈 단위 파일 분리를 지원하지 않아, 실제로는 그 날짜 리포트 전체가
+//   요청됩니다(토스트 라벨에만 어떤 이슈에서 눌렀는지 남습니다).
+//   reportApi.downloadReport가 이슈 id를 받게 되면 onDownload만 바꾸면 됩니다.
+//
 // 모달 틀(.mw-scrim / .mw-modal / .mw-hd / .mw-body)은 카테고리 뉴스·위키 키워드 모달과 같은
 // 시안 클래스를 그대로 재사용합니다. 리포트 전용 요소만 .rdm-* 클래스로 globals.css 끝에 추가했습니다.
 //
 // 하단 "출처" 목록은 별도 데이터가 아니라 issues[]의 sourceUrl을 중복 제거해서 만듭니다.
-// (같은 매체가 여러 이슈에 걸쳐 있어도 한 줄로만 나옵니다.)
 
 import { useEffect } from 'react';
 
@@ -38,6 +42,8 @@ export default function ReportDetailModal({
   detail,
   loading = false,
   highlightId = null,
+  formats = [],
+  onDownload,
   onSelectWiki,
   onClose,
 }) {
@@ -53,6 +59,7 @@ export default function ReportDetailModal({
 
   const issues = detail?.issues ?? [];
   const sources = collectSources(issues);
+  const canDownload = formats.length > 0 && typeof onDownload === 'function';
 
   return (
     <>
@@ -81,6 +88,22 @@ export default function ReportDetailModal({
                 <span>신뢰도 : {LEVEL_LABEL[detail.level]}</span>
               </div>
 
+              {/* 리포트 전체 다운로드 */}
+              {canDownload && (
+                <div className="rdm-dl whole">
+                  <span className="lb">리포트 전체</span>
+                  {formats.map((f) => (
+                    <button
+                      className="dlbtn"
+                      key={f.key}
+                      onClick={() => onDownload(null, f)}
+                    >
+                      {f.label} <span className="ext">{f.ext}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <p className="rdm-overview">{detail.overview}</p>
 
               {issues.length === 0 ? (
@@ -88,36 +111,49 @@ export default function ReportDetailModal({
               ) : (
                 <div className="rdm-body">
                   {issues.map((issue) => (
-                    <p
-                      className={`rdm-p${highlightId === issue.id ? ' on' : ''}`}
-                      key={issue.id}
-                    >
-                      <span className="ct">{issue.category} · 신뢰도 : {LEVEL_LABEL[issue.level]}</span>
-                      <b>{issue.title}</b> {issue.summary}
-                      {' '}
-                      <a
-                        className={`s${issue.sourceIsDoc ? ' doc' : ''}`}
-                        href={issue.sourceUrl}
-                        target="_blank"
-                        rel="noopener"
-                        title={issue.sourceTitle}
-                      >
-                        {issue.sourceLabel}
-                      </a>
-                      {issue.wikiTitle && (
+                    <div className="rdm-item" key={issue.id}>
+                      <p className={`rdm-p${highlightId === issue.id ? ' on' : ''}`}>
+                        <span className="ct">{issue.category} · 신뢰도 : {LEVEL_LABEL[issue.level]}</span>
+                        <b>{issue.title}</b> {issue.summary}
+                        {' '}
                         <a
-                          className="w"
-                          href="#"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            onSelectWiki?.(issue.wikiId ?? issue.wikiTitle);
-                            onClose?.();
-                          }}
+                          className={`s${issue.sourceIsDoc ? ' doc' : ''}`}
+                          href={issue.sourceUrl}
+                          target="_blank"
+                          rel="noopener"
+                          title={issue.sourceTitle}
                         >
-                          {issue.wikiTitle}
+                          {issue.sourceLabel}
                         </a>
+                        {issue.wikiTitle && (
+                          <a
+                            className="w"
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              onSelectWiki?.(issue.wikiId ?? issue.wikiTitle);
+                              onClose?.();
+                            }}
+                          >
+                            {issue.wikiTitle}
+                          </a>
+                        )}
+                      </p>
+
+                      {canDownload && (
+                        <div className="rdm-dl">
+                          {formats.map((f) => (
+                            <button
+                              className="dlbtn"
+                              key={f.key}
+                              onClick={() => onDownload(issue, f)}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
                       )}
-                    </p>
+                    </div>
                   ))}
                 </div>
               )}
