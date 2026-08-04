@@ -42,7 +42,11 @@ export async function enableWikiPushNotifications() {
     throw new Error('알림 권한이 거부되었습니다.');
   }
 
-  const registration = await navigator.serviceWorker.register('/sw.js');
+  // register()는 서비스워커가 "설치 중"이기만 해도 곧장 resolve된다 — pushManager.subscribe()는
+  // "활성화(active)"된 워커를 요구해서, register() 결과를 바로 쓰면 브라우저에 따라
+  // "no active Service Worker" 에러가 난다. serviceWorker.ready로 활성화까지 기다린다.
+  await navigator.serviceWorker.register('/sw.js');
+  const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
