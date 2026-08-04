@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-import unicodedata
 from datetime import datetime, timedelta, timezone
 import logging
 from collections.abc import Callable
@@ -36,6 +34,7 @@ from .interface import (
     search_wiki_contexts,
     upsert_wiki_page,
 )
+from .text_similarity import is_duplicate_title
 from ..notifications.service import send_wiki_notification
 
 logger = logging.getLogger(__name__)
@@ -43,32 +42,6 @@ logger = logging.getLogger(__name__)
 # (system_prompt, user_prompt, model) -> raw JSON 문자열.
 # src/report/composer.py의 llm_client 주입 패턴과 같은 형태의 호출 가능 객체다.
 WikiTopicLLMClient = Callable[[str, str, str | None], str]
-
-# 토픽 제목이 이슈 제목과 이 이상 겹치면 "사실상 같은 제목"으로 본다(토큰 자카드 유사도).
-_DUPLICATE_TITLE_JACCARD_THRESHOLD = 0.8
-_TOKEN_SPLIT_PATTERN = re.compile(r"[\s\W_]+", re.UNICODE)
-
-
-def _title_tokens(title: str) -> set[str]:
-    normalized = unicodedata.normalize("NFKC", title or "").strip().lower()
-    return {token for token in _TOKEN_SPLIT_PATTERN.split(normalized) if token}
-
-
-def _is_duplicate_title(candidate_title: str, issue_title: str) -> bool:
-    """새로 만들려는 토픽 제목이 이슈 제목과 사실상 같은 제목인지 판단한다.
-
-    이슈 페이지는 섹션마다 항상 자동 생성되므로(_generate_issue_page), 토픽 제목이
-    이슈 제목을 거의 그대로 반복하면 토픽 페이지가 이슈 페이지의 중복(자기 자신을
-    참조하는 꼴)이 된다 — 실사용 데이터에서 확인된 버그. LLM 판단에만 맡기지 않고
-    코드에서 결정적으로 막는다.
-    """
-    candidate_tokens = _title_tokens(candidate_title)
-    issue_tokens = _title_tokens(issue_title)
-    if not candidate_tokens or not issue_tokens:
-        return False
-    union = candidate_tokens | issue_tokens
-    similarity = len(candidate_tokens & issue_tokens) / len(union)
-    return similarity >= _DUPLICATE_TITLE_JACCARD_THRESHOLD
 
 
 def build_evidence_text_map(enriched_groups: list[EnrichedIssueGroup]) -> dict[str, dict[str, str]]:
@@ -320,7 +293,7 @@ def _generate_topic_page(
     else:
         if not (result.slug and result.title and result.page_type):
             return "skip", None, None
-        if _is_duplicate_title(result.title, section.title):
+        if is_duplicate_title(result.title, section.title):
             logger.info(
                 "wiki_topic_page_skipped_duplicate_title",
                 extra={"issue_key": section.issue_key, "topic_title": result.title},
