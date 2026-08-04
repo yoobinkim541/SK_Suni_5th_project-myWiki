@@ -41,6 +41,11 @@ import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
 import { signInWithProvider, signOut, getCurrentSession, isNewAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
+import {
+  enableWikiPushNotifications,
+  disableWikiPushNotifications,
+  getActivePushSubscription,
+} from './lib/pushNotifications';
 
 import EntryFlow from './pages/EntryFlow';
 import DashboardPage from './pages/DashboardPage';
@@ -120,6 +125,22 @@ export default function App() {
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+
+  // notiWiki 토글의 실제 상태 — 지금까지는 하드코딩된 true였는데, 실제 구독이
+  // 없으면(권한 거부됐거나 애초에 켠 적 없으면) 거짓말을 하고 있었던 셈이라 실제로 확인한다.
+  useEffect(() => {
+    let alive = true;
+    getActivePushSubscription()
+      .then((subscription) => {
+        if (alive) setNotiWiki(!!subscription);
+      })
+      .catch(() => {
+        if (alive) setNotiWiki(false);
+      });
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -276,6 +297,23 @@ export default function App() {
     signOut();
   }
 
+  // Wiki 업데이트 알림 토글 — 켤 때 실패하면(권한 거부·브라우저 미지원 등) 토글을 다시
+  // 끔 상태로 되돌리고 이유를 알려준다. 끌 때는 실패해도 화면상 토글은 그대로 꺼둔다.
+  async function handleToggleNotiWiki(next) {
+    if (next) {
+      try {
+        await enableWikiPushNotifications();
+        setNotiWiki(true);
+      } catch (err) {
+        setNotiWiki(false);
+        alert(err.message || '알림을 켜지 못했습니다.');
+      }
+    } else {
+      setNotiWiki(false);
+      disableWikiPushNotifications().catch(() => {});
+    }
+  }
+
   // 세션 확인이 끝나기 전엔 아무것도 그리지 않는다(로그인된 사용자가 잠깐 랜딩으로
   // 잘못 보이는 걸 막기 위함 — 확인은 보통 수백ms 안에 끝나서 별도 스피너 없이도 자연스럽다).
   if (!authChecked) {
@@ -347,7 +385,7 @@ export default function App() {
             notiReport={notiReport}
             onToggleNotiReport={setNotiReport}
             notiWiki={notiWiki}
-            onToggleNotiWiki={setNotiWiki}
+            onToggleNotiWiki={handleToggleNotiWiki}
             profile={profile}
             onLogout={handleLogout}
             onResetInterests={resetOnboarding}
@@ -382,7 +420,7 @@ export default function App() {
         notiReport={notiReport}
         onToggleNotiReport={setNotiReport}
         notiWiki={notiWiki}
-        onToggleNotiWiki={setNotiWiki}
+        onToggleNotiWiki={handleToggleNotiWiki}
       />
 
       <ProfilePanel
