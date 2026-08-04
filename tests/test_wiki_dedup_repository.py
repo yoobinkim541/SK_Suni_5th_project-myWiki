@@ -147,3 +147,52 @@ def test_parent_page_id_is_carried_through():
     pairs = find_duplicate_candidate_pairs(WORKSPACE_ID, supabase=db)
     page_a_info = next(p for p in (pairs[0].page_a, pairs[0].page_b) if p.slug == "a")
     assert page_a_info.parent_page_id == "page-parent"
+
+
+class _UpdatableFakeTable(FakeTable):
+    def __init__(self, rows):
+        super().__init__(rows)
+        self.update_payload = None
+
+    def update(self, payload):
+        self.update_payload = dict(payload)
+        return self
+
+    def execute(self):
+        if self.update_payload is not None:
+            matched = self._filtered_rows()
+            for row in matched:
+                row.update(self.update_payload)
+            return FakeResult([dict(row) for row in matched])
+        return super().execute()
+
+
+class _UpdatableFakeSupabase(FakeSupabase):
+    def table(self, name):
+        return _UpdatableFakeTable(self.tables[name])
+
+
+def test_reparent_children_updates_all_matching_rows():
+    from src.wiki.dedup_repository import reparent_children
+
+    rows = [
+        _page("child-1", "c1", "이슈1", parent_page_id="page-old"),
+        _page("child-2", "c2", "이슈2", parent_page_id="page-old"),
+        _page("unrelated", "u", "무관", parent_page_id="page-other"),
+    ]
+    db = _UpdatableFakeSupabase({"wiki_pages": rows})
+
+    count = reparent_children("page-old", "page-new", workspace_id=WORKSPACE_ID, supabase=db)
+
+    assert count == 2
+    assert rows[0]["parent_page_id"] == "page-new"
+    assert rows[1]["parent_page_id"] == "page-new"
+    assert rows[2]["parent_page_id"] == "page-other"  # 무관한 행은 안 바뀜
+
+
+def test_reparent_children_returns_zero_when_no_children():
+    from src.wiki.dedup_repository import reparent_children
+
+    db = _UpdatableFakeSupabase({"wiki_pages": [_page("a", "a", "제목", parent_page_id=None)]})
+    count = reparent_children("page-old", "page-new", workspace_id=WORKSPACE_ID, supabase=db)
+    assert count == 0

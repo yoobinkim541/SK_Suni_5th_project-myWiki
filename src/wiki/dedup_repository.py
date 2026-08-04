@@ -88,3 +88,26 @@ def _to_page_info(row: dict) -> DedupPageInfo:
         page_type=row["page_type"],
         parent_page_id=str(row["parent_page_id"]) if row.get("parent_page_id") else None,
     )
+
+
+def reparent_children(
+    old_page_id: str,
+    new_page_id: str,
+    *,
+    workspace_id: str,
+    supabase: Client | None = None,
+) -> int:
+    """old_page_id를 parent_page_id로 참조하던 페이지들을 new_page_id로 재연결한다.
+
+    아카이빙되는 페이지가 토픽 페이지라서 그 밑에 이슈 페이지들이 매달려 있었다면,
+    이걸 안 하면 부모 없는 이슈 페이지가 남는다.
+    """
+    db = supabase or get_supabase()
+    result = (
+        db.table("wiki_pages")
+        .update({"parent_page_id": new_page_id})
+        .eq("workspace_id", workspace_id)
+        .eq("parent_page_id", old_page_id)
+        .execute()
+    )
+    return len(result.data or [])
