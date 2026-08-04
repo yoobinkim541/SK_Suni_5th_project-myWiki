@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import logging
 import os
 from functools import lru_cache
 from typing import Any
@@ -19,10 +20,17 @@ from .models import ALLOWED_CATEGORIES, ClassificationResult
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_OPENROUTER_MODEL = "openai/gpt-4.1-mini"
+# 팀 확정 모델(agent/core.py와 통일) — 2026-08-04까지 openai/gpt-4.1-mini가 잘못 기본값으로
+# 남아있어서 분류·신뢰도·중요도 평가가 전부 그 모델로 돌고 있었다(OPENROUTER_MODEL을
+# 아무 환경에도 명시적으로 안 넣어놨던 게 원인).
+DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash"
+# 기본 모델 호출이 API/타임아웃 오류로 실패하면 이 모델로 한 번 더 시도한다.
+DEFAULT_FALLBACK_MODEL = "deepseek/deepseek-v4-pro"
 DEFAULT_TEMPERATURE = 0
 DEFAULT_TIMEOUT = 30
 DEFAULT_MAX_RETRIES = 1
+
+logger = logging.getLogger(__name__)
 
 
 class OpenRouterSettings:
@@ -30,6 +38,7 @@ class OpenRouterSettings:
         load_dotenv()
         self.api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self.model = os.getenv("OPENROUTER_MODEL", "").strip() or DEFAULT_OPENROUTER_MODEL
+        self.fallback_model = os.getenv("OPENROUTER_FALLBACK_MODEL", "").strip() or DEFAULT_FALLBACK_MODEL
         self.base_url = os.getenv("OPENROUTER_BASE_URL", "").strip() or DEFAULT_OPENROUTER_BASE_URL
 
 
@@ -69,15 +78,38 @@ def create_json_completion(
     temperature: float = DEFAULT_TEMPERATURE,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> str:
+    """기본 모델로 호출하고, API/타임아웃 오류면 fallback_model로 한 번만 더 시도한다.
+    (검증 실패 등 응답 자체의 문제는 호출부의 재시도 루프가 처리하므로 여기서 재시도하지 않는다.)"""
     settings = get_openrouter_settings()
     if not settings.api_key:
         raise MissingApiKeyError("OPENROUTER_API_KEY 환경변수가 설정되지 않았습니다.")
 
-    client = get_openrouter_client()
+    primary_model = model or settings.model
+    try:
+        return _complete(
+            system_prompt=system_prompt, user_prompt=user_prompt,
+            model=primary_model, temperature=temperature, timeout=timeout,
+        )
+    except (OpenRouterApiError, OpenRouterTimeoutError):
+        if settings.fallback_model == primary_model:
+            raise
+        logger.warning(
+            "openrouter_primary_model_failed_using_fallback",
+            extra={"primary_model": primary_model, "fallback_model": settings.fallback_model},
+        )
+        return _complete(
+            system_prompt=system_prompt, user_prompt=user_prompt,
+            model=settings.fallback_model, temperature=temperature, timeout=timeout,
+        )
 
+
+def _complete(
+    *, system_prompt: str, user_prompt: str, model: str, temperature: float, timeout: int,
+) -> str:
+    client = get_openrouter_client()
     try:
         response = client.chat.completions.create(
-            model=model or settings.model,
+            model=model,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
