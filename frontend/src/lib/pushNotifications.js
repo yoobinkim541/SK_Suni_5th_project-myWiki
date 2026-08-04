@@ -47,10 +47,18 @@ export async function enableWikiPushNotifications() {
   // "no active Service Worker" 에러가 난다. serviceWorker.ready로 활성화까지 기다린다.
   await navigator.serviceWorker.register('/sw.js');
   const registration = await navigator.serviceWorker.ready;
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-  });
+
+  // 이미 이 브라우저에 활성 구독이 있으면 새로 만들지 않고 그대로 재사용한다.
+  // subscribe()를 이미 구독된 상태에서 다시 부르면 브라우저에 따라 새 엔드포인트가
+  // 발급돼서, 토글을 여러 번 누를 때마다 서버에 별도 구독 행이 쌓이고(같은 기기인데
+  // 알림이 중복으로 여러 번 오는) 원인이 됐다.
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
 
   const json = subscription.toJSON();
   await subscribeToPush({ endpoint: json.endpoint, keys: json.keys });
