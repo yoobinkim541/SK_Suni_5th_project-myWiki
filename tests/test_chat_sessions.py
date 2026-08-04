@@ -543,8 +543,10 @@ def share_setup(monkeypatch):
         lambda target_message_id, citations: citation_copy_calls.append((target_message_id, citations)),
     )
 
-    # 실제 OpenRouter를 부르지 않게 막는다 — 제목 생성 자체는 별도 테스트에서 확인한다.
-    monkeypatch.setattr(main_module, "generate_session_title", lambda question, answer: None)
+    # 실제 OpenRouter를 부르지 않게 막는다 — 기본은 실패(None)로 둬서 _auto_title이
+    # truncate 폴백을 쓰게 한다. LLM 성공 경로는 별도 테스트에서 이 값을 오버라이드한다.
+    monkeypatch.setattr(main_module, "generate_session_title", lambda question: None)
+
     title_calls: list[str] = []
     monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: title_calls.append(session_id))
 
@@ -590,15 +592,14 @@ def test_share_to_team_with_target_uses_existing_team_session(make_client, share
     assert share_setup["title_calls"] == []
 
 
-def test_share_to_team_new_session_gets_generated_title(make_client, share_setup, monkeypatch):
+def test_share_to_team_new_session_uses_llm_generated_title(make_client, share_setup, monkeypatch):
     captured = {}
 
-    def fake_generate_title(question, answer):
-        captured["args"] = (question, answer)
+    def fake_generate_title(question):
+        captured["question"] = question
         return "HBM4 주간 정리"
 
     monkeypatch.setattr(main_module, "generate_session_title", fake_generate_title)
-
     titled: list[tuple[str, str]] = []
     monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: titled.append((session_id, title)))
 
@@ -607,23 +608,36 @@ def test_share_to_team_new_session_gets_generated_title(make_client, share_setup
     )
 
     assert res.status_code == 200
-    assert captured["args"] == (USER_QUESTION["content"], ASSISTANT_MESSAGE["content"])
+    assert captured["question"] == USER_QUESTION["content"]
     assert titled == [("new-team-session", "HBM4 주간 정리")]
 
 
-def test_share_to_team_title_generation_failure_does_not_break_response(make_client, share_setup, monkeypatch):
-    """generate_session_title이 None을 돌려주면(LLM 실패 등) 제목은 그냥 플레이스홀더로 남고,
-    공유 자체는 정상적으로 끝나야 한다."""
-    monkeypatch.setattr(main_module, "generate_session_title", lambda question, answer: None)
-    titled: list[str] = []
-    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: titled.append(session_id))
+def test_share_to_team_new_session_falls_back_to_truncated_question_when_llm_fails(make_client, share_setup, monkeypatch):
+    """generate_session_title이 None을 돌려주면(LLM 실패, share_setup 기본값) 질문 텍스트를
+    그대로 잘라 쓴다."""
+    titled: list[tuple[str, str]] = []
+    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: titled.append((session_id, title)))
 
     res = make_client(OWNER_ID).post(
         f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/share-to-team"
     )
 
     assert res.status_code == 200
-    assert titled == []
+    assert titled == [("new-team-session", USER_QUESTION["content"])]
+
+
+def test_share_to_team_new_session_title_is_truncated_when_long(make_client, share_setup, monkeypatch):
+    long_question = "아" * 60
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: {**USER_QUESTION, "content": long_question})
+    titled: list[tuple[str, str]] = []
+    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: titled.append((session_id, title)))
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/share-to-team"
+    )
+
+    assert res.status_code == 200
+    assert titled == [("new-team-session", "아" * 40 + "…")]
 
 
 def test_share_to_team_with_unknown_target_returns_400(make_client, share_setup):
@@ -911,6 +925,85 @@ def test_delete_message_blocked_for_non_owner(make_client, delete_message_setup)
 
 
 # ---------------------------------------------------------------------------
+# 제목 직접 수정 — PATCH /chat/sessions/{id}/title
+# ---------------------------------------------------------------------------
+
+def test_rename_session_owner_can_rename_private_session(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: calls.append((session_id, title)))
+
+    res = make_client(OWNER_ID).patch(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/title", json={"title": "HBM4 이슈 정리"}
+    )
+
+    assert res.status_code == 200
+    assert calls == [(PRIVATE_SESSION["id"], "HBM4 이슈 정리")]
+
+
+def test_rename_session_trims_whitespace(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: calls.append((session_id, title)))
+
+    res = make_client(OWNER_ID).patch(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/title", json={"title": "  HBM4 이슈 정리  "}
+    )
+
+    assert res.status_code == 200
+    assert calls == [(PRIVATE_SESSION["id"], "HBM4 이슈 정리")]
+
+
+def test_rename_session_rejects_empty_title(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    calls: list[str] = []
+    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: calls.append(session_id))
+
+    res = make_client(OWNER_ID).patch(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/title", json={"title": "   "}
+    )
+
+    assert res.status_code == 400
+    assert calls == []
+
+
+def test_rename_session_rejects_title_over_limit(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    calls: list[str] = []
+    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: calls.append(session_id))
+
+    res = make_client(OWNER_ID).patch(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/title", json={"title": "아" * 101}
+    )
+
+    assert res.status_code == 400
+    assert calls == []
+
+
+def test_rename_session_blocked_for_non_owner_of_private_session(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+
+    res = make_client(OTHER_USER_ID).patch(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/title", json={"title": "새 제목"}
+    )
+
+    assert res.status_code == 404
+
+
+def test_rename_session_any_team_participant_can_rename(make_client, monkeypatch):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: calls.append((session_id, title)))
+
+    res = make_client(OTHER_USER_ID).patch(
+        f"/chat/sessions/{TEAM_SESSION['id']}/title", json={"title": "새 제목"}
+    )
+
+    assert res.status_code == 200
+    assert calls == [(TEAM_SESSION["id"], "새 제목")]
+
+
+# ---------------------------------------------------------------------------
 # 보관/삭제
 # ---------------------------------------------------------------------------
 
@@ -1044,19 +1137,23 @@ def send_message_setup(monkeypatch):
     monkeypatch.setattr(db, "list_message_citations", lambda mid: [])
     monkeypatch.setattr(main_module, "WikiAgent", FakeAgent)
 
+    # 실제 OpenRouter를 부르지 않게 막는다 — 기본은 실패(None)로 둬서 _auto_title이
+    # truncate 폴백을 쓰게 한다. LLM 성공 경로는 별도 테스트에서 이 값을 오버라이드한다.
+    monkeypatch.setattr(main_module, "generate_session_title", lambda question: None)
+
     titled: list[tuple[str, str]] = []
     monkeypatch.setattr(db, "update_chat_session_title", lambda session_id, title: titled.append((session_id, title)))
     return {"titled": titled}
 
 
-def test_send_message_first_team_message_triggers_titling(make_client, monkeypatch, send_message_setup):
+def test_send_message_first_team_message_uses_llm_generated_title(make_client, monkeypatch, send_message_setup):
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
     monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])  # 이번 게 처음이라 기록이 없음
 
     captured = {}
 
-    def fake_generate_title(question, answer):
-        captured["args"] = (question, answer)
+    def fake_generate_title(question):
+        captured["question"] = question
         return "HBM4 주간 정리"
 
     monkeypatch.setattr(main_module, "generate_session_title", fake_generate_title)
@@ -1066,17 +1163,43 @@ def test_send_message_first_team_message_triggers_titling(make_client, monkeypat
     )
 
     assert res.status_code == 200
-    # save_agent_message 목이 ASSISTANT_MESSAGE를 그대로 돌려주므로, 그 content가 넘어간다
-    # (FakeAgent.answer()의 반환값 자체는 save_agent_message 안에서만 쓰이는데 여기선 목으로 대체됨).
-    assert captured["args"] == ("HBM4가 뭐야?", ASSISTANT_MESSAGE["content"])
+    assert captured["question"] == "HBM4가 뭐야?"
     assert send_message_setup["titled"] == [(TEAM_SESSION["id"], "HBM4 주간 정리")]
+
+
+def test_send_message_first_team_message_falls_back_to_truncated_question_when_llm_fails(
+    make_client, monkeypatch, send_message_setup
+):
+    """generate_session_title이 None을 돌려주면(LLM 실패, send_message_setup 기본값)
+    질문 텍스트를 그대로 잘라 쓴다."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{TEAM_SESSION['id']}/messages", json={"content": "HBM4가 뭐야?"}
+    )
+
+    assert res.status_code == 200
+    assert send_message_setup["titled"] == [(TEAM_SESSION["id"], "HBM4가 뭐야?")]
+
+
+def test_send_message_first_team_message_title_is_truncated_when_long(make_client, monkeypatch, send_message_setup):
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])
+
+    long_question = "아" * 60
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{TEAM_SESSION['id']}/messages", json={"content": long_question}
+    )
+
+    assert res.status_code == 200
+    assert send_message_setup["titled"] == [(TEAM_SESSION["id"], "아" * 40 + "…")]
 
 
 def test_send_message_non_first_team_message_does_not_retitle(make_client, monkeypatch, send_message_setup):
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
     # save_user_message로 새로 넣은 메시지 말고 이미 있던 메시지가 하나 더 있다 = 처음이 아님
     monkeypatch.setattr(db, "list_chat_messages", lambda sid: [USER_QUESTION, {**ASSISTANT_MESSAGE, "id": "old"}])
-    monkeypatch.setattr(main_module, "generate_session_title", lambda q, a: "안 불려야 정상")
 
     res = make_client(OWNER_ID).post(
         f"/chat/sessions/{TEAM_SESSION['id']}/messages", json={"content": "그럼 경쟁사는?"}
@@ -1086,18 +1209,17 @@ def test_send_message_non_first_team_message_does_not_retitle(make_client, monke
     assert send_message_setup["titled"] == []
 
 
-def test_send_message_private_session_first_message_does_not_retitle(make_client, monkeypatch, send_message_setup):
-    """자동 제목은 팀 공유 대화 전용이다 — 개인 대화는 첫 메시지여도 안 건드린다."""
+def test_send_message_private_session_first_message_also_retitles(make_client, monkeypatch, send_message_setup):
+    """자동 제목은 개인/팀 공통이다 — 개인 대화도 첫 메시지면 제목이 채워진다."""
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION)
     monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])
-    monkeypatch.setattr(main_module, "generate_session_title", lambda q, a: "안 불려야 정상")
 
     res = make_client(OWNER_ID).post(
         f"/chat/sessions/{PRIVATE_SESSION['id']}/messages", json={"content": "HBM4가 뭐야?"}
     )
 
     assert res.status_code == 200
-    assert send_message_setup["titled"] == []
+    assert send_message_setup["titled"] == [(PRIVATE_SESSION["id"], "HBM4가 뭐야?")]
 
 
 # ---------------------------------------------------------------------------
