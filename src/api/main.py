@@ -27,7 +27,15 @@ from .settings_router import router as settings_router
 from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
 from ..agent.wiki_tools import WikiTools
-from ..wiki.interface import WikiDraftInput, WikiSourceInput, create_wiki_version, upsert_wiki_page
+from ..wiki.interface import (
+    WikiDraftInput,
+    WikiSourceInput,
+    create_wiki_version,
+    publish_wiki_version,
+    record_wiki_validation,
+    review_wiki_version,
+    upsert_wiki_page,
+)
 
 app = FastAPI(title="myWiki Agent API")
 app.add_middleware(
@@ -180,6 +188,9 @@ def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depen
         generator_model=message.get("model_name"),
     )
     version_id = create_wiki_version(draft)
+    record_wiki_validation(version_id, "passed", None)
+    review_wiki_version(version_id, None, "approved")
+    publish_wiki_version(page_id, version_id)
 
     return SaveToWikiResponse(page_id=page_id, version_id=version_id, slug=slug)
 

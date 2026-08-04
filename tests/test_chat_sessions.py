@@ -344,6 +344,9 @@ def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypat
 
     monkeypatch.setattr(main_module, "upsert_wiki_page", fake_upsert_wiki_page)
     monkeypatch.setattr(main_module, "create_wiki_version", fake_create_wiki_version)
+    monkeypatch.setattr(main_module, "record_wiki_validation", lambda *a, **kw: None)
+    monkeypatch.setattr(main_module, "review_wiki_version", lambda *a, **kw: None)
+    monkeypatch.setattr(main_module, "publish_wiki_version", lambda *a, **kw: None)
 
     res = make_client(OWNER_ID).post(
         f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/save-to-wiki"
@@ -363,3 +366,35 @@ def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypat
     assert len(draft.sources) == 1
     assert draft.sources[0].document_version_id == SAMPLE_CITATION["document_version_id"]
     assert draft.sources[0].claim_text == SAMPLE_CITATION["quoted_text"]
+
+
+def test_save_to_wiki_auto_publishes_version(make_client, monkeypatch):
+    """
+    save-to-wiki는 사람 검수를 거치지 않으므로, 저장 직후 자동으로
+    validation -> review -> publish까지 진행해서 위키 페이지가 즉시
+    published 상태가 되는지 확인한다(record_wiki_validation/review_wiki_version/
+    publish_wiki_version 호출로 검증 — 실제 DB 상태는 test_wiki_service.py의
+    통합 테스트가 별도로 검증한다).
+    """
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [SAMPLE_CITATION])
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+    monkeypatch.setattr(main_module, "upsert_wiki_page", lambda workspace_id, slug, title, page_type: "page-1")
+    monkeypatch.setattr(main_module, "create_wiki_version", lambda draft: "version-1")
+
+    calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(main_module, "record_wiki_validation", lambda *a, **kw: calls.append(("record_wiki_validation", a)))
+    monkeypatch.setattr(main_module, "review_wiki_version", lambda *a, **kw: calls.append(("review_wiki_version", a)))
+    monkeypatch.setattr(main_module, "publish_wiki_version", lambda *a, **kw: calls.append(("publish_wiki_version", a)))
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/save-to-wiki"
+    )
+
+    assert res.status_code == 200
+    assert calls == [
+        ("record_wiki_validation", ("version-1", "passed", None)),
+        ("review_wiki_version", ("version-1", None, "approved")),
+        ("publish_wiki_version", ("page-1", "version-1")),
+    ]
