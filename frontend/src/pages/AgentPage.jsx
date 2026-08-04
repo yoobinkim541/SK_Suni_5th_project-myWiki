@@ -20,14 +20,21 @@ import {
   fetchConversation,
   createConversation,
   askAgent,
+  regenerateMessage,
+  deleteMessage,
   saveToWiki,
   shareToTeam,
   toggleArchive,
   deleteConversation,
+  listParticipants,
+  addParticipant,
+  removeParticipant,
+  listWorkspaceMembers,
 } from '../services/agentApi';
 import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
 import ShareToTeamModal from '../components/agent/ShareToTeamModal';
+import ParticipantsModal from '../components/agent/ParticipantsModal';
 
 const PANE_KEYS = ['team', 'mine'];
 const PANE_VISIBILITY = { team: 'team', mine: 'private' };
@@ -49,6 +56,29 @@ export default function AgentPage({ profile }) {
   const [sharing, setSharing] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null); // 대화 목록의 "⋯" 드롭다운이 열려 있는 대화 id
   const menuRef = useRef(null);
+  const [participantsSessionId, setParticipantsSessionId] = useState(null); // 참여자 모달 대상 대화 id
+  const [participants, setParticipants] = useState(null);
+  const [workspaceMembers, setWorkspaceMembers] = useState(null);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
+  const [participantsError, setParticipantsError] = useState(null);
+  const [participantsBusyUserId, setParticipantsBusyUserId] = useState(null);
+
+  // 참여자 모달을 열면 참여자 목록 + 워크스페이스 멤버 전체 목록을 같이 불러옵니다.
+  useEffect(() => {
+    if (participantsSessionId === null) return;
+    let alive = true;
+    setParticipantsLoading(true);
+    setParticipantsError(null);
+    Promise.all([listParticipants(participantsSessionId), listWorkspaceMembers()])
+      .then(([p, m]) => {
+        if (!alive) return;
+        setParticipants(p);
+        setWorkspaceMembers(m);
+      })
+      .catch((e) => alive && setParticipantsError(e.message || '참여자 정보를 불러오지 못했습니다.'))
+      .finally(() => alive && setParticipantsLoading(false));
+    return () => { alive = false; };
+  }, [participantsSessionId]);
 
   // 드롭다운이 열려 있는 동안, 그 바깥을 클릭하면 닫습니다.
   useEffect(() => {
@@ -239,9 +269,138 @@ export default function AgentPage({ profile }) {
     }
   }
 
+  function handleOpenParticipants(conversationId) {
+    setOpenMenuId(null);
+    setParticipants(null);
+    setWorkspaceMembers(null);
+    setParticipantsSessionId(conversationId);
+  }
+
+  function closeParticipantsModal() {
+    setParticipantsSessionId(null);
+  }
+
+  async function handleAddParticipant(userId) {
+    if (!participantsSessionId) return;
+    setParticipantsBusyUserId(userId);
+    setParticipantsError(null);
+    try {
+      const added = await addParticipant(participantsSessionId, userId);
+      setParticipants((prev) => [...(prev ?? []), added]);
+    } catch (e) {
+      setParticipantsError(e.message || '참여자를 추가하지 못했습니다.');
+    } finally {
+      setParticipantsBusyUserId(null);
+    }
+  }
+
+  async function handleRemoveParticipant(userId) {
+    if (!participantsSessionId) return;
+    setParticipantsBusyUserId(userId);
+    setParticipantsError(null);
+    try {
+      await removeParticipant(participantsSessionId, userId);
+      setParticipants((prev) => (prev ?? []).filter((p) => p.user_id !== userId));
+
+      // 본인을 뺀 거면(자진 탈퇴) 백엔드에서 이 세션은 이제 조회조차 안 된다 —
+      // 팀 목록에서 통째로 지워서 프론트도 바로 접근 불가 상태로 맞춘다.
+      if (userId === profile?.id) {
+        const wasViewing = participantsSessionId === current?.id;
+        const removedId = participantsSessionId;
+        setPanes((prev) => ({
+          ...prev,
+          team: {
+            ...prev.team,
+            conversations: prev.team.conversations.filter((c) => c.id !== removedId),
+          },
+        }));
+        setParticipantsSessionId(null);
+        if (wasViewing) {
+          setError('더 이상 이 대화에 참여하고 있지 않아 접근할 수 없습니다.');
+        }
+      }
+    } catch (e) {
+      setParticipantsError(e.message || '참여자를 빼지 못했습니다.');
+    } finally {
+      setParticipantsBusyUserId(null);
+    }
+  }
+
+  // message.paragraphs는 [[문자열|각주번호, ...], ...] 형태다 — 숫자(각주)는 빼고
+  // 문장만 이어 붙인다.
+  function messageText(message) {
+    return (message.paragraphs || [])
+      .map((parts) => parts.filter((p) => typeof p === 'string').join(''))
+      .join('\n');
+  }
+
+  async function handleCopy(message) {
+    const messageId = message._id;
+    if (!messageId) return;
+    setMessageAction(messageId, 'copy', { status: 'loading' });
+    try {
+      await navigator.clipboard.writeText(messageText(message));
+      setMessageAction(messageId, 'copy', { status: 'done' });
+      setTimeout(() => setMessageAction(messageId, 'copy', { status: 'idle' }), 1500);
+    } catch (e) {
+      setMessageAction(messageId, 'copy', { status: 'error', message: '복사하지 못했습니다.' });
+    }
+  }
+
+  // "다시 생성" — 백엔드가 같은 질문으로 Agent를 다시 불러 이 답변 행을 그 자리에서
+  // 교체한다(질문 자체는 백엔드가 get_preceding_user_message로 찾으므로 프론트는
+  // messageId만 넘기면 된다). 근거 부족("답을 찾지 못했습니다") 카드도 대상이 될 수 있다.
+  async function handleRegenerate(message) {
+    const messageId = message._id;
+    if (!messageId || !current) return;
+    setMessageAction(messageId, 'regen', { status: 'loading' });
+    try {
+      const { message: updated, evidence } = await regenerateMessage(current.id, messageId, activePane);
+      updateConversation(activePane, current.id, (c) => ({
+        ...c,
+        messages: c.messages.map((m) => (m._id === messageId ? updated : m)),
+        evidence: evidence.length ? evidence : c.evidence,
+      }));
+      setMessageAction(messageId, 'regen', { status: 'done' });
+      setTimeout(() => setMessageAction(messageId, 'regen', { status: 'idle' }), 1500);
+    } catch (e) {
+      setMessageAction(messageId, 'regen', { status: 'error', message: e.message || '다시 생성하지 못했습니다.' });
+    }
+  }
+
+  // "삭제" — 정상 답변/근거 부족 답변 모두 대상으로, 이 답변과 바로 앞 질문을
+  // 화면·DB에서 함께 지운다(하드 삭제, 되돌릴 수 없음).
+  async function handleDeleteMessage(message) {
+    const messageId = message._id;
+    if (!messageId || !current) return;
+    if (!window.confirm('이 질문과 답변을 완전히 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
+
+    setMessageAction(messageId, 'del', { status: 'loading' });
+    try {
+      await deleteMessage(current.id, messageId);
+      const idx = current.messages.findIndex((m) => m._id === messageId);
+      let questionId = null;
+      for (let i = idx - 1; i >= 0; i -= 1) {
+        if (current.messages[i].role === 'me') {
+          questionId = current.messages[i]._id;
+          break;
+        }
+      }
+      updateConversation(activePane, current.id, (c) => ({
+        ...c,
+        messages: c.messages.filter((m) => m._id !== messageId && m._id !== questionId),
+      }));
+    } catch (e) {
+      setMessageAction(messageId, 'del', { status: 'error', message: e.message || '삭제하지 못했습니다.' });
+    }
+  }
+
   function handleMessageAction(label, message) {
     if (label === '위키에 저장') handleSaveToWiki(message);
     if (label === '팀에 공유') handleOpenShareModal(message);
+    if (label === '복사') handleCopy(message);
+    if (label === '다시 생성') handleRegenerate(message);
+    if (label === '삭제') handleDeleteMessage(message);
   }
 
   if (error && !panes) {
@@ -343,6 +502,17 @@ export default function AgentPage({ profile }) {
                     >
                       {c.archivedAt ? '보관 해제' : '보관'}
                     </span>
+                    {activePane === 'team' && (
+                      <span
+                        role="menuitem"
+                        tabIndex={0}
+                        className="ag-conv-menu-item"
+                        onClick={() => handleOpenParticipants(c.id)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleOpenParticipants(c.id)}
+                      >
+                        참여자 관리
+                      </span>
+                    )}
                     <span
                       role="menuitem"
                       tabIndex={0}
@@ -437,6 +607,18 @@ export default function AgentPage({ profile }) {
         sharing={sharing}
         onSelect={handleShareSelect}
         onClose={() => setShareTarget(null)}
+      />
+
+      <ParticipantsModal
+        open={participantsSessionId !== null}
+        participants={participants ?? []}
+        workspaceMembers={workspaceMembers ?? []}
+        loading={participantsLoading}
+        error={participantsError}
+        busyUserId={participantsBusyUserId}
+        onAdd={handleAddParticipant}
+        onRemove={handleRemoveParticipant}
+        onClose={closeParticipantsModal}
       />
     </section>
   );

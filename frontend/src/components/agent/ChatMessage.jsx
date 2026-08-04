@@ -5,16 +5,18 @@
 // "팀 공유 / 개인" 배지(.who .fl)가 붙습니다 — 시안과 동일합니다.
 // 답변 문장의 근거 번호와 하단 근거 칩은 CitationTag가 그립니다.
 //
-// acts 중 "위키에 저장" / "팀에 공유"만 실제 백엔드에 연결돼 있어 클릭 가능합니다.
-// 클릭하면 onAction(label, message)를 그대로 호출하고(실제 처리는 AgentPage.jsx가 함),
+// acts는 모두 onAction(label, message)를 그대로 호출하고(실제 처리는 AgentPage.jsx가 함),
 // actionState(AgentPage.jsx가 메시지별로 들고 있는 진행 상태)에 맞춰 라벨을 바꿉니다.
-// 나머지(복사·다시 생성 등)는 아직 대응하는 백엔드가 없어 표시만 하는 텍스트입니다.
+// "복사"는 백엔드 없이 프론트에서만 처리되고, "다시 생성"은 기존 askAgent를 재호출합니다.
 
 import CitationTag from '../wiki/CitationTag';
 
 const ACT_LABEL = {
   wiki: { idle: '위키에 저장', loading: '저장 중…', done: '위키에 저장됨' },
   team: { idle: '팀에 공유', loading: '공유 중…', done: '팀에 공유됨' },
+  copy: { idle: '복사', loading: '복사 중…', done: '복사됨' },
+  regen: { idle: '다시 생성', loading: '생성 중…', done: '다시 생성됨' },
+  del: { idle: '삭제', loading: '삭제 중…', done: '삭제됨' },
 };
 
 function actLabel(kind, state) {
@@ -102,6 +104,27 @@ export default function ChatMessage({ message, flag, flagPriv = false, onAction,
                 return (
                   <ActSpan key={a} kind="team" state={actionState?.team} onClick={() => onAction?.(a, message)}>
                     {actLabel('team', actionState?.team)}
+                  </ActSpan>
+                );
+              }
+              if (a === '복사') {
+                return (
+                  <ActSpan key={a} kind="copy" state={actionState?.copy} onClick={() => onAction?.(a, message)}>
+                    {actLabel('copy', actionState?.copy)}
+                  </ActSpan>
+                );
+              }
+              if (a === '다시 생성') {
+                return (
+                  <ActSpan key={a} kind="regen" state={actionState?.regen} onClick={() => onAction?.(a, message)}>
+                    {actLabel('regen', actionState?.regen)}
+                  </ActSpan>
+                );
+              }
+              if (a === '삭제') {
+                return (
+                  <ActSpan key={a} kind="del" state={actionState?.del} onClick={() => onAction?.(a, message)}>
+                    {actLabel('del', actionState?.del)}
                   </ActSpan>
                 );
               }

@@ -63,6 +63,27 @@ export function shareMessageToTeam(sessionId, messageId, targetSessionId) {
 }
 
 /**
+ * "다시 생성" — 같은 질문으로 Agent를 다시 호출해 이 assistant 메시지 행을 그 자리에서
+ * 교체한다(새 메시지를 추가하지 않음 — 새로고침해도 옛 답변이 다시 보이지 않는다).
+ * 근거 부족(has_answer=false) 응답도 대상이 될 수 있다.
+ * @returns {Promise<{id, session_id, role, content, model_name, prompt_version, author_name,
+ *   created_at, citations: object[]}>} 교체된 assistant 메시지
+ */
+export function regenerateChatMessage(sessionId, messageId) {
+  return apiFetch(`/chat/sessions/${sessionId}/messages/${messageId}/regenerate`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * 질문/답변 쌍 하나를 완전 삭제한다(정상 답변도 대상). 성공하면 204라 apiFetch가
+ * null을 돌려준다.
+ */
+export function deleteChatMessage(sessionId, messageId) {
+  return apiFetch(`/chat/sessions/${sessionId}/messages/${messageId}`, { method: 'DELETE' });
+}
+
+/**
  * assistant 답변을 위키 문서로 저장한다. citation이 없는 답변(근거 부족 응답)은
  * 백엔드가 400을 던진다 — 호출부에서 ApiError(status===400)로 구분해서 처리한다.
  * @returns {Promise<{page_id: string, version_id: string, slug: string}>}
@@ -88,4 +109,40 @@ export function archiveChatSession(sessionId) {
  */
 export function deleteChatSession(sessionId) {
   return apiFetch(`/chat/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
+/**
+ * 팀 세션의 참여자 목록. 참여자만 조회할 수 있다(팀 세션은 이제 워크스페이스 전체가
+ * 아니라 참여자만 볼 수 있다).
+ * @returns {Promise<{user_id: string, display_name: string|null}[]>}
+ */
+export function fetchSessionParticipants(sessionId) {
+  return apiFetch(`/chat/sessions/${sessionId}/participants`);
+}
+
+/**
+ * 참여자 추가. 이미 참여 중인 사람이면 누구나 다른 워크스페이스 멤버를 추가할 수 있다.
+ * @returns {Promise<{user_id: string, display_name: string|null}>}
+ */
+export function addSessionParticipant(sessionId, userId) {
+  return apiFetch(`/chat/sessions/${sessionId}/participants`, {
+    method: 'POST',
+    body: { user_id: userId },
+  });
+}
+
+/**
+ * 참여자 제거. 본인 탈퇴는 항상 되고, 다른 사람을 빼는 건 세션 생성자만 가능하다
+ * (아니면 403).
+ */
+export function removeSessionParticipant(sessionId, userId) {
+  return apiFetch(`/chat/sessions/${sessionId}/participants/${userId}`, { method: 'DELETE' });
+}
+
+/**
+ * "참여자 추가" 선택지에 쓸 워크스페이스 멤버 전체 목록.
+ * @returns {Promise<{user_id: string, display_name: string|null}[]>}
+ */
+export function fetchWorkspaceMembers() {
+  return apiFetch('/workspace/members');
 }

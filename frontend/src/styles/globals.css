@@ -607,6 +607,33 @@ input[type="text"].fld,input[type="email"].fld{min-width:196px}
 .ag-conv .d{font-size:10px;font-weight:300;color:var(--faint)}
 .ag-conv.on .d{color:var(--green)}
 .ag-conv.new{border-style:dashed;color:var(--muted)}
+.ag-conv.static{cursor:default}
+.ag-conv.static:hover{border-color:var(--hair);color:inherit;transform:none}
+
+/* 참여자 관리 모달 — 현재 참여자(칩+x)/추가 후보(행+plus) */
+.pt-chips{display:flex;flex-wrap:wrap;gap:8px}
+.pt-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);
+  border:1px solid var(--hair);border-radius:20px;padding:4px 6px 4px 4px}
+.pt-chip .av{width:22px;height:22px;border-radius:50%;flex:none;font-style:normal;
+  background:var(--green);color:#fff;font-size:9.5px;font-weight:700;
+  display:flex;align-items:center;justify-content:center}
+:root[data-theme="dark"] .pt-chip .av{color:#0d1512}
+.pt-chip .nm{font-size:12px;font-weight:500;color:var(--ink-2)}
+.pt-chip .x{cursor:pointer;width:17px;height:17px;border-radius:50%;flex:none;
+  display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px;line-height:1}
+.pt-chip .x:hover{background:var(--hair-3);color:#c0392b}
+
+.pt-list{display:flex;flex-direction:column;gap:2px}
+.pt-row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:9px}
+.pt-row:hover{background:var(--hair-3)}
+.pt-row .av{width:24px;height:24px;border-radius:50%;flex:none;font-style:normal;
+  background:var(--panel);border:1px solid var(--hair);color:var(--muted);
+  font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.pt-row .nm{flex:1;font-size:12.5px;font-weight:500;color:var(--ink-2)}
+.pt-row .add{cursor:pointer;width:22px;height:22px;border-radius:50%;flex:none;
+  display:flex;align-items:center;justify-content:center;color:var(--green);
+  border:1px solid var(--green);font-size:13px;font-weight:700;line-height:1}
+.pt-row .add:hover{background:var(--green-tint)}
 
 .ag-conv-row{position:relative;display:inline-flex;align-items:center;gap:2px}
 .ag-conv-menu-btn{opacity:0;transition:opacity .15s;cursor:pointer;
