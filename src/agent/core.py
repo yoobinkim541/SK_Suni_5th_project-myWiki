@@ -13,6 +13,7 @@ Agent 핵심 로직 — LLM tool-use로 위키를 "직접 읽게" 만든다 (Kar
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Optional
@@ -22,9 +23,13 @@ from openai import OpenAI
 from .wiki_tools import WikiTools
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# OPENROUTER_MODEL 기본값 deepseek/deepseek-v4-flash — 팀 확정 모델, 전환 로직 없음
+# 팀 확정 모델(analysis/classifier.py, report/composer.py와 통일)
 MODEL_NAME = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
+# 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
+FALLBACK_MODEL_NAME = os.getenv("OPENROUTER_FALLBACK_MODEL", "").strip() or "deepseek/deepseek-v4-pro"
 MAX_TOOL_ROUNDS = 6  # 무한루프 방지
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
 너는 myWiki의 답변 Agent다. 규칙:
@@ -210,8 +215,20 @@ class WikiAgent:
         return True
 
     def _call_model(self, messages: list[dict]):
+        try:
+            return self._complete(MODEL_NAME, messages)
+        except Exception:
+            if FALLBACK_MODEL_NAME == MODEL_NAME:
+                raise
+            logger.warning(
+                "openrouter_primary_model_failed_using_fallback",
+                extra={"primary_model": MODEL_NAME, "fallback_model": FALLBACK_MODEL_NAME},
+            )
+            return self._complete(FALLBACK_MODEL_NAME, messages)
+
+    def _complete(self, model: str, messages: list[dict]):
         return self.client.chat.completions.create(
-            model=MODEL_NAME,
+            model=model,
             max_tokens=1500,
             tools=TOOLS,
             messages=messages,
