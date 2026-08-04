@@ -77,24 +77,6 @@ def list_chat_sessions(workspace_id: str, user_id: str, scope: str) -> list[dict
     return res.data
 
 
-def get_or_create_team_session(workspace_id: str, user_id: str) -> dict:
-    """workspace의 팀 공유 세션을 찾고, 없으면 만든다(공유 대상은 항상 하나로 모은다)."""
-    res = (
-        get_supabase()
-        .table("chat_sessions")
-        .select("*")
-        .eq("workspace_id", workspace_id)
-        .eq("visibility", "team")
-        .order("created_at")
-        .limit(1)
-        .maybe_single()
-        .execute()
-    )
-    if res.data:
-        return res.data
-    return create_chat_session(workspace_id, user_id, title="팀 공유 에이전트", visibility="team")
-
-
 def get_chat_session(session_id: str, workspace_id: str, user_id: str) -> Optional[dict]:
     """
     visibility='private'인 세션은 소유자(user_id)만 접근 가능하다 — 워크스페이스 소속이라는
@@ -119,19 +101,27 @@ def get_chat_session(session_id: str, workspace_id: str, user_id: str) -> Option
     return session
 
 
+def _flatten_author_name(row: dict) -> dict:
+    """chat_messages.user_id -> profiles(display_name) 임베드 결과를 author_name으로 펼친다.
+    assistant 메시지는 user_id가 없어 profiles가 비고, author_name도 None으로 남는다."""
+    profile = row.pop("profiles", None) or {}
+    row["author_name"] = profile.get("display_name")
+    return row
+
+
 def list_chat_messages(session_id: str) -> list[dict]:
     res = (
         get_supabase()
         .table("chat_messages")
-        .select("*")
+        .select("*, profiles(display_name)")
         .eq("session_id", session_id)
         .order("created_at")
         .execute()
     )
-    return res.data
+    return [_flatten_author_name(row) for row in res.data]
 
 
-def save_user_message(session_id: str, content: str) -> dict:
+def save_user_message(session_id: str, content: str, user_id: str) -> dict:
     res = (
         get_supabase()
         .table("chat_messages")
@@ -139,6 +129,7 @@ def save_user_message(session_id: str, content: str) -> dict:
             "session_id": session_id,
             "role": "user",
             "content": content,
+            "user_id": user_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
         .execute()
@@ -238,6 +229,8 @@ def get_preceding_user_message(session_id: str, before_created_at: str) -> Optio
 
 
 def copy_chat_message(target_session_id: str, message: dict) -> dict:
+    """공유는 항상 메시지 소유자만 할 수 있으므로, 원작성자(user_id)를 그대로 복사해도
+    공유자 본인과 항상 같다 — 원작성자를 유지하는 게 맞다."""
     res = (
         get_supabase()
         .table("chat_messages")
@@ -245,6 +238,7 @@ def copy_chat_message(target_session_id: str, message: dict) -> dict:
             "session_id": target_session_id,
             "role": message["role"],
             "content": message["content"],
+            "user_id": message.get("user_id"),
             "model_name": message.get("model_name"),
             "prompt_version": message.get("prompt_version"),
             "created_at": datetime.now(timezone.utc).isoformat(),

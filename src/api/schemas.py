@@ -25,6 +25,10 @@ class SendMessageRequest(BaseModel):
     content: str
 
 
+class ShareToTeamRequest(BaseModel):
+    target_session_id: Optional[str] = None
+
+
 class CitationOut(BaseModel):
     id: str
     document_version_id: str
@@ -41,6 +45,7 @@ class ChatMessageOut(BaseModel):
     content: str
     model_name: Optional[str] = None
     prompt_version: Optional[str] = None
+    author_name: Optional[str] = None
     created_at: datetime
     citations: list[CitationOut] = []
 

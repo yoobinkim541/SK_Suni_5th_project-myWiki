@@ -9,8 +9,15 @@ from __future__ import annotations
 
 from typing import Literal
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+
+# db.py/auth.py는 SUPABASE_* 값을 요청 처리 중(첫 호출 시점)에 os.environ에서 직접 읽는다 —
+# `uvicorn src.api.main:app`을 README 그대로 실행하면 .env가 자동으로 로드되지 않아서,
+# 실제 인증 토큰이 들어오는 요청마다 KeyError로 500이 났다(빈 토큰이면 먼저 401로 걸러져서
+# 이 문제가 안 드러났었다). 여기서 한 번 로드해두면 실행 방식과 무관하게 항상 채워진다.
+load_dotenv()
 
 from . import db
 from .auth import get_current_user
@@ -22,6 +29,7 @@ from .schemas import (
     SaveToWikiResponse,
     SendMessageRequest,
     SendMessageResponse,
+    ShareToTeamRequest,
 )
 from .notifications_router import router as notifications_router
 from .settings_router import router as settings_router
@@ -41,7 +49,12 @@ from ..wiki.interface import (
 app = FastAPI(title="myWiki Agent API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://mywiki.pe.kr", "https://www.mywiki.pe.kr"],
+    allow_origins=[
+        "https://mywiki.pe.kr",
+        "https://www.mywiki.pe.kr",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,7 +110,7 @@ def send_message(
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
 
-    user_message = db.save_user_message(session_id, body.content)
+    user_message = db.save_user_message(session_id, body.content, profile["id"])
 
     # 이전 대화 이력을 Agent에게 넘겨서 멀티턴 맥락을 유지한다.
     history = [
@@ -134,7 +147,12 @@ def _get_owned_message(session_id: str, message_id: str, workspace_id: str, user
 
 
 @app.post("/chat/sessions/{session_id}/messages/{message_id}/share-to-team", response_model=ChatMessageOut)
-def share_message_to_team(session_id: str, message_id: str, profile: dict = Depends(get_current_user)):
+def share_message_to_team(
+    session_id: str,
+    message_id: str,
+    body: ShareToTeamRequest = ShareToTeamRequest(),
+    profile: dict = Depends(get_current_user),
+):
     workspace_id = _require_workspace(profile)
     message = _get_owned_message(session_id, message_id, workspace_id, profile["id"])
 
@@ -142,9 +160,15 @@ def share_message_to_team(session_id: str, message_id: str, profile: dict = Depe
     if user_message is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="짝이 되는 질문 메시지를 찾을 수 없음")
 
-    team_session = db.get_or_create_team_session(workspace_id, profile["id"])
-    db.copy_chat_message(team_session["id"], user_message)
-    copied_assistant = db.copy_chat_message(team_session["id"], message)
+    if body.target_session_id:
+        target_session = db.get_chat_session(body.target_session_id, workspace_id, profile["id"])
+        if target_session is None or target_session["visibility"] != "team":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="유효한 팀 공유 세션이 아님")
+    else:
+        target_session = db.create_chat_session(workspace_id, profile["id"], title="새 공유 대화", visibility="team")
+
+    db.copy_chat_message(target_session["id"], user_message)
+    copied_assistant = db.copy_chat_message(target_session["id"], message)
 
     citations = db.list_message_citations(message_id)
     db.copy_message_citations(copied_assistant["id"], citations)
