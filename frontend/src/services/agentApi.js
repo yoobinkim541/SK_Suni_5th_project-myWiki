@@ -94,6 +94,7 @@ function toViewConversation(session) {
     id: session.id,
     title: session.title || '제목 없는 대화',
     meta: formatMeta(session.updated_at ?? session.created_at),
+    archivedAt: session.archived_at ?? null,
     messages: [],
     evidence: [],
     _loaded: false,
@@ -221,4 +222,20 @@ export async function shareToTeam(sessionId, messageId, targetSessionId) {
 export async function saveToWiki(sessionId, messageId) {
   if (USE_MOCK) return { page_id: 'mock-page', version_id: 'mock-version', slug: 'mock-slug' };
   return agentApi.saveMessageToWiki(sessionId, messageId);
+}
+
+/**
+ * 보관 토글. 성공하면 갱신된 archivedAt(없으면 null)을 돌려준다.
+ * @returns {Promise<string|null>}
+ */
+export async function toggleArchive(sessionId) {
+  if (USE_MOCK) return null;
+  const updated = await agentApi.archiveChatSession(sessionId);
+  return updated.archived_at ?? null;
+}
+
+/** 소프트 삭제. */
+export async function deleteConversation(sessionId) {
+  if (USE_MOCK) return;
+  await agentApi.deleteChatSession(sessionId);
 }
