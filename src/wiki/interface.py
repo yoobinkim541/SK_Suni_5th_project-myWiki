@@ -98,6 +98,17 @@ class WikiSource:
 
 
 @dataclass(frozen=True)
+class WikiRelatedPage:
+    """Another published wiki page that shares evidence with the current one."""
+
+    page_id: str
+    slug: str
+    title: str
+    page_type: str
+    shared_source_count: int
+
+
+@dataclass(frozen=True)
 class WikiPageContent:
     """Published wiki page detail payload."""
 
@@ -118,6 +129,7 @@ class WikiPageContent:
     created_at: str
     sources: tuple[WikiSource, ...]
     versions: tuple[WikiVersionSummary, ...]
+    related_pages: tuple[WikiRelatedPage, ...] = ()
 
 
 def upsert_wiki_page(

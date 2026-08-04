@@ -20,11 +20,13 @@ from .interface import (
     PageType,
     WikiPageContent,
     WikiPageSummary,
+    WikiRelatedPage,
     WikiSource,
     WikiVersionSummary,
 )
 
 WIKI_BUCKET = "wiki"
+RELATED_PAGES_LIMIT = 5
 
 
 @lru_cache(maxsize=1)
@@ -139,6 +141,66 @@ def _enrich_sources(db: Client, workspace_id: str, rows: list[dict]) -> tuple[Wi
     return tuple(enriched)
 
 
+def _get_related_pages(
+    db: Client,
+    workspace_id: str,
+    current_page_id: str,
+    current_version_id: str,
+    document_version_ids: list[str],
+    limit: int = RELATED_PAGES_LIMIT,
+) -> tuple[WikiRelatedPage, ...]:
+    """
+    같은 원문(document_version_id)을 근거로 인용하는 다른 위키를 찾는다.
+
+    별도 관계 테이블 없이 wiki_page_sources만으로 조회 시점에 계산한다:
+    1) 이 문서들을 인용하는 다른 wiki_version_id를 찾고
+    2) wiki_version_id별 공유 document_version_id를 집합으로 모아 중복 인용을 1건으로 셈
+    3) 그 wiki_version_id가 실제로 어떤 위키의 "현재 게시 버전"인지 확인한다
+       (수정으로 밀려난 구버전은 여기서 자연히 제외됨)
+    4) 공유 건수 내림차순으로 상위 limit개만 반환
+    """
+    if not document_version_ids:
+        return tuple()
+
+    shared_res = (
+        db.table("wiki_page_sources")
+        .select("wiki_version_id, document_version_id")
+        .in_("document_version_id", document_version_ids)
+        .neq("wiki_version_id", current_version_id)
+        .execute()
+    )
+    shared_docs_by_version: dict[str, set[str]] = {}
+    for row in shared_res.data:
+        shared_docs_by_version.setdefault(row["wiki_version_id"], set()).add(
+            row["document_version_id"]
+        )
+    if not shared_docs_by_version:
+        return tuple()
+
+    pages_res = (
+        db.table("wiki_pages")
+        .select("id, slug, title, page_type, current_version_id")
+        .eq("workspace_id", workspace_id)
+        .eq("status", "published")
+        .neq("id", current_page_id)
+        .in_("current_version_id", list(shared_docs_by_version.keys()))
+        .execute()
+    )
+
+    related = [
+        WikiRelatedPage(
+            page_id=row["id"],
+            slug=row["slug"],
+            title=row["title"],
+            page_type=row["page_type"],
+            shared_source_count=len(shared_docs_by_version[row["current_version_id"]]),
+        )
+        for row in pages_res.data
+    ]
+    related.sort(key=lambda r: r.shared_source_count, reverse=True)
+    return tuple(related[:limit])
+
+
 def get_published_wiki_page(
     workspace_id: str,
     slug: str,
@@ -200,6 +262,14 @@ def get_published_wiki_page(
     )
     versions = tuple(WikiVersionSummary(**row) for row in versions_res.data)
 
+    related_pages = _get_related_pages(
+        db,
+        workspace_id,
+        page["id"],
+        version_id,
+        [s.document_version_id for s in sources],
+    )
+
     return WikiPageContent(
         page_id=page["id"],
         slug=page["slug"],
@@ -218,6 +288,7 @@ def get_published_wiki_page(
         created_at=version["created_at"],
         sources=sources,
         versions=versions,
+        related_pages=related_pages,
     )
 
 

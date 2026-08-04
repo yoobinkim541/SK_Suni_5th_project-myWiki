@@ -15,7 +15,12 @@ from src.api import db
 from src.api.auth import get_current_user
 from src.api.main import app
 from src.wiki import query as wiki_query
-from src.wiki.interface import WikiPageContent, WikiPageSummary, WikiVersionSummary
+from src.wiki.interface import (
+    WikiPageContent,
+    WikiPageSummary,
+    WikiRelatedPage,
+    WikiVersionSummary,
+)
 
 WORKSPACE_ID = "11111111-1111-1111-1111-111111111111"
 PAGE_ID = "22222222-2222-2222-2222-222222222222"
@@ -75,11 +80,29 @@ def test_get_page_found(client, monkeypatch):
         created_at="2026-07-24T00:00:00Z",
         sources=(),
         versions=(),
+        related_pages=(
+            WikiRelatedPage(
+                page_id="44444444-4444-4444-4444-444444444444",
+                slug="hbm4-supply",
+                title="HBM4 공급망",
+                page_type="supply_chain",
+                shared_source_count=3,
+            ),
+        ),
     )
     monkeypatch.setattr(wiki_query, "get_published_wiki_page", lambda workspace_id, slug: content)
     res = client.get("/wiki/pages/hbm4")
     assert res.status_code == 200
     assert res.json()["markdown"] == "# HBM4\n본문"
+    assert res.json()["related_pages"] == [
+        {
+            "page_id": "44444444-4444-4444-4444-444444444444",
+            "slug": "hbm4-supply",
+            "title": "HBM4 공급망",
+            "page_type": "supply_chain",
+            "shared_source_count": 3,
+        }
+    ]
 
 
 def test_get_versions(client, monkeypatch):

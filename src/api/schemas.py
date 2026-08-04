@@ -98,6 +98,16 @@ class WikiSourceOut(BaseModel):
     reliability_score: Optional[int] = None
 
 
+class WikiRelatedPageOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    page_id: str
+    slug: str
+    title: str
+    page_type: str
+    shared_source_count: int
+
+
 class WikiPageContentOut(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -118,6 +128,7 @@ class WikiPageContentOut(BaseModel):
     created_at: str
     sources: list[WikiSourceOut]
     versions: list[WikiVersionSummaryOut]
+    related_pages: list[WikiRelatedPageOut] = []
 
 
 # ---------------------------------------------------------------------------
