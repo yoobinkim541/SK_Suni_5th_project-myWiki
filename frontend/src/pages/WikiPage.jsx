@@ -67,6 +67,19 @@ export default function WikiPage({ docId }) {
     );
   }
 
+  // 게시된 위키 문서가 아직 하나도 없는 워크스페이스(신규 워크스페이스, 또는 생성된 문서가
+  // 전부 검토 대기 중인 경우) — resolveWikiId가 돌려줄 문서 id가 없어서 current가 계속
+  // null로 남고, 그 결과 아래 "불러오는 중…" 화면에서 영원히 못 벗어난다. 트리 자체는
+  // 정상적으로 도착했으니 별도의 빈 상태로 구분해서 보여준다.
+  if (tree && tree.every((group) => group.items.length === 0)) {
+    return (
+      <section className="view on" id="v-wiki">
+        <div className="ph"><h2>위키</h2></div>
+        <p>아직 게시된 위키 문서가 없습니다.</p>
+      </section>
+    );
+  }
+
   if (!tree || !doc) {
     return (
       <section className="view on" id="v-wiki">

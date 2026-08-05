@@ -11,6 +11,14 @@
 //    선택 결과는 POST /api/me/preferences 로 저장하면 됩니다.
 //    (지금은 localStorage 'mywiki-interests' 에 저장 — App.jsx 참고)
 
+// 랜딩 페이지(0단계) 기능 소개 카드 4개 — globals.css의 .landing-features/.lf-card 그대로 씀.
+export const LANDING_FEATURES = [
+  { icon: '📡', title: '자동 수집', desc: '네이버·GNews·전자공시 등 여러 소스에서 반도체 뉴스를 자동 수집합니다' },
+  { icon: '✅', title: '신뢰도 검증', desc: '출처·근거를 따져 신뢰도 등급을 매기고 낮은 신뢰도는 걸러냅니다' },
+  { icon: '📖', title: '위키 자동 정리', desc: '이슈·기업·기술별로 위키 문서를 자동 생성·갱신합니다' },
+  { icon: '🤖', title: 'AI 에이전트', desc: '위키 근거를 바탕으로 질문에 답하고, 답변을 위키에 저장할 수 있습니다' },
+];
+
 export const ONBOARDING_STEPS = [
   { label: '1 · 사람 확인', state: 'done' },
   { label: '2 · 로그인', state: 'done' },

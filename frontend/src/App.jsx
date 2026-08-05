@@ -39,10 +39,15 @@ import SideNav from './components/common/SideNav';
 import { BottomNav, Drawer, MoreSheet } from './components/common/MobileNav';
 import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
-import { signInWithProvider, signOut, getCurrentSession } from './api/auth';
+import { signInWithProvider, signOut, getCurrentSession, isNewAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
+import {
+  enableWikiPushNotifications,
+  disableWikiPushNotifications,
+  getActivePushSubscription,
+} from './lib/pushNotifications';
 
-import OnboardingPage from './pages/OnboardingPage';
+import EntryFlow from './pages/EntryFlow';
 import DashboardPage from './pages/DashboardPage';
 import ReportPage from './pages/ReportPage';
 import CategoryPage from './pages/CategoryPage';
@@ -88,6 +93,9 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [guestMode, setGuestMode] = useState(false);
+  const [entryStep, setEntryStep] = useState(null); // 'landing' | 'survey' | null(=일반 앱 화면)
   const [profile, setProfile] = useState(null);
   const [notiReport, setNotiReport] = useState(true);
   const [notiWiki, setNotiWiki] = useState(true);
@@ -120,16 +128,71 @@ export default function App() {
     };
   }, []);
 
-  // 실제 Supabase 세션 동기화 — 첫 진입 시 기존 세션을 읽고, 이후 로그인/로그아웃/OAuth
-  // 리다이렉트 복귀는 onAuthStateChange가 알려주는 대로 authed/profile을 갱신한다.
+  // notiWiki 토글의 실제 상태 — 지금까지는 하드코딩된 true였는데, 실제 구독이
+  // 없으면(권한 거부됐거나 애초에 켠 적 없으면) 거짓말을 하고 있었던 셈이라 실제로 확인한다.
   useEffect(() => {
-    getCurrentSession().then((session) => {
+    let alive = true;
+    getActivePushSubscription()
+      .then((subscription) => {
+        if (alive) setNotiWiki(!!subscription);
+      })
+      .catch(() => {
+        if (alive) setNotiWiki(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 실제 Supabase 세션 동기화 + 어느 화면(entryStep)부터 시작할지 결정.
+  // determineEntryStep은 매 세션 변화(최초 로드·OAuth 콜백 복귀·로그아웃)마다 다시 계산한다 —
+  // "로그인 진행 중이었다" 같은 중간 상태를 따로 안 들고 있어도 항상 같은 결론에 도달한다.
+  useEffect(() => {
+    function determineEntryStep(session) {
+      if (!session) {
+        setEntryStep('landing');
+        return;
+      }
+      const existingPrefs = readPrefs();
+      if (existingPrefs !== null) {
+        setPrefs(existingPrefs);
+        setEntryStep(null);
+        return;
+      }
+      if (isNewAccount(session)) {
+        setEntryStep('survey');
+        return;
+      }
+      // 기존 계정인데 이 기기엔 관심사 기록이 없음(다른 기기로 처음 로그인) — 빈 기본값으로 대시보드 진입.
+      // "설정 > 관심사 다시 고르기"로 나중에 채우면 됨.
+      setPrefs({ keywords: [], role: null, age: null });
+      setEntryStep(null);
+    }
+    function applySession(session) {
+      // 구글 로그인 등 OAuth 콜백은 access_token/refresh_token을 URL 해시에 실어 돌아온다.
+      // supabase-js(detectSessionInUrl)가 그 해시를 읽어 세션으로 파싱하긴 하지만, 파싱이
+      // 끝난 이 시점까지도 주소창엔 토큰이 그대로 남아 있을 수 있다 — 여기서 확실히 지운다.
+      // 앱은 라우팅에 URL 해시를 쓰지 않으므로(view는 React state) 안전하게 지울 수 있다.
+      if (window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
       setAuthed(!!session);
       setProfile(session?.user ?? null);
-    });
+      determineEntryStep(session);
+    }
+    getCurrentSession()
+      .then((session) => {
+        applySession(session);
+      })
+      .catch(() => {
+        // 세션 조회 실패(네트워크 등) — 세션 없음으로 간주하고 랜딩부터 보여준다.
+        applySession(null);
+      })
+      .finally(() => {
+        setAuthChecked(true);
+      });
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthed(!!session);
-      setProfile(session?.user ?? null);
+      applySession(session);
     });
     return () => subscription?.subscription?.unsubscribe();
   }, []);
@@ -178,9 +241,11 @@ export default function App() {
       // 저장 실패해도 이번 세션 동안은 상태로 유지됩니다.
     }
     setView('dash');
+    setEntryStep(null);
   }
 
-  // 관심사 다시 고르기 — 설정 화면에 버튼을 붙일 때 이걸 넘기면 됩니다. (TODO)
+  // 관심사 다시 고르기 — 설정 화면 버튼에 연결. entryStep을 'survey'로 되돌려서
+  // EntryFlow가 다시 선호조사 화면(OnboardingPage)을 보여주게 한다.
   function resetOnboarding() {
     try {
       localStorage.removeItem(INTERESTS_KEY);
@@ -188,12 +253,18 @@ export default function App() {
       // 무시
     }
     setPrefs(null);
+    setEntryStep('survey');
   }
 
   // 두 번째 인자(payload)는 위키 문서 지정용입니다.
   // 대시보드·리포트의 "관련 위키" 링크에서 navigateTo('wiki', 'hbm4') 처럼 넘기면
   // 위키 페이지가 해당 문서를 열고 시작합니다.
   function navigateTo(key, payload) {
+    if (guestMode && key !== 'dash') {
+      // 게스트는 대시보드 외 메뉴를 못 본다 — 화면 전환 대신 로그인 유도(프로필 드롭다운 오픈).
+      setProfileOpen(true);
+      return;
+    }
     setView(key);
     if (key === 'wiki' && payload) setWikiDocId(payload);
     setDrawerOpen(false);
@@ -229,12 +300,56 @@ export default function App() {
   }
   function handleLogout() {
     setProfileOpen(false);
+    setGuestMode(false);
     signOut();
   }
 
-  // 첫 진입 — 선호 조사 화면. 앱 뼈대(상단바/내비)를 띄우지 않고 이 화면만 보여줍니다.
-  if (prefs === null) {
-    return <OnboardingPage onComplete={handleOnboardingComplete} />;
+  // Wiki 업데이트 알림 토글 — 켤 때 실패하면(권한 거부·브라우저 미지원 등) 토글을 다시
+  // 끔 상태로 되돌리고 이유를 알려준다. 끌 때는 실패해도 화면상 토글은 그대로 꺼둔다.
+  async function handleToggleNotiWiki(next) {
+    if (next) {
+      try {
+        await enableWikiPushNotifications();
+        setNotiWiki(true);
+      } catch (err) {
+        setNotiWiki(false);
+        alert(err.message || '알림을 켜지 못했습니다.');
+      }
+    } else {
+      setNotiWiki(false);
+      disableWikiPushNotifications().catch(() => {});
+    }
+  }
+
+  // 세션 확인이 끝나기 전엔 아무것도 그리지 않는다(로그인된 사용자가 잠깐 랜딩으로
+  // 잘못 보이는 걸 막기 위함 — 확인은 보통 수백ms 안에 끝나서 별도 스피너 없이도 자연스럽다).
+  if (!authChecked) {
+    return null;
+  }
+
+  // 신규 계정 로그인 직후 — 사람확인/로그인 없이 곧장 선호조사.
+  if (entryStep === 'survey') {
+    return (
+      <EntryFlow
+        initialStep="survey"
+        onSurveyComplete={handleOnboardingComplete}
+        onGuestSkip={() => {}}
+      />
+    );
+  }
+
+  // 첫 방문(세션 없음, 게스트도 아님) — 랜딩부터.
+  if (entryStep === 'landing' && !guestMode) {
+    return (
+      <EntryFlow
+        initialStep="landing"
+        onSurveyComplete={handleOnboardingComplete}
+        onGuestSkip={() => {
+          setGuestMode(true);
+          setPrefs({ keywords: [], role: null, age: null });
+        }}
+      />
+    );
   }
 
   return (
@@ -269,7 +384,7 @@ export default function App() {
         {view === 'report' && <ReportPage onNavigate={navigateTo} />}
         {view === 'cat' && <CategoryPage />}
         {view === 'wiki' && <WikiPage docId={wikiDocId} />}
-        {view === 'agent' && <AgentPage />}
+        {view === 'agent' && <AgentPage profile={profile} />}
         {view === 'settings' && (
           <SettingsPage
             dark={dark}
@@ -277,7 +392,7 @@ export default function App() {
             notiReport={notiReport}
             onToggleNotiReport={setNotiReport}
             notiWiki={notiWiki}
-            onToggleNotiWiki={setNotiWiki}
+            onToggleNotiWiki={handleToggleNotiWiki}
             profile={profile}
             onLogout={handleLogout}
             onResetInterests={resetOnboarding}
@@ -312,7 +427,7 @@ export default function App() {
         notiReport={notiReport}
         onToggleNotiReport={setNotiReport}
         notiWiki={notiWiki}
-        onToggleNotiWiki={setNotiWiki}
+        onToggleNotiWiki={handleToggleNotiWiki}
       />
 
       <ProfilePanel

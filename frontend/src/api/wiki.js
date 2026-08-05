@@ -2,13 +2,17 @@
 // WikiPage.jsx가 지금 쓰는 목업(TREE, SOURCES, LINKED_DOCS, TIMELINE)을 이 함수들로 교체한다.
 import { apiFetch } from './client';
 
-// wiki_pages.page_type(DB CHECK 제약 5종)만 실제로 존재하는 분류값이다.
-// WikiPage.jsx의 TREE 목업 그룹명(제품·기술/경쟁사/고객·수요산업/공급망·생산)은
-// 이 5종과 1:1로 안 맞는다 — 화면 쪽 그룹 라벨을 아래 5종 기준으로 다시 맞춰야 한다.
+// wiki_pages.page_type(DB CHECK 제약 8종)만 실제로 존재하는 분류값이다.
+// 2026-08-04: supply_chain/policy/market 추가 — 리포트 6종 카테고리와 1:1로 맞춰졌다
+// (제품·기술→technology, 경쟁사→company, 고객·수요산업→industry, 공급망·생산→supply_chain,
+//  정책·규제→policy, 시장·경영→market).
 export const WIKI_PAGE_TYPE_LABELS = {
   industry: '산업',
   company: '기업',
   technology: '제품·기술',
+  supply_chain: '공급망·생산',
+  policy: '정책·규제',
+  market: '시장·경영',
   issue: '이슈',
   term: '용어',
 };
@@ -37,10 +41,13 @@ export function fetchWikiPages({ pageType, q, limit = 50, offset = 0 } = {}) {
  *   generated_by, generator_model, created_at,
  *   sources: {document_version_id, citation_order, claim_text, support_type, source_start_line, source_end_line}[],
  *   versions: {id, version_no, change_summary, created_at}[],
+ *   related_pages: {page_id, slug, title, page_type, shared_source_count}[],
  * } | null>}
  *
+ * related_pages(연결된 문서): 별도 관계 테이블 없이, 같은 원문(document_version_id)을
+ * 근거로 인용하는 다른 위키를 조회 시점에 계산해서 공유 건수 내림차순 상위 5개만 준다.
+ *
  * 주의(아직 없는 항목 — 화면 목업엔 있지만 스키마/API에 대응 없음):
- *  - "연결된 문서"(LINKED_DOCS, 상호링크): wiki_pages 간 링크 테이블이 없음. 필요하면 스키마 논의 먼저.
  *  - 근거 출처 라벨("공시 원문 · 07.21" 같은 것): sources[]는 document_version_id만 줌.
  *    문서 제목·날짜를 붙이려면 documents/document_versions 조인이 필요 — collectors 파트 확인 필요.
  *  - markdown은 raw 텍스트 하나. 화면의 "개요/쟁점" 같은 zone 나누기는 프론트에서
