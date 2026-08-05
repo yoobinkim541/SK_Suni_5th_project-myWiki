@@ -52,6 +52,14 @@ SYSTEM_PROMPT = """\
    조회해서 확인한 내용만 근거로 인정된다.
 """
 
+# 위키 근거로 답을 못 찾았을 때(has_answer=False)만 쓰는 별도 시스템 프롬프트.
+# WikiTools/citations를 아예 안 주는 일반 지식 답변이라, 절대 위키 출처처럼 보이면
+# 안 된다 — AgentResult.is_llm_fallback으로 프론트가 명확히 다른 라벨을 붙인다.
+LLM_FALLBACK_SYSTEM_PROMPT = """\
+너는 반도체/AI 산업 일반 지식으로 간결하게 답하는 보조 도우미다. 위키 근거 없이
+네 일반 지식으로만 답하고, 확실하지 않으면 그렇다고 말해라.
+"""
+
 TOOLS = [
     {
         "type": "function",
@@ -137,6 +145,9 @@ class AgentResult:
     citations: list[Citation] = field(default_factory=list)
     no_answer_reason: Optional[str] = None
     model_name: str = MODEL_NAME
+    # True면 위키 근거 없이 일반 LLM 지식으로 답한 것 — 위키 citations가 있는 답변과
+    # 절대 헷갈리면 안 돼서(citations는 항상 빈 리스트), 프론트가 이 값으로 별도 라벨을 붙인다.
+    is_llm_fallback: bool = False
 
 
 class WikiAgent:
@@ -148,6 +159,34 @@ class WikiAgent:
         )
 
     def answer(self, question: str, history: Optional[list[dict]] = None) -> AgentResult:
+        """위키 근거로 먼저 답을 찾고(_wiki_answer), 못 찾으면 일반 LLM 지식으로
+        한 번 더 시도한다(_llm_fallback_answer) — 이때는 반드시 is_llm_fallback=True로
+        표시해서 위키 근거 답변과 구분되게 한다. 폴백마저 실패하면(예외) 원래의
+        has_answer=False 결과를 그대로 낸다 — 폴백 실패를 감추고 거짓 답을 주면 안 된다."""
+        result = self._wiki_answer(question, history)
+        if result.has_answer:
+            return result
+        fallback = self._llm_fallback_answer(question, history)
+        return fallback if fallback is not None else result
+
+    def _llm_fallback_answer(
+        self, question: str, history: Optional[list[dict]] = None
+    ) -> Optional[AgentResult]:
+        messages: list[dict] = [{"role": "system", "content": LLM_FALLBACK_SYSTEM_PROMPT}]
+        messages.extend(history or [])
+        messages.append({"role": "user", "content": question})
+        try:
+            response = self._call_model(messages, use_tools=False)
+            text = (response.choices[0].message.content or "").strip()
+        except Exception:  # noqa: BLE001 - 폴백은 실패해도 원래 no_answer 결과로 조용히 넘어간다
+            return None
+        if not text:
+            return None
+        return AgentResult(
+            has_answer=True, answer=text, citations=[], is_llm_fallback=True, model_name=MODEL_NAME,
+        )
+
+    def _wiki_answer(self, question: str, history: Optional[list[dict]] = None) -> AgentResult:
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages.extend(history or [])
         messages.append({"role": "user", "content": question})
@@ -239,9 +278,9 @@ class WikiAgent:
                 return False
         return True
 
-    def _call_model(self, messages: list[dict]):
+    def _call_model(self, messages: list[dict], *, use_tools: bool = True):
         try:
-            return self._complete(MODEL_NAME, messages)
+            return self._complete(MODEL_NAME, messages, use_tools=use_tools)
         except Exception:
             if FALLBACK_MODEL_NAME == MODEL_NAME:
                 raise
@@ -249,9 +288,15 @@ class WikiAgent:
                 "openrouter_primary_model_failed_using_fallback",
                 extra={"primary_model": MODEL_NAME, "fallback_model": FALLBACK_MODEL_NAME},
             )
-            return self._complete(FALLBACK_MODEL_NAME, messages)
+            return self._complete(FALLBACK_MODEL_NAME, messages, use_tools=use_tools)
 
-    def _complete(self, model: str, messages: list[dict]):
+    def _complete(self, model: str, messages: list[dict], *, use_tools: bool = True):
+        # _llm_fallback_answer(위키 근거 없는 일반 지식 답변)는 tools 없이 호출한다 —
+        # WikiTools/citations를 아예 안 주려는 것이므로 도구 자체를 노출하면 안 된다.
+        if not use_tools:
+            return self.client.chat.completions.create(
+                model=model, max_tokens=1500, messages=messages,
+            )
         return self.client.chat.completions.create(
             model=model,
             max_tokens=1500,

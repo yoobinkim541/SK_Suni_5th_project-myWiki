@@ -314,6 +314,7 @@ def save_agent_message(session_id: str, result: AgentResult, prompt_version: str
             "content": content,
             "model_name": result.model_name,
             "prompt_version": prompt_version,
+            "is_llm_fallback": result.is_llm_fallback,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
         .execute()
@@ -353,6 +354,7 @@ def update_agent_message(message_id: str, result: AgentResult, prompt_version: s
             "content": content,
             "model_name": result.model_name,
             "prompt_version": prompt_version,
+            "is_llm_fallback": result.is_llm_fallback,
         })
         .eq("id", message_id)
         .execute()

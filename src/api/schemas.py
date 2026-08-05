@@ -69,6 +69,7 @@ class ChatMessageOut(BaseModel):
     content: str
     model_name: Optional[str] = None
     prompt_version: Optional[str] = None
+    is_llm_fallback: bool = False
     author_name: Optional[str] = None
     created_at: datetime
     citations: list[CitationOut] = []

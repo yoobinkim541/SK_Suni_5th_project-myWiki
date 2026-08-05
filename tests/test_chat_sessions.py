@@ -698,6 +698,23 @@ def test_save_to_wiki_without_citations_returns_400(make_client, monkeypatch):
     assert res.status_code == 400
 
 
+def test_save_to_wiki_rejects_llm_fallback_answer(make_client, monkeypatch):
+    """위키 근거 없이 일반 LLM 지식으로 답한 메시지(is_llm_fallback=True)는 할루시네이션
+    가능성이 있으므로 citations 유무와 무관하게 위키 저장을 거부해야 한다."""
+    llm_fallback_message = {**ASSISTANT_MESSAGE, "is_llm_fallback": True}
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: llm_fallback_message if mid == ASSISTANT_MESSAGE["id"] else None)
+    # citations가 있어도(비정상 상황을 가정) is_llm_fallback 체크가 먼저 걸려야 한다.
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [SAMPLE_CITATION])
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/save-to-wiki"
+    )
+
+    assert res.status_code == 400
+    assert "LLM" in res.json()["detail"]
+
+
 def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypatch):
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
     monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)

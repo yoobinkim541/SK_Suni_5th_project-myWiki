@@ -100,25 +100,6 @@ def _auto_title(question: str) -> str:
     return generate_session_title(question) or _truncate_title(question)
 
 
-TITLE_MAX_LEN = 40
-
-
-def _truncate_title(text: str) -> str:
-    """자동 제목 폴백 — LLM 요약이 실패하면(generate_session_title이 None) 첫 질문
-    텍스트를 그대로 잘라 쓴다. 실패해도 제목이 계속 "새 대화 N"으로 남는 일이 없게 한다."""
-    text = text.strip()
-    if len(text) <= TITLE_MAX_LEN:
-        return text
-    return text[:TITLE_MAX_LEN].rstrip() + "…"
-
-
-def _auto_title(question: str) -> str:
-    """첫 질문으로 세션 제목을 정한다 — LLM 요약을 먼저 시도하고, 실패하면(예외/빈 응답)
-    단순 truncate로 대체한다. generate_session_title은 모든 예외를 자체적으로 삼키므로
-    여기서 별도 예외 처리가 필요 없다."""
-    return generate_session_title(question) or _truncate_title(question)
-
-
 def _require_workspace(profile: dict) -> str:
     workspace_id = db.get_default_workspace_id(profile["id"])
     if not workspace_id:
@@ -296,6 +277,15 @@ def regenerate_message(session_id: str, message_id: str, profile: dict = Depends
 def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depends(get_current_user)):
     workspace_id = _require_workspace(profile)
     message = _get_owned_message(session_id, message_id, workspace_id, profile["id"])
+
+    # LLM 폴백 답변(위키 근거 없이 일반 지식으로 답한 것)은 citations가 항상 비어 있어
+    # 아래 citations 체크로도 걸리지만, 할루시네이션 가능성이 있는 답을 위키 지식으로
+    # 굳어버리는 걸 막는다는 의도를 명확히 드러내려고 이 케이스를 따로 앞에서 걸러낸다.
+    if message.get("is_llm_fallback"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="위키 근거 없이 LLM 일반 지식으로 답한 내용은 위키에 저장할 수 없음(할루시네이션 가능성)",
+        )
 
     citations = db.list_message_citations(message_id)
     if not citations:
