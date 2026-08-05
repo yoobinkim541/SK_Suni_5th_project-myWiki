@@ -198,6 +198,30 @@ class DashboardSummaryOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 카테고리 현황 — GET /categories/stats 전용
+# ---------------------------------------------------------------------------
+
+class CategoryStatOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    name: str
+    count: int
+    top_issue: str
+    tags: list[str]
+    # 프론트 CategoryCard가 이 세 값만 라벨·색상으로 변환한다. 다른 값이 가면
+    # 카드에 "신뢰도 : "만 남고 값이 빠지므로 여기서 막는다.
+    level: Literal["high", "mid", "low"]
+
+
+class CategoryStatsOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    total_documents: int
+    categories: list[CategoryStatOut]
+
+
+# ---------------------------------------------------------------------------
 # 위키 발행 브라우저 푸시 알림 — POST/DELETE /notifications/subscribe 전용
 # ---------------------------------------------------------------------------
 
