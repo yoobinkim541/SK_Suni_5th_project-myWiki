@@ -31,6 +31,7 @@ from ..pipeline_common.constants import (
 )
 from ..pipeline_common.models import DocumentRef, ProcessedDocument
 from ..pipeline_common.refs import get_document_refs, get_markdown
+from ..pipeline_common.titles import normalize_title
 from ..pipeline_common.versioning import next_document_version_no
 from . import parsers
 from .parsers import ParseError
@@ -110,7 +111,9 @@ def preprocess(document_id: UUID) -> ProcessedDocument | None:
         parsed = parsers.parse(
             body,
             content_type,
-            title_hint=document.get("title"),
+            # DB의 제목은 collect가 RSS <title>을 그대로 넣은 값이라 매체명 꼬리표가 붙어 있다.
+            # 그대로 힌트로 주면 원문 <title>이 없을 때 오염된 값이 되돌아온다.
+            title_hint=normalize_title(document.get("title") or ""),
             published_at_hint=_as_datetime(document.get("published_at")),
         )
     except ParseError as exc:
@@ -120,12 +123,16 @@ def preprocess(document_id: UUID) -> ProcessedDocument | None:
         _record_failure(job, document_id, workspace_id, f"정제 중 예외: {exc}")
         return None
 
+    # documents.title의 매체명 꼬리표를 벗긴다.
+    # 내용이 안 바뀌어도(=아래 dedup 경로) 제목은 틀려 있을 수 있으므로 dedup 판정 전에 한다.
+    title_error = _sync_title(document, workspace_id)
+
     # 동일 해시면 새 행도 새 파일도 만들지 않는다. Markdown 업로드조차 하지 않는다 (명세 §3-3).
     existing_id = deduplicate(document_id, parsed.content_hash)
     if existing_id is not None:
         existing = repository.get_version(existing_id)
         if existing is not None:
-            _complete(job, existing["id"], parsed, is_new_version=False)
+            _complete(job, existing["id"], parsed, is_new_version=False, title_error=title_error)
             return _build_processed(document, existing, is_new_version=False)
 
     try:
@@ -138,7 +145,7 @@ def preprocess(document_id: UUID) -> ProcessedDocument | None:
         return None
 
     is_new_version = not reused
-    _complete(job, version["id"], parsed, is_new_version=is_new_version)
+    _complete(job, version["id"], parsed, is_new_version=is_new_version, title_error=title_error)
     return _build_processed(document, version, is_new_version=is_new_version)
 
 
@@ -192,17 +199,59 @@ def _insert_version(
     raise _VersionInsertError(f"version_no 경합으로 버전 생성 실패: {last_error}")
 
 
-def _complete(job: dict, document_version_id: Any, parsed: Any, *, is_new_version: bool) -> None:
-    jobs.complete_job(
-        job["id"],
-        {
-            "document_version_id": str(document_version_id),
-            "is_new_version": is_new_version,
-            "content_hash": parsed.content_hash,
-            "markdown_bytes": len(parsed.markdown.encode("utf-8")),
-            "parser_version": parsed.parser_version,
-        },
-    )
+def _sync_title(document: dict, workspace_id: UUID) -> str | None:
+    """
+    documents.title에서 매체명 꼬리표를 벗긴다.
+
+    collect는 RSS <title>을 가공 없이 넣으므로 '기사제목 - 매체명' 꼬리표가 남는다
+    (collectors/interface.py _resolve_title). 2026-08-05 기준 279건 중 149건(53.4%)이
+    이 상태였고, 구글 뉴스 RSS 소스는 100%였다.
+
+    파서가 뽑은 parsed.title을 쓰지 않는 이유: 원문 <title>이 항상 더 낫지는 않다.
+    JS 렌더링 페이지나 일부 언론사는 <title>이 '네이버 뉴스' 같은 사이트명이라,
+    그걸 채택하면 멀쩡한 RSS 제목을 사이트명으로 덮어쓴다. 기존 제목에서 꼬리표만
+    벗기면 관측된 149건을 전부 덮으면서 그 위험이 없다.
+
+    collectors의 _sync_meta와 같은 규칙 — 값이 실제로 달라졌을 때만 UPDATE한다
+    (repository.update_document_meta docstring 요구사항).
+
+    반환값은 실패 사유다. run_preprocess의 루프에는 예외 처리가 없어서 여기서 예외가
+    올라가면 배치 전체가 죽는다. 버전 생성이 본 작업이고 제목 교정은 부가라서,
+    실패해도 진행하되 사유를 job result에 남겨 눈에 보이게 한다.
+    """
+    current = (document.get("title") or "").strip()
+    corrected = normalize_title(current)
+    if not corrected or corrected == current:
+        return None
+    try:
+        repository.update_document_meta(
+            UUID(str(document["id"])), workspace_id, corrected, None
+        )
+    except Exception as exc:  # noqa: BLE001 - 제목 교정 실패로 정제를 잃지 않는다
+        return f"제목 교정 실패: {exc}"
+    # 하류가 교정된 제목을 받도록 반환용 dict도 같이 고친다 (_build_processed가 이걸 읽는다).
+    document["title"] = corrected
+    return None
+
+
+def _complete(
+    job: dict,
+    document_version_id: Any,
+    parsed: Any,
+    *,
+    is_new_version: bool,
+    title_error: str | None = None,
+) -> None:
+    result = {
+        "document_version_id": str(document_version_id),
+        "is_new_version": is_new_version,
+        "content_hash": parsed.content_hash,
+        "markdown_bytes": len(parsed.markdown.encode("utf-8")),
+        "parser_version": parsed.parser_version,
+    }
+    if title_error:
+        result["title_error"] = title_error
+    jobs.complete_job(job["id"], result)
 
 
 def _record_failure(job: dict, document_id: UUID, workspace_id: UUID, message: str) -> None:

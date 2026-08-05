@@ -48,6 +48,15 @@ _UNWRAP_TAGS = ("form",)
 # <article>을 먼저 매칭하면 본문 대신 그 wrapper 전체가 뽑힌다.
 _MAIN_SELECTORS = (".article-body", "#content", "[role=main]", "article", "main")
 
+# 본문 후보로 인정할 최소 텍스트 길이. 이보다 짧으면 빈 껍데기로 보고 다음 후보로 넘어간다.
+_MIN_MAIN_TEXT_LEN = 50
+
+# 이 크기를 넘는 HTML이 텍스트를 하나도 안 남기면 JS 렌더링 페이지로 본다.
+# 관측된 실패분: news.google.com 582KB, 조선일보 236KB, biz.sbs.co.kr 10KB.
+# 가장 작은 sbs가 걸리도록 5KB로 잡았다. 어차피 사유 힌트일 뿐이라 판정이 틀려도
+# 정제 결과(실패)는 달라지지 않는다 — 그래서 보수적으로 좁히기보다 넓게 잡는다.
+_SPA_MIN_BODY_BYTES = 5_000
+
 _BLANK_LINES = re.compile(r"\n{4,}")
 _HANGUL = re.compile(r"[가-힣]")
 _ASCII_LETTER = re.compile(r"[A-Za-z]")
@@ -118,6 +127,23 @@ def _base_content_type(content_type: str) -> str:
 # ------------------------------------------------------------
 
 
+def _empty_reason_hint(name: str, body: bytes) -> str:
+    """
+    정제 결과가 빈 이유를 사유별로 구분해 남긴다.
+
+    이걸 나누지 않으면 "고칠 수 있는 실패"와 "정적 수집으로는 원리상 불가능한 실패"가
+    한 문자열로 뭉쳐서, 실패율을 봐도 손댈 곳이 있는지 판단할 수 없다.
+    2026-08-05 시점 13건 중 12건이 아래 SPA 경로였다
+    (조선일보 계열 8, news.google.com 3, biz.sbs.co.kr 1).
+    """
+    if name != "html" or not body:
+        return ""
+    # 원문은 큰데 텍스트가 거의 없으면 본문을 JS로 그리는 페이지다.
+    if len(body) >= _SPA_MIN_BODY_BYTES:
+        return " — 본문이 JS로 렌더링되는 페이지로 보임(정적 수집 불가)"
+    return ""
+
+
 def _parse_html(body: bytes, content_type: str) -> tuple[str, str | None, str | None]:
     """(markdown, title, published_at_raw)."""
     from bs4 import BeautifulSoup
@@ -157,10 +183,14 @@ def _parse_html(body: bytes, content_type: str) -> tuple[str, str | None, str | 
     for tag in soup(list(_UNWRAP_TAGS)):
         tag.unwrap()
 
+    # 매칭되는 것이 아니라 **내용이 있는** 첫 노드를 고른다.
+    # 비즈니스포스트(businesspost.co.kr)는 빈 <div id="content">를 두고 본문을 그 밖에
+    # 두는데, 매칭만 보면 이 빈 노드가 잡혀 soup.body 폴백을 가로막는다.
+    # 실제로 그 사이트 기사가 "정제 결과가 비어 있다"로 실패했다 (2026-08-03).
     node = None
     for selector in _MAIN_SELECTORS:
         found = soup.select_one(selector)
-        if found is not None:
+        if found is not None and len(found.get_text(strip=True)) >= _MIN_MAIN_TEXT_LEN:
             node = found
             break
     if node is None:
@@ -277,7 +307,7 @@ def parse(
 
     markdown = normalize_markdown(markdown)
     if not markdown:
-        raise ParseError(f"정제 결과가 비어 있다 (parser={name})")
+        raise ParseError(f"정제 결과가 비어 있다 (parser={name}){_empty_reason_hint(name, body)}")
 
     published_at = parse_datetime(published_raw) or published_at_hint
     if published_at is not None and published_at.tzinfo is None:
