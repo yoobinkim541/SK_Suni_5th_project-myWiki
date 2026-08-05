@@ -15,12 +15,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from dataclasses import dataclass, field
 from typing import Optional
 
 from openai import OpenAI
 
+from ..wiki.citation_text import strip_orphaned_citation_markers
 from .wiki_tools import WikiTools
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -48,27 +48,6 @@ SYSTEM_PROMPT = """\
    명시적으로 전환해라.
 5. 톤은 직접적이고 전문적으로, 가벼운 대화체는 쓰지 마라.
 """
-
-# 답변 본문의 [N] 표기 중 citations 배열 범위(1..citation_count)를 벗어난 것을 찾는다.
-# 앞에 붙는 공백까지 같이 지워서 "문장입니다 [4]."처럼 공백이 남지 않게 한다.
-_CITATION_MARKER_RE = re.compile(r"\s?\[(\d+)\]")
-
-
-def _strip_orphaned_citation_markers(answer: str, citation_count: int) -> str:
-    """citations 배열 범위를 벗어난 [N] 각주를 답변 본문에서 제거한다.
-
-    LLM이 답변 본문에는 [1]~[N]을 인용해놓고 citations는 그보다 적게 제출하는 경우
-    (실사용 데이터에서 확인된 버그) — 시스템 프롬프트로 일치를 요구하지만, LLM 준수
-    여부와 무관하게 죽은 각주(클릭해도 갈 곳 없는 번호)가 저장되지 않도록 코드에서
-    결정적으로 제거한다.
-    """
-    def _replace(match: re.Match) -> str:
-        n = int(match.group(1))
-        if 1 <= n <= citation_count:
-            return match.group(0)
-        return ""
-
-    return _CITATION_MARKER_RE.sub(_replace, answer)
 
 TOOLS = [
     {
@@ -209,7 +188,7 @@ class WikiAgent:
                     if self._is_grounded(citations, seen_document_version_ids):
                         terminal_result = AgentResult(
                             has_answer=True,
-                            answer=_strip_orphaned_citation_markers(args["answer"], len(citations)),
+                            answer=strip_orphaned_citation_markers(args["answer"], len(citations)),
                             citations=citations,
                         )
                     else:
