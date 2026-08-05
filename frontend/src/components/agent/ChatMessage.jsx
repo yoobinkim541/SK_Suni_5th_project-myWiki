@@ -183,6 +183,14 @@ export default function ChatMessage({ message, flag, flagPriv = false, onAction,
                   </ActSpan>
                 );
               }
+              if (a === '관련 문서 찾아보기') {
+                // 백엔드 호출 없이 새 탭을 여는 즉시 동작이라 로딩/완료 상태가 없다.
+                return (
+                  <ActSpan key={a} kind="search" onClick={() => onAction?.(a, message)}>
+                    {a}
+                  </ActSpan>
+                );
+              }
               return <span key={a}>{a}</span>;
             })}
           </div>

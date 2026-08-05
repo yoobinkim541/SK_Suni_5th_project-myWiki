@@ -439,12 +439,30 @@ export default function AgentPage({ profile }) {
     }
   }
 
+  // "관련 문서 찾아보기" — 백엔드 API 없이, 이 답변 바로 앞 질문 텍스트로 구글
+  // 검색 결과를 새 탭으로 연다(근거 부족 카드에서만 노출되는 액션).
+  function handleSearchRelatedDocs(message) {
+    const messageId = message._id;
+    if (!messageId || !current) return;
+    const idx = current.messages.findIndex((m) => m._id === messageId);
+    let question = null;
+    for (let i = idx - 1; i >= 0; i -= 1) {
+      if (current.messages[i].role === 'me') {
+        question = current.messages[i].text;
+        break;
+      }
+    }
+    if (!question) return;
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(question)}`, '_blank', 'noopener,noreferrer');
+  }
+
   function handleMessageAction(label, message) {
     if (label === '위키에 저장') handleSaveToWiki(message);
     if (label === '팀에 공유') handleOpenShareModal(message);
     if (label === '복사') handleCopy(message);
     if (label === '다시 생성') handleRegenerate(message);
     if (label === '삭제') handleDeleteMessage(message);
+    if (label === '관련 문서 찾아보기') handleSearchRelatedDocs(message);
   }
 
   if (error && !panes) {
