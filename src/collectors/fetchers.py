@@ -11,6 +11,9 @@ sources.config(JSONB)에서 읽는 키
     query             검색어 (news 소스)
     lang              gnews 검색 언어 (기본 en)
     country           gnews 매체 국가 (선택)
+    corp_code         DART 고유번호 8자리 (disclosure 소스 필수) — corpCode.xml에서 1회 조회
+    pblntf_ty         DART 공시유형 필터 (disclosure 소스, 선택 — 없으면 전체)
+    lookback_days     disclosure 소스가 since 없이 처음 돌 때 조회할 기간 (기본 30일)
     max_items         1회 최대 항목 수 (CollectRequest.limit이 우선)
     request_delay_sec 외부 요청 간격 (기본 1.0초)
     timeout_sec       요청 타임아웃 (기본 15초)
@@ -19,6 +22,7 @@ sources.config(JSONB)에서 읽는 키
 필요한 환경변수
     NAVER_CLIENT_ID / NAVER_CLIENT_SECRET   provider='naver'
     GNEWS_API_KEY                           provider='gnews'
+    DART_API_KEY                            disclosure 소스 (https://opendart.fss.or.kr/api)
 
 TODO(미확정): config 스키마·수집 주기·요청 간격은 지침 §9-A-3, 수집 키워드 셋은 §9-A-2.
 확정되면 config/sources.yaml로 옮기고 이 표를 갱신한다.
@@ -30,7 +34,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from ..pipeline_common import timeutil
@@ -547,6 +551,179 @@ def _collect_gnews_notices(payload: dict, outcome: FetchOutcome) -> None:
                 outcome.notice(f"{section}.{key}: {message}")
 
 
+# ------------------------------------------------------------
+# DART 공시 (source_type='disclosure')
+# ------------------------------------------------------------
+
+DART_LIST_URL = "https://opendart.fss.or.kr/api/list.json"
+DART_DOCUMENT_URL = "https://opendart.fss.or.kr/api/document.xml"
+DART_VIEWER_URL = "https://dart.fss.or.kr/dsaf001/main.do"
+
+# list.json의 status. "000"만 정상이고, "013"은 에러가 아니라 "조회된 데이타가
+# 없음"이라 빈 결과로 처리해야 한다(FetchError로 올리면 매번 job이 failed로 남는다).
+_DART_STATUS_OK = "000"
+_DART_STATUS_NO_DATA = "013"
+
+DEFAULT_DART_LOOKBACK_DAYS = 30
+
+
+def _dart_date(dt: datetime) -> str:
+    return dt.strftime("%Y%m%d")
+
+
+def _parse_dart_date(value: str | None) -> datetime | None:
+    """
+    DART rcept_dt('YYYYMMDD')를 UTC datetime으로.
+
+    timeutil.parse_datetime()을 안 쓰는 이유 — Python 3.11+의 datetime.fromisoformat은
+    'YYYYMMDD'도 파싱하지만 naive datetime을 돌려준다. published_at_hint를
+    request.since(항상 tz-aware)와 비교하면 naive/aware 비교로 TypeError가 난다.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y%m%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _extract_disclosure_html(zip_bytes: bytes) -> bytes:
+    """
+    document.xml(zip) 안의 원문을 꺼낸다.
+
+    파일명은 .xml이지만 내용은 실제로 HTML이다(DART 자체 포맷) — 그대로
+    content_type='text/html'로 넘기면 기존 _parse_html이 처리한다.
+    첨부문서가 여러 개면 zip 안에 항목이 여러 개일 수 있어 이어 붙인다.
+    """
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        names = zf.namelist()
+        if not names:
+            return b""
+        return b"\n".join(zf.read(name) for name in names)
+
+
+def _fetch_disclosure_document(
+    source: dict, api_key: str, rcept_no: str, report_name: str | None, published_at: datetime | None
+) -> RawFetchResult | None:
+    """공시 1건의 원문(document.xml)을 가져와 RawFetchResult로 만든다. 실패/빈 응답이면 None."""
+    import httpx
+
+    timeout = _conf_number(source, "timeout_sec", DEFAULT_TIMEOUT_SEC)
+    try:
+        response = httpx.get(
+            DART_DOCUMENT_URL,
+            params={"crtfc_key": api_key, "rcept_no": rcept_no},
+            timeout=timeout,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise FetchError(f"DART document.xml 요청 실패({rcept_no}): {exc}") from exc
+    if response.status_code >= 400 or not response.content:
+        return None
+
+    try:
+        html_body = _extract_disclosure_html(response.content)
+    except Exception:  # noqa: BLE001 - 손상된 zip 등
+        return None
+    if not html_body:
+        return None
+
+    # 본문은 document.xml에서 가져오지만, canonical_url은 사람이 실제로 클릭해서
+    # 보는 뷰어 주소를 쓴다 — "원문 열기" 링크로 열었을 때 실제 화면과 일치해야 한다.
+    # main.do 자체는 JS로 본문을 늦게 채우는 frameset이라 body로는 못 쓴다
+    # (구글 뉴스 리다이렉트와 같은 문제, _resolve_google_news_url 참조).
+    return RawFetchResult(
+        source_name=source["name"],
+        url=f"{DART_VIEWER_URL}?rcpNo={rcept_no}",
+        fetched_at=datetime.now(timezone.utc),
+        content_type="text/html",
+        body=html_body,
+        title_hint=(report_name or "").strip() or None,
+        published_at_hint=published_at,
+    )
+
+
+def fetch_disclosure(source: dict, request: CollectRequest) -> FetchOutcome:
+    """
+    DART Open API(공시검색) -> 각 공시의 원문(document.xml).
+
+    자격증명은 환경변수 DART_API_KEY에서 읽는다(https://opendart.fss.or.kr/api/document.xml 발급).
+    config.corp_code(DART 고유번호 8자리)가 필수다 — corpCode.xml 벌크 파일에서
+    회사명으로 찾아야 하는 값인데, 그 조회는 소스를 등록할 때 1회만 하면 되므로
+    수집기가 매번 3MB대 파일을 받지 않도록 config에 직접 박아 둔다.
+
+    한 페이지(page_count, 최대 100건)만 가져온다 — naver/gnews도 단일 호출 범위
+    안에서만 수집하는 것과 같은 단순화다.
+    """
+    import httpx
+
+    api_key = os.environ.get("DART_API_KEY")
+    if not api_key:
+        raise FetchError("DART_API_KEY 환경변수가 없다")
+
+    conf = _config(source)
+    corp_code = conf.get("corp_code")
+    if not corp_code:
+        raise FetchError("disclosure 소스에 config.corp_code가 없다")
+
+    now = datetime.now(timezone.utc)
+    since = request.since
+    lookback_days = int(_conf_number(source, "lookback_days", DEFAULT_DART_LOOKBACK_DAYS))
+    bgn_de = _dart_date(since) if since else _dart_date(now - timedelta(days=lookback_days))
+    end_de = _dart_date(now)
+
+    limit = _max_items(source, request)
+    params: dict[str, Any] = {
+        "crtfc_key": api_key,
+        "corp_code": corp_code,
+        "bgn_de": bgn_de,
+        "end_de": end_de,
+        "page_count": max(1, min(limit, 100)),
+    }
+    if conf.get("pblntf_ty"):
+        params["pblntf_ty"] = conf["pblntf_ty"]
+
+    try:
+        response = httpx.get(
+            DART_LIST_URL, params=params, timeout=_conf_number(source, "timeout_sec", DEFAULT_TIMEOUT_SEC)
+        )
+        payload = response.json()
+    except Exception as exc:  # noqa: BLE001
+        raise FetchError(f"DART 공시검색 API 호출 실패: {exc}") from exc
+
+    status = payload.get("status")
+    if status == _DART_STATUS_NO_DATA:
+        return FetchOutcome()
+    if status != _DART_STATUS_OK:
+        raise FetchError(f"DART 공시검색 API 응답 오류 {status}: {payload.get('message')}")
+
+    outcome = FetchOutcome()
+    for entry in payload.get("list", []):
+        if len(outcome.items) >= limit:
+            break
+        rcept_no = (entry.get("rcept_no") or "").strip()
+        if not rcept_no:
+            outcome.skip("no_canonical_url")
+            continue
+        published_at = _parse_dart_date(entry.get("rcept_dt"))
+        if since and published_at and published_at < since:
+            outcome.skip("older_than_since")
+            continue
+        _sleep_between_requests(source)
+        try:
+            item = _fetch_disclosure_document(source, api_key, rcept_no, entry.get("report_nm"), published_at)
+        except FetchError:
+            outcome.skip("fetch_failed")
+            continue
+        if item is None:
+            outcome.skip("blocked_or_empty")
+            continue
+        outcome.items.append(item)
+    return outcome
+
+
 # source_type='news' 안에서 제공자를 나눈다. sources.source_type은 DB CHECK로
 # 6개 값만 허용돼 gnews용 값을 새로 만들 수 없다. config.provider로 가른다.
 _NEWS_PROVIDERS: dict[str, Fetcher] = {
@@ -570,5 +747,5 @@ def fetch_news(source: dict, request: CollectRequest) -> FetchOutcome:
 register_fetcher("rss", fetch_rss)
 register_fetcher("news", fetch_news)
 register_fetcher("website", fetch_website)
-# disclosure·report·manual_upload는 MVP 범위 밖이다.
-# disclosure(DART) 추가 여부는 지침 §9-C-4, manual_upload는 명세 §4-2 참조.
+register_fetcher("disclosure", fetch_disclosure)
+# report·manual_upload는 MVP 범위 밖이다. manual_upload는 명세 §4-2 참조.
