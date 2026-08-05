@@ -11,7 +11,6 @@
 const OAUTH_PROVIDERS = [
   { key: 'google', label: 'Google로 계속하기', ic: 'G' },
   { key: 'github', label: 'GitHub로 계속하기', ic: 'Gh' },
-  { key: 'custom:naver', label: '네이버로 계속하기', ic: 'N' },
 ];
 
 export default function ProfilePanel({ isOpen, authed, profile, onLogin, onLogout }) {

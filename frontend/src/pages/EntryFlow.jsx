@@ -17,13 +17,10 @@ import { signInWithProvider } from '../api/auth';
 import { LANDING_FEATURES } from '../data/mockOnboarding';
 import OnboardingPage from './OnboardingPage';
 
-// ProfilePanel.jsx의 OAUTH_PROVIDERS와 동일 — 카카오는 Supabase provider 비활성 상태라 제외(PR #31과 동일 이유).
-// 네이버는 Supabase 기본 provider가 아니라 Custom Providers(OIDC)로 등록했다.
-// 그래서 key가 'naver'가 아니라 대시보드의 Provider Identifier인 'custom:naver'다.
+// 로그인 화면에는 Google · GitHub 두 개만 남긴다(카카오·네이버 등 나머지 소셜 로그인 제거).
 const OAUTH_PROVIDERS = [
   { key: 'google', label: 'Google로 계속하기', ic: 'G' },
   { key: 'github', label: 'GitHub로 계속하기', ic: 'Gh' },
-  { key: 'custom:naver', label: '네이버로 계속하기', ic: 'N' },
 ];
 
 const ENTRY_STEPS_LABELS = ['1 · 사람 확인', '2 · 로그인', '3 · 선호 조사', '4 · 대시보드'];

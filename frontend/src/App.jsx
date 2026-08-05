@@ -66,18 +66,17 @@ function getInitial(key, fallback) {
 }
 
 // 저장된 선호 조사 결과를 읽습니다. 키 자체가 없으면 null(= 아직 온보딩 전)을 돌려줍니다.
-// 저장 형태: { keywords: [], role: string|null, age: string|null }
+// 저장 형태: { keywords: [], role: string|null }
 // (예전 버전은 배열만 저장했어서, 배열로 들어오면 keywords로 승격시킵니다)
 function readPrefs() {
   try {
     const raw = localStorage.getItem(INTERESTS_KEY);
     if (raw === null) return null;
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return { keywords: parsed, role: null, age: null };
+    if (Array.isArray(parsed)) return { keywords: parsed, role: null };
     return {
       keywords: Array.isArray(parsed?.keywords) ? parsed.keywords : [],
       role: parsed?.role ?? null,
-      age: parsed?.age ?? null,
     };
   } catch {
     return null;
@@ -165,7 +164,7 @@ export default function App() {
       }
       // 기존 계정인데 이 기기엔 관심사 기록이 없음(다른 기기로 처음 로그인) — 빈 기본값으로 대시보드 진입.
       // "설정 > 관심사 다시 고르기"로 나중에 채우면 됨.
-      setPrefs({ keywords: [], role: null, age: null });
+      setPrefs({ keywords: [], role: null });
       setEntryStep(null);
     }
     function applySession(session) {
@@ -227,12 +226,11 @@ export default function App() {
   }, [fontSize]);
 
   // 온보딩 완료 — 선호 조사 결과를 저장하고 대시보드로 들어갑니다.
-  // 관심 키워드는 대시보드 "최신 뉴스" 기본 필터로, 직무·연령대는 추후 랭킹 가중치로 씁니다.
+  // 관심 키워드는 대시보드 "최신 뉴스" 기본 필터로, 직무는 추후 랭킹 가중치로 씁니다.
   function handleOnboardingComplete(result) {
     const value = {
       keywords: Array.isArray(result?.keywords) ? result.keywords : [],
       role: result?.role ?? null,
-      age: result?.age ?? null,
     };
     setPrefs(value);
     try {
@@ -346,7 +344,7 @@ export default function App() {
         onSurveyComplete={handleOnboardingComplete}
         onGuestSkip={() => {
           setGuestMode(true);
-          setPrefs({ keywords: [], role: null, age: null });
+          setPrefs({ keywords: [], role: null });
         }}
       />
     );
