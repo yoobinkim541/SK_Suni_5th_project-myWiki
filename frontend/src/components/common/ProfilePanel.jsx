@@ -7,9 +7,11 @@
 //  · 로그아웃 상태(authed=false): 소셜 로그인 버튼 — App.jsx의 onLogin이 signInWithOAuth로 리다이렉트한다.
 //    카카오는 Supabase provider가 아직 활성화 안 돼 있어서 버튼을 빼뒀다(Google/GitHub만 활성화됨).
 
+// EntryFlow.jsx의 OAUTH_PROVIDERS와 동일하게 유지한다(둘 중 하나만 고치면 화면마다 버튼이 달라진다).
 const OAUTH_PROVIDERS = [
   { key: 'google', label: 'Google로 계속하기', ic: 'G' },
   { key: 'github', label: 'GitHub로 계속하기', ic: 'Gh' },
+  { key: 'custom:naver', label: '네이버로 계속하기', ic: 'N' },
 ];
 
 export default function ProfilePanel({ isOpen, authed, profile, onLogin, onLogout }) {

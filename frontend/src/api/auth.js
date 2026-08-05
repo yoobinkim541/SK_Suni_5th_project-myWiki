@@ -2,9 +2,21 @@
 // LoginScreen.jsx의 handleLogin 주석("실제 연동 시: supabase.auth.signInWithOAuth")을 그대로 구현.
 import { supabase } from './supabaseClient';
 
-/** provider: 'google' | 'github' | 'kakao' — LoginScreen.jsx OAUTH_PROVIDERS.key와 맞춤 */
+/**
+ * provider: 'google' | 'github' | 'custom:naver'
+ *   — EntryFlow.jsx · ProfilePanel.jsx의 OAUTH_PROVIDERS.key와 맞춤.
+ *     'custom:naver'는 Supabase Custom Providers(OIDC)에 등록한 Provider Identifier다.
+ *
+ * redirectTo를 도메인 하드코딩 대신 window.location.origin으로 두면 로컬(5173)과 배포
+ * 양쪽에서 그대로 동작한다. 콜백은 토큰을 URL 해시로 실어 오고 supabaseClient.js의
+ * detectSessionInUrl이 이를 세션으로 바꾸므로, 전용 콜백 라우트 없이 루트로 돌려보내면 된다.
+ * (단 Supabase Authentication → URL Configuration → Redirect URLs 에 해당 origin이 등록돼 있어야 한다)
+ */
 export function signInWithProvider(provider) {
-  return supabase.auth.signInWithOAuth({ provider });
+  return supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: `${window.location.origin}/` },
+  });
 }
 
 export function signOut() {
