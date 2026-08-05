@@ -1,15 +1,17 @@
 // 공통 컴포넌트 1/6 — 상단바
 // PC/모바일 공용. PC는 시안 CSS의 .deck, 모바일은 .m-topbar 클래스를 씁니다.
 //
-// ⚠ 로고: PC 상단바(.deck)의 브랜드 영역은 이미지 로고(logo.png / logo-dark.png)를 씁니다.
-//   라이트/다크 두 버전을 모두 렌더링해두고, CSS(:root[data-theme="dark"])로 하나만 보이게
-//   전환합니다(민트그린 다크 버전). 모바일(.m-logo)과 사이드바(SideNav)는 기존 LogoMark(SVG)를
-//   그대로 유지합니다.
+// ⚠ 로고: PC 상단바(.deck)와 모바일 상단바(.m-topbar) 모두 이미지 로고
+//   (logo.png / logo-dark.png)를 씁니다. 라이트/다크 두 버전을 모두 렌더링해두고,
+//   CSS(:root[data-theme="dark"])로 하나만 보이게 전환합니다(민트그린 다크 버전).
+//   사이드바(SideNav)는 기존 LogoMark(SVG)를 그대로 유지합니다.
+//
+// ⚠ 모바일 로고는 아이콘+텍스트가 합쳐진 이미지라, 기존 LogoMark + "myWiki" 텍스트 조합을
+//   <img> 하나로 대체했습니다. 상단바 높이에 맞춰 CSS(.m-logo-img)에서 높이만 제한합니다.
 //
 // ⚠ 우측 상단 프로필 버튼(PC만): 톱니바퀴(SettingsPanel) + .avatar(ProfilePanel).
 //   .deck-right로 감싸고 margin-left:auto로 우측 끝에 붙입니다. 열고 닫기는 App.jsx가 합니다.
 
-import LogoMark from './LogoMark';
 import logo from '../../assets/logo.png';
 import logoDark from '../../assets/logo-dark.png';
 
@@ -35,7 +37,8 @@ export default function TopBar({
         </button>
 
         <button className="m-logo" onClick={onLogoClick} title="myWiki — 처음 화면으로 새로고침">
-          <LogoMark className="m-logo-ic" />myWiki
+          <img src={logo} alt="myWiki" className="m-logo-img logo-light" />
+          <img src={logoDark} alt="myWiki" className="m-logo-img logo-dark" />
         </button>
 
         <div className="m-right">
