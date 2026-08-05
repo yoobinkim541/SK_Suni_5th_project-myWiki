@@ -179,6 +179,21 @@ class UpdateWorkspaceSettingsRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 메인 대시보드 KPI — GET /dashboard/summary 전용
+# ---------------------------------------------------------------------------
+
+class DashboardSummaryOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    collected_docs: int
+    collected_docs_today: int
+    generated_reports: int
+    wiki_docs: int
+    wiki_docs_new_today: int
+    avg_reliability_label: str
+
+
+# ---------------------------------------------------------------------------
 # 위키 발행 브라우저 푸시 알림 — POST/DELETE /notifications/subscribe 전용
 # ---------------------------------------------------------------------------
 
