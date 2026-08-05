@@ -226,54 +226,6 @@ class CategoryStatsOut(BaseModel):
 # 위키 발행 브라우저 푸시 알림 — POST/DELETE /notifications/subscribe 전용
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# ?? ??? ??? GET /reports/daily
-# ---------------------------------------------------------------------------
-
-class DailyReportCitationOut(BaseModel):
-    id: str
-    section_id: str
-    document_version_id: str
-    source_start_line: Optional[int] = None
-    source_end_line: Optional[int] = None
-    quoted_text: Optional[str] = None
-    relevance_score: Optional[float] = None
-    citation_order: Optional[int] = None
-    document_title: Optional[str] = None
-    source_url: Optional[str] = None
-    source_name: Optional[str] = None
-    published_at: Optional[str] = None
-
-
-class DailyReportSectionOut(BaseModel):
-    id: str
-    report_id: str
-    issue_key: str
-    section_order: int
-    title: str
-    content: dict | str | None = None
-    status: str
-    model_name: Optional[str] = None
-    prompt_version: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    citations: list[DailyReportCitationOut] = []
-
-
-class DailyReportOut(BaseModel):
-    report_id: str
-    workspace_id: str
-    report_key: str
-    version: int
-    title: str
-    report_type: str
-    status: str
-    date: str
-    created_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    sections: list[DailyReportSectionOut] = []
-
-
 class PushSubscriptionKeys(BaseModel):
     p256dh: str
     auth: str
