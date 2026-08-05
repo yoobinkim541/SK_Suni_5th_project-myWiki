@@ -11,13 +11,15 @@
 import KpiCard from '../dashboard/KpiCard';
 import CategoryRow from './CategoryRow';
 import CategoryKeywordChart from './CategoryKeywordChart';
-import { MOCK_CATEGORIES, MOCK_SUMMARY } from '../../data/mockCategory';
 
+// 목업을 기본값으로 두지 않는다. 실연동 후 summary/categories가 undefined로 들어오면
+// 목업이 조용히 fallback돼서, 실데이터가 안 오는 상황을 정상처럼 보이게 만든다.
+// 데이터를 채우는 책임은 CategoryPage에 있다.
 export default function CategoryDetail({
   date = '2026.07.24 금요일',
   statusLabel = '반도체 도메인 · 일 배치 정상',
-  summary = MOCK_SUMMARY,
-  categories = MOCK_CATEGORIES,
+  summary,
+  categories = [],
 }) {
   const s = summary;
 
@@ -35,15 +37,17 @@ export default function CategoryDetail({
       <section className="sec">
         <div className="sh">
           <span className="t">오늘의 분류 요약</span>
-          <span className="s">{s.totalLabel}</span>
+          <span className="s">{s?.totalLabel}</span>
           <span className="r">전일 대비 변화 포함</span>
         </div>
+        {/* 옵셔널 체이닝 — 한 칸이라도 비면 페이지 전체가 흰 화면이 되던 자리다.
+            값을 채우는 책임은 services/categoryApi.js에 있고, 여기선 크래시만 막는다. */}
         <div className="kpi">
-          <KpiCard label="최다 분류" value={s.topCategory.value} isText desc={s.topCategory.desc} />
-          <KpiCard label="증가 폭 최대" value={s.maxIncrease.value} isText desc={s.maxIncrease.desc} />
-          <KpiCard label="신규 이슈 분류" value={s.newCategory.value} isText desc={s.newCategory.desc} />
+          <KpiCard label="최다 분류" value={s?.topCategory?.value} isText desc={s?.topCategory?.desc} />
+          <KpiCard label="증가 폭 최대" value={s?.maxIncrease?.value} isText desc={s?.maxIncrease?.desc} />
+          <KpiCard label="신규 이슈 분류" value={s?.newCategory?.value} isText desc={s?.newCategory?.desc} />
           {/* 평균 신뢰도는 색상 없이 기본 텍스트색으로 표시 (KpiCard 기본값 그대로) */}
-          <KpiCard label="평균 신뢰도" value={s.avgConfidence.value} isText desc={s.avgConfidence.desc} />
+          <KpiCard label="평균 신뢰도" value={s?.avgConfidence?.value} isText desc={s?.avgConfidence?.desc} />
         </div>
       </section>
 
