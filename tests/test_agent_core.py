@@ -138,6 +138,39 @@ def test_answer_returns_result_with_citations_after_reading_page(agent, wiki_too
     wiki_tools.read_wiki_page.assert_called_once_with("hbm4")
 
 
+def test_answer_strips_out_of_range_citation_markers_from_answer_text(agent, wiki_tools, monkeypatch):
+    """LLM이 citations는 1건만 제출했는데 본문에는 [1]과 [4]까지 인용한 경우 —
+    실사용 데이터에서 확인된 버그(본문 각주 개수와 citations 개수 불일치)의 회귀 테스트.
+    citations 범위를 벗어난 번호는 저장 전에 제거해야 죽은 각주가 화면에 안 남는다."""
+    wiki_tools.list_wiki_topics.return_value = [
+        FakeTopic(id="1", slug="hbm4", title="HBM4", page_type="technology", status="published")
+    ]
+    wiki_tools.read_wiki_page.return_value = FakePage(
+        title="HBM4",
+        markdown="# HBM4\nHBM4는 차세대 메모리다.",
+        sources=[FakeSource(document_version_id="doc-1", claim_text="HBM4는 차세대 메모리다.")],
+    )
+    citation = {
+        "document_version_id": "doc-1",
+        "wiki_slug": "hbm4",
+        "quote": "HBM4는 차세대 메모리다.",
+        "relevance_score": 0.9,
+    }
+    responses = [
+        tool_call_response(("call-1", "list_wiki_topics", {})),
+        tool_call_response(("call-2", "read_wiki_page", {"slug": "hbm4"})),
+        tool_call_response(("call-3", "submit_answer", {
+            "answer": "HBM4는 차세대 메모리다.[1] 추가로 이런 내용도 있다.[4]",
+            "citations": [citation],
+        })),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4가 뭐야?")
+
+    assert result.answer == "HBM4는 차세대 메모리다.[1] 추가로 이런 내용도 있다."
+
+
 def test_answer_passes_question_and_history_to_first_call(agent, wiki_tools, monkeypatch):
     # messages는 answer() 내부에서 in-place로 계속 append되는 같은 리스트이므로,
     # 호출 시점 상태를 보려면 그때그때 복사해서 기록해야 한다.

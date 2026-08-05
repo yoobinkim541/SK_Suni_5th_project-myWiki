@@ -20,6 +20,7 @@ from typing import Optional
 
 from openai import OpenAI
 
+from ..wiki.citation_text import strip_orphaned_citation_markers
 from .wiki_tools import WikiTools
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -39,7 +40,9 @@ SYSTEM_PROMPT = """\
    필요하면 여러 문서를 읽어도 된다.
 3. 답을 뒷받침할 근거를 찾았으면 submit_answer를 호출해라. 문장마다 어떤 근거(citations)를
    썼는지 반드시 포함하고, citations의 document_version_id는 read_wiki_page 결과에서
-   본 sources 중에서만 골라라 (지어내지 마라).
+   본 sources 중에서만 골라라 (지어내지 마라). 답변 본문에 쓰는 근거 번호 [N]은 반드시
+   citations 배열의 N번째(1부터 시작) 항목과 정확히 대응해야 한다 — citations에 없는
+   번호는 절대 쓰지 마라.
 4. 근거를 찾지 못했거나, 질문에 답하기에 근거가 불충분하거나 상호 확인이 안 되면
    submit_answer 대신 반드시 submit_no_answer를 호출해라. 애매하게 답하지 말고 이 상태로
    명시적으로 전환해라.
@@ -75,7 +78,14 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "answer": {"type": "string", "description": "근거 번호 표기(예: [1])를 포함한 답변 본문"},
+                    "answer": {
+                        "type": "string",
+                        "description": (
+                            "근거 번호 표기(예: [1])를 포함한 답변 본문 — [N]은 citations 배열의"
+                            " N번째(1부터) 항목과 정확히 일치해야 하며, citations에 없는 번호는"
+                            " 쓰지 말 것"
+                        ),
+                    },
                     "citations": {
                         "type": "array",
                         "items": {
@@ -177,7 +187,9 @@ class WikiAgent:
                     citations = [Citation(**c) for c in args.get("citations", [])]
                     if self._is_grounded(citations, seen_document_version_ids):
                         terminal_result = AgentResult(
-                            has_answer=True, answer=args["answer"], citations=citations,
+                            has_answer=True,
+                            answer=strip_orphaned_citation_markers(args["answer"], len(citations)),
+                            citations=citations,
                         )
                     else:
                         # citations가 비었거나, read_wiki_page로 실제 조회한 문서에 없는

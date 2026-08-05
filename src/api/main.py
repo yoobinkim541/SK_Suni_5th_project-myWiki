@@ -41,6 +41,7 @@ from .schemas import (
     ShareToTeamRequest,
     WorkspaceMemberOut,
 )
+from .dashboard_router import router as dashboard_router
 from .notifications_router import router as notifications_router
 from .settings_router import router as settings_router
 from .wiki_router import router as wiki_router
@@ -75,6 +76,26 @@ app.add_middleware(
 app.include_router(wiki_router)
 app.include_router(settings_router)
 app.include_router(notifications_router)
+app.include_router(dashboard_router)
+
+
+TITLE_MAX_LEN = 40
+
+
+def _truncate_title(text: str) -> str:
+    """자동 제목 폴백 — LLM 요약이 실패하면(generate_session_title이 None) 첫 질문
+    텍스트를 그대로 잘라 쓴다. 실패해도 제목이 계속 "새 대화 N"으로 남는 일이 없게 한다."""
+    text = text.strip()
+    if len(text) <= TITLE_MAX_LEN:
+        return text
+    return text[:TITLE_MAX_LEN].rstrip() + "…"
+
+
+def _auto_title(question: str) -> str:
+    """첫 질문으로 세션 제목을 정한다 — LLM 요약을 먼저 시도하고, 실패하면(예외/빈 응답)
+    단순 truncate로 대체한다. generate_session_title은 모든 예외를 자체적으로 삼키므로
+    여기서 별도 예외 처리가 필요 없다."""
+    return generate_session_title(question) or _truncate_title(question)
 
 
 TITLE_MAX_LEN = 40
