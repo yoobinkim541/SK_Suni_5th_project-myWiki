@@ -32,8 +32,9 @@ class FakeToolCall:
 
 
 class FakeMessage:
-    def __init__(self, tool_calls=None):
+    def __init__(self, tool_calls=None, content=None):
         self.tool_calls = tool_calls or None
+        self.content = content
 
     def model_dump(self, exclude_unset: bool = True) -> dict:
         return {"role": "assistant", "tool_calls": self.tool_calls}
@@ -58,6 +59,11 @@ def tool_call_response(*calls: tuple[str, str, dict]) -> FakeResponse:
 
 def text_only_response() -> FakeResponse:
     return FakeResponse([FakeChoice(FakeMessage(tool_calls=None), "stop")])
+
+
+def plain_text_response(text: str) -> FakeResponse:
+    """_llm_fallback_answer가 받는 형태 — tools 없이 호출하므로 tool_calls 없이 content만 있다."""
+    return FakeResponse([FakeChoice(FakeMessage(tool_calls=None, content=text), "stop")])
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +249,101 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
 
     assert result.has_answer is False
     assert result.no_answer_reason == "최대 조회 횟수 초과 — 근거 확정 실패"
-    assert call_mock.call_count == MAX_TOOL_ROUNDS
+    # MAX_TOOL_ROUNDS번은 _wiki_answer, +1번은 answer()가 이어서 시도하는
+    # _llm_fallback_answer의 호출 — side_effect 목록이 그만큼만 있어 StopIteration으로
+    # 실패하고(폴백 실패로 처리) 원래의 no_answer 결과가 그대로 반환된다.
+    assert call_mock.call_count == MAX_TOOL_ROUNDS + 1
+
+
+# ---------------------------------------------------------------------------
+# LLM 폴백 — 위키 근거를 못 찾으면(has_answer=False) 일반 지식으로 한 번 더 시도한다.
+# 위키 citations와 절대 헷갈리면 안 되므로 is_llm_fallback=True로 명확히 구분한다.
+# ---------------------------------------------------------------------------
+
+def test_answer_falls_back_to_llm_when_no_wiki_answer(agent, wiki_tools, monkeypatch):
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        plain_text_response("HBM은 여러 D램을 수직으로 쌓아 대역폭을 늘린 고대역폭 메모리다."),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM이 뭐야?")
+
+    assert result.has_answer is True
+    assert result.is_llm_fallback is True
+    assert result.citations == []
+    assert result.answer == "HBM은 여러 D램을 수직으로 쌓아 대역폭을 늘린 고대역폭 메모리다."
+    assert result.no_answer_reason is None
+
+
+def test_answer_does_not_fall_back_when_wiki_answer_found(agent, wiki_tools, monkeypatch):
+    """근거를 이미 찾았으면 _llm_fallback_answer는 아예 호출되지 않아야 한다."""
+    wiki_tools.read_wiki_page.return_value = FakePage(
+        title="HBM4",
+        markdown="# HBM4",
+        sources=[FakeSource(document_version_id="doc-1", claim_text="HBM4는 차세대 메모리다.")],
+    )
+    citation = {"document_version_id": "doc-1", "quote": "HBM4는 차세대 메모리다."}
+    responses = [
+        tool_call_response(("call-1", "read_wiki_page", {"slug": "hbm4"})),
+        tool_call_response(("call-2", "submit_answer", {"answer": "답변 [1]", "citations": [citation]})),
+    ]
+    call_mock = MagicMock(side_effect=responses)
+    monkeypatch.setattr(agent, "_call_model", call_mock)
+
+    result = agent.answer("HBM4가 뭐야?")
+
+    assert result.has_answer is True
+    assert result.is_llm_fallback is False
+    assert call_mock.call_count == 2  # 폴백 호출이 추가로 없었다
+
+
+def test_llm_fallback_answer_calls_model_without_tools(agent, wiki_tools, monkeypatch):
+    """_llm_fallback_answer는 WikiTools/citations를 아예 안 주려는 것이므로
+    use_tools=False로 호출해야 한다."""
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"})),
+        plain_text_response("일반 지식 답변"),
+    ]
+    call_mock = MagicMock(side_effect=responses)
+    monkeypatch.setattr(agent, "_call_model", call_mock)
+
+    agent.answer("아무 질문")
+
+    fallback_call = call_mock.call_args_list[-1]
+    assert fallback_call.kwargs.get("use_tools") is False
+
+
+def test_answer_keeps_no_answer_when_llm_fallback_raises(agent, wiki_tools, monkeypatch):
+    """폴백 호출 자체가 실패하면(예외) 폴백 실패를 감추지 않고 원래의 근거 없음
+    결과를 그대로 낸다 — 거짓 답을 주면 안 된다."""
+    def fake_call_model(messages, use_tools=True):
+        if use_tools:
+            return tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"}))
+        raise RuntimeError("OpenRouter 호출 실패")
+
+    monkeypatch.setattr(agent, "_call_model", fake_call_model)
+
+    result = agent.answer("아무 질문")
+
+    assert result.has_answer is False
+    assert result.is_llm_fallback is False
+    assert result.no_answer_reason == "근거 없음"
+
+
+def test_answer_keeps_no_answer_when_llm_fallback_returns_empty_text(agent, wiki_tools, monkeypatch):
+    """폴백 모델이 빈 응답을 주면 근거 없음으로 취급하고, 있지도 않은 답을 만들지 않는다."""
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"})),
+        plain_text_response("   "),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("아무 질문")
+
+    assert result.has_answer is False
+    assert result.is_llm_fallback is False
+    assert result.no_answer_reason == "근거 없음"
 
 
 # ---------------------------------------------------------------------------
