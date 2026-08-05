@@ -453,7 +453,8 @@ export default function AgentPage({ profile }) {
   }
 
   // "관련 문서 찾아보기" — 백엔드 API 없이, 이 답변 바로 앞 질문 텍스트로 구글
-  // 검색 결과를 새 탭으로 연다(근거 부족 카드에서만 노출되는 액션).
+  // 검색 결과를 새 탭으로 연다. 근거 부족/LLM 답변/위키 근거 답변 모두에서 노출된다 —
+  // 어떤 답변이든 사용자가 직접 원문을 더 찾아볼 수 있게 하기 위함.
   function handleSearchRelatedDocs(message) {
     const messageId = message._id;
     if (!messageId || !current) return;

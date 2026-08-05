@@ -132,7 +132,10 @@ function toViewMessage(msg, scope) {
       role: 'ai',
       llmFallback: true,
       paragraphs: [[msg.content]],
-      acts: scope === 'mine' ? ['팀에 공유', '복사', '다시 생성', '삭제'] : ['복사', '다시 생성', '삭제'],
+      acts:
+        scope === 'mine'
+          ? ['팀에 공유', '관련 문서 찾아보기', '복사', '다시 생성', '삭제']
+          : ['관련 문서 찾아보기', '복사', '다시 생성', '삭제'],
       _id: msg.id,
     };
   }
@@ -155,8 +158,8 @@ function toViewMessage(msg, scope) {
     cites: toCites(msg.citations),
     acts:
       scope === 'mine'
-        ? ['팀에 공유', '위키에 저장', '복사', '다시 생성', '삭제']
-        : ['위키에 저장', '복사', '다시 생성', '삭제'],
+        ? ['팀에 공유', '위키에 저장', '관련 문서 찾아보기', '복사', '다시 생성', '삭제']
+        : ['위키에 저장', '관련 문서 찾아보기', '복사', '다시 생성', '삭제'],
     _id: msg.id,
   };
 }
