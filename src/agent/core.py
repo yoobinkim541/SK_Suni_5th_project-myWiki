@@ -187,8 +187,18 @@ class WikiAgent:
                         }))
 
                 elif name == "submit_answer":
-                    citations = [Citation(**c) for c in args.get("citations", [])]
-                    if self._is_grounded(citations, seen_document_version_ids):
+                    try:
+                        citations = [Citation(**c) for c in args.get("citations", [])]
+                        is_grounded = self._is_grounded(citations, seen_document_version_ids)
+                    except (TypeError, ValueError):
+                        # 모델이 citations 항목에 필수 필드(quote 등)를 빼먹거나
+                        # relevance_score에 숫자가 아닌 값을 넣는 등 도구 스키마를 어겼을 때 —
+                        # 그대로 두면 Citation(**c) 생성이나 _is_grounded의 점수 비교에서
+                        # TypeError가 나서 요청 전체가 죽는다(실측: 폴백 모델 응답에서 발생).
+                        # 지어낸/형식이 어긋난 근거이므로 근거 없음으로 강등한다.
+                        citations = []
+                        is_grounded = False
+                    if is_grounded:
                         terminal_result = AgentResult(
                             has_answer=True,
                             answer=strip_orphaned_citation_markers(args["answer"], len(citations)),

@@ -335,6 +335,53 @@ def test_answer_rejects_citation_with_out_of_range_relevance_score(agent, wiki_t
     assert result.has_answer is False
 
 
+def test_answer_does_not_crash_when_citation_missing_required_quote(agent, wiki_tools, monkeypatch):
+    """실측 버그: 폴백 모델이 citations 항목에 필수 필드 quote를 빼먹고 응답하면
+    Citation(**c)가 TypeError를 던져 answer() 전체가 그대로 죽었다(위키 dedup 이후
+    라운드 수가 줄면서 실사용 중 재현됨). 지어낸/형식이 어긋난 근거로 보고 근거 없음으로
+    강등해야 한다 — 예외가 새 나가면 안 된다."""
+    wiki_tools.read_wiki_page.return_value = FakePage(
+        title="HBM4",
+        markdown="# HBM4",
+        sources=[FakeSource(document_version_id="doc-1", claim_text="HBM4는 차세대 메모리다.")],
+    )
+    citation_missing_quote = {"document_version_id": "doc-1"}
+    responses = [
+        tool_call_response(("call-1", "read_wiki_page", {"slug": "hbm4"})),
+        tool_call_response(("call-2", "submit_answer", {"answer": "답변", "citations": [citation_missing_quote]})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4가 뭐야?")
+
+    assert result.has_answer is False
+    assert "일치하지 않음" in result.no_answer_reason
+
+
+def test_answer_does_not_crash_when_relevance_score_is_not_numeric(agent, wiki_tools, monkeypatch):
+    """relevance_score가 숫자가 아니면 _is_grounded의 범위 비교(0.0 <= score <= 1.0)에서
+    TypeError가 난다 — 이 경우도 크래시 없이 근거 없음으로 처리돼야 한다."""
+    wiki_tools.read_wiki_page.return_value = FakePage(
+        title="HBM4",
+        markdown="# HBM4",
+        sources=[FakeSource(document_version_id="doc-1", claim_text="HBM4는 차세대 메모리다.")],
+    )
+    citation_with_non_numeric_score = {
+        "document_version_id": "doc-1",
+        "quote": "HBM4는 차세대 메모리다.",
+        "relevance_score": "높음",
+    }
+    responses = [
+        tool_call_response(("call-1", "read_wiki_page", {"slug": "hbm4"})),
+        tool_call_response(("call-2", "submit_answer", {"answer": "답변", "citations": [citation_with_non_numeric_score]})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4가 뭐야?")
+
+    assert result.has_answer is False
+
+
 # ---------------------------------------------------------------------------
 # 초기화
 # ---------------------------------------------------------------------------
