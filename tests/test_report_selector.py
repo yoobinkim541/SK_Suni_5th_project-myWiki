@@ -18,6 +18,7 @@ def make_candidate(
     importance_score: int = 85,
     ranking_score: Decimal | None = Decimal("90.0"),
     published_at: datetime | None = None,
+    source_type: str | None = None,
 ) -> ReportCandidate:
     return ReportCandidate(
         analysis_result_id=analysis_result_id,
@@ -31,6 +32,7 @@ def make_candidate(
         importance_score=importance_score,
         ranking_score=ranking_score,
         source_name="source",
+        source_type=source_type,
         canonical_url=f"https://example.com/{analysis_result_id}",
         published_at=published_at or datetime(2026, 8, 2, 0, 0, tzinfo=timezone.utc),
     )
@@ -377,3 +379,105 @@ def test_does_not_force_minimum_per_category() -> None:
     )
 
     assert [item.category for item in selected] == [Category.PRODUCT_TECHNOLOGY]
+
+
+# ------------------------------------------------------------
+# DART 공시(disclosure) 예외 — analysis/README.md "위키 페이지 후보 선정 기준의 예외" 참조.
+# 공시는 1차 공식 기록이라 신뢰도(교차검증) 기준만 면제된다. importance_score(중요도)는
+# "이 내용이 사업적으로 중요한가"를 재는 별개 축이라 공시라도 그대로 적용한다 —
+# 그래야 사소한 행정 공시가 전부 위키 후보가 되는 걸 막을 수 있다.
+# ------------------------------------------------------------
+
+
+def test_disclosure_candidate_bypasses_reliability_threshold_only() -> None:
+    """공시는 reliability_score가 기준치보다 낮아도(단일 출처라 낮게 나온 것) 통과하지만,
+    importance_score 기준은 그대로 적용받는다."""
+    selected = select_report_candidates(
+        [
+            make_candidate(
+                analysis_result_id="disclosure-1",
+                source_type="disclosure",
+                reliability_score=0,
+                importance_score=70,
+            ),
+            make_candidate(analysis_result_id="news-1", reliability_score=10, importance_score=70),
+        ],
+        max_candidates=10,
+        min_reliability_score=70,
+        min_importance_score=70,
+    )
+
+    assert [item.analysis_result_id for item in selected] == ["disclosure-1"]
+
+
+def test_disclosure_candidate_still_excluded_when_importance_score_is_low() -> None:
+    """실측 예시: 임원 소액 지분 매수 공시는 importance_score=2였다 — 단일 출처
+    여부와 무관하게 사업적으로 무의미해서 낮은 것이므로, 공시라도 걸러져야 한다."""
+    selected = select_report_candidates(
+        [
+            make_candidate(
+                analysis_result_id="disclosure-1",
+                source_type="disclosure",
+                reliability_score=0,
+                importance_score=2,
+            ),
+        ],
+        max_candidates=10,
+        min_reliability_score=70,
+        min_importance_score=40,
+    )
+
+    assert selected == []
+
+
+def test_disclosure_candidate_still_requires_ranking_threshold() -> None:
+    selected = select_report_candidates(
+        [
+            make_candidate(analysis_result_id="disclosure-1", source_type="disclosure", ranking_score=None),
+        ],
+        max_candidates=10,
+        min_reliability_score=0,
+        min_importance_score=0,
+        min_ranking_score=Decimal("90.0"),
+    )
+
+    assert selected == []
+
+
+def test_disclosure_candidates_still_subject_to_category_limit_and_max_candidates() -> None:
+    """예외는 신뢰도(근거가 부족하다는 판단) 기준에만 적용된다 — 리포트/위키 용량 제한
+    (category_limits, max_candidates)은 공시도 뉴스와 똑같이 받는다."""
+    candidates = [
+        make_candidate(
+            analysis_result_id=f"disclosure-{i}",
+            source_type="disclosure",
+            category=Category.MARKET_MANAGEMENT,
+            reliability_score=0,
+            importance_score=70,
+        )
+        for i in range(3)
+    ]
+
+    selected = select_report_candidates(
+        candidates,
+        max_candidates=10,
+        min_reliability_score=70,
+        min_importance_score=70,
+        category_limits={Category.MARKET_MANAGEMENT: 2},
+    )
+
+    assert len(selected) == 2
+
+
+def test_non_disclosure_source_type_still_requires_thresholds() -> None:
+    """source_type이 disclosure가 아니면(뉴스/RSS 등) 예외가 적용되지 않는다."""
+    selected = select_report_candidates(
+        [
+            make_candidate(analysis_result_id="rss-1", source_type="rss", reliability_score=10, importance_score=10),
+        ],
+        max_candidates=10,
+        min_reliability_score=70,
+        min_importance_score=70,
+    )
+
+    assert selected == []

@@ -33,4 +33,5 @@ jobs:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
