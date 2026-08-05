@@ -1,4 +1,4 @@
-// [백엔드 미구현] 분류 체계는 확정됐고, 남은 건 백엔드 엔드포인트 하나뿐이다.
+// [LIVE] GET /categories/stats — src/api/category_router.py / src/categories/service.py
 //
 // 2026-08-05 정정 — 이 파일에 있던 두 서술이 모두 사실과 달랐다.
 //   "page_type 5종"                        -> 실제 8종
@@ -13,18 +13,26 @@
 //   document_analysis_results.primary_category  (문서 438건에 채워져 있음)
 //   data/mockOnboarding.js INTEREST_KEYWORD_GROUPS  (선호조사 키워드 사전)
 //   data/mockCategory.js MOCK_CATEGORIES            (이 화면의 목업)
-// 즉 프론트는 손댈 게 없고, primary_category를 집계하는 API만 만들면 실연동된다.
 //
-// 필요한 엔드포인트: GET /categories/stats
-//   집계원  document_analysis_results.primary_category (+ documents 조인)
-//   스키마 변경 불필요. 분류 로직 신설도 불필요 — 이미 분류돼 있다.
+// 백엔드는 primary_category를 집계한다 — 스키마 변경도 분류 로직 신설도 없었다.
+// 필드별 산출: count=분류 건수 / top_issue=importance_score 최상위 문서 제목 /
+// tags=제목에서 키워드 사전 매칭 상위 3개 / level=reliability_score 평균
 import { apiFetch } from './client';
 
 /**
- * 카테고리 현황 집계. MOCK_CATEGORIES와 같은 shape로 돌려받아야 화면이 그대로 동작한다.
- * @returns {Promise<{id: string, name: string, count: number,
- *                    topIssue: string, tags: string[], level: string}[]>}
+ * 카테고리 현황 집계 (최근 7일). 백엔드는 snake_case로 내려주고,
+ * CategoryCard가 기대하는 camelCase 변환은 services/categoryApi.js가 한다.
+ *
+ * level은 'high' | 'mid' | 'low' 세 값만 온다 — 백엔드 스키마에서 Literal로 막아뒀다.
+ * id는 'product-tech' 같은 슬러그이고, CategoryKeywordChart가 원그래프 데이터를
+ * 찾는 키로도 쓰므로 프론트에서 바꾸면 안 된다.
+ *
+ * @returns {Promise<{
+ *   total_documents: number,
+ *   categories: {id: string, name: string, count: number,
+ *                top_issue: string, tags: string[], level: 'high'|'mid'|'low'}[]
+ * }>}
  */
 export function fetchCategoryStats() {
-  return apiFetch('/categories/stats'); // 백엔드 구현 전까지 호출 시 404
+  return apiFetch('/categories/stats');
 }

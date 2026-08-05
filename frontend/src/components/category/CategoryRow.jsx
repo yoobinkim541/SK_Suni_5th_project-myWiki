@@ -47,7 +47,9 @@ export default function CategoryRow({ categories }) {
             <CategoryCard
               key={c.id}
               name={c.name}
-              count={news.length}
+              // 집계된 문서 수를 쓴다. 이전에는 news.length였는데, 그건 목업 뉴스 16건을
+              // 카테고리로 거른 값이라 실제 분류 건수와 무관했다.
+              count={c.count}
               topIssue={c.topIssue}
               tags={c.tags}
               level={c.level}
