@@ -57,6 +57,10 @@ export default function AgentPage({ profile }) {
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState(null);
   const [participantsBusyUserId, setParticipantsBusyUserId] = useState(null);
+  // 팀 대화 하단 힌트("○○님 외 N명이 열람·이어서 질문할 수 있습니다")에 쓸 실제
+  // 참여자 목록 — chat_session_participants는 대화(session)마다 다를 수 있어
+  // team pane에서 보고 있는 대화가 바뀔 때마다 다시 불러옵니다.
+  const [currentTeamParticipants, setCurrentTeamParticipants] = useState(null);
 
   // 참여자 모달을 열면 참여자 목록 + 워크스페이스 멤버 전체 목록을 같이 불러옵니다.
   useEffect(() => {
@@ -124,6 +128,35 @@ export default function AgentPage({ profile }) {
       .catch((e) => alive && setError(e.message || '대화를 불러오지 못했습니다.'));
     return () => { alive = false; };
   }, [current?.id]);
+
+  // team pane에서 보고 있는 대화의 실제 참여자를 불러옵니다(하단 힌트용).
+  // mine pane이거나 대화가 없으면 비웁니다.
+  useEffect(() => {
+    if (activePane !== 'team' || !current) {
+      setCurrentTeamParticipants(null);
+      return;
+    }
+    let alive = true;
+    setCurrentTeamParticipants(null);
+    listParticipants(current.id)
+      .then((p) => alive && setCurrentTeamParticipants(p))
+      .catch(() => alive && setCurrentTeamParticipants([]));
+    return () => { alive = false; };
+  }, [activePane, current?.id]);
+
+  // "○○님, △△님 외 N명이 열람·이어서 질문할 수 있습니다" — chat_session_participants
+  // 조회 결과 기준으로 인원수·이름을 만든다. 목업(mockWiki.js)의 "Team 5 멤버 4명"은
+  // 모든 대화에서 항상 똑같이 뜨는 하드코딩이라 대화별 실제 참여자로 대체한다.
+  function participantsHint(loginUserId, participants) {
+    if (participants === null) return '참여자 정보를 불러오는 중입니다';
+    if (participants.length === 0) return '아직 참여자가 없습니다';
+    const names = participants.map((p) =>
+      p.user_id === loginUserId ? '나' : (p.display_name || '이름 없음')
+    );
+    const shown = names.slice(0, 3).join(', ');
+    const rest = names.length > 3 ? ` 외 ${names.length - 3}명` : '';
+    return `${shown}${rest} · 총 ${names.length}명이 열람·이어서 질문할 수 있습니다`;
+  }
 
   // 특정 pane의 대화 하나만 바꾸는 공용 헬퍼. pane을 인자로 받아서, 방금 전환한
   // team pane처럼 activePane과 다른 pane도 갱신할 수 있게 합니다(공유 직후 등).
@@ -593,7 +626,10 @@ export default function AgentPage({ profile }) {
           )}
 
           <div className="hint">
-            {pane.hints.map((h) => <span key={h}>{h}</span>)}
+            {(pane.key === 'team'
+              ? [pane.hints[0], participantsHint(profile?.id, currentTeamParticipants)]
+              : pane.hints
+            ).map((h, i) => <span key={i}>{h}</span>)}
           </div>
         </div>
 
