@@ -4,6 +4,7 @@
 
 import * as agentApi from '../api/agent';
 import { MOCK_AGENT_PANES, MOCK_AGENT_REPLY } from '../data/mockWiki';
+import { formatDate, reliabilityLabel } from './wikiApi';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 
@@ -42,14 +43,25 @@ function toCites(citations = []) {
 }
 
 // citations[] → 우측 "근거 원문" 카드
-// title/foot에 해당하는 데이터가 백엔드에 없어 확인 가능한 값만 채웁니다.
+// list_message_citations가 wikiApi.js의 _enrich_sources와 같은 패턴으로 document_title/
+// source_name/published_at/reliability_score를 채워 주므로, wikiApi.js의 toDoc()과 같은
+// 포맷(YYYY.MM.DD · 신뢰도 라벨)으로 footer를 만든다. 문서를 못 찾은 근거만 null이 남는다.
+function evidenceFoot(c) {
+  const parts = [];
+  const date = formatDate(c.published_at);
+  if (date) parts.push(date);
+  if (c.reliability_score != null) parts.push(`신뢰도 ${reliabilityLabel(c.reliability_score)}`);
+  return parts.join(' · ') || '출처 정보 확인 중';
+}
+
 function toEvidence(citations = []) {
   return citations.map((c, i) => ({
     no: c.citation_order ?? i + 1,
-    key: null,
-    title: `근거 문서 #${c.citation_order ?? i + 1}`,
+    title: c.document_title || `근거 문서 #${c.citation_order ?? i + 1}`,
+    sourceName: c.source_name ?? null,
+    url: c.source_url ?? null,
     excerpt: c.quoted_text ?? '',
-    foot: '출처 정보 확인 중',
+    foot: evidenceFoot(c),
   }));
 }
 
