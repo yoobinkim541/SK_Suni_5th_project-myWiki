@@ -1529,3 +1529,13 @@ a.fn:hover{text-decoration:underline}
 }
 
 .sh.big .t { color: var(--green); }
+
+/* PC 상단바 브랜드 로고 (이미지) — 라이트/다크 두 버전 전환 */
+.brand2-logo-img{
+  height:34px;
+  width:auto;
+  display:block;
+}
+.brand2 .logo-dark{display:none}
+:root[data-theme="dark"] .brand2 .logo-light{display:none}
+:root[data-theme="dark"] .brand2 .logo-dark{display:block}
