@@ -12,7 +12,12 @@ from src.api import db
 from src.api.auth import get_current_user
 from src.api.main import app
 from src.categories import service as category_service
-from src.categories.models import CategoryStat, CategoryStats
+from src.categories.models import (
+    CategoryDocument,
+    CategoryKeyword,
+    CategoryStat,
+    CategoryStats,
+)
 
 WORKSPACE_ID = "11111111-1111-1111-1111-111111111111"
 
@@ -33,6 +38,19 @@ def test_get_stats_returns_service_result(client, monkeypatch):
                 id="product-tech", name="제품·기술", count=69,
                 top_issue="SK하이닉스, HBF 첫 표준규격 공개",
                 tags=["HBM", "메모리"], level="low",
+                keywords=[
+                    CategoryKeyword(word="HBM", count=21),
+                    CategoryKeyword(word="메모리", count=13),
+                ],
+                recent_documents=[
+                    CategoryDocument(
+                        title="SK하이닉스, HBF 첫 표준규격 공개",
+                        quote="차세대 스토리지 표준이 공개됐다.",
+                        source_label="yna.co.kr",
+                        source_url="https://www.yna.co.kr/view/1",
+                        published_at="2026-08-05T10:22:30+00:00",
+                    )
+                ],
             ),
         ],
     )
@@ -53,6 +71,19 @@ def test_get_stats_returns_service_result(client, monkeypatch):
                 "top_issue": "SK하이닉스, HBF 첫 표준규격 공개",
                 "tags": ["HBM", "메모리"],
                 "level": "low",
+                "keywords": [
+                    {"word": "HBM", "count": 21},
+                    {"word": "메모리", "count": 13},
+                ],
+                "recent_documents": [
+                    {
+                        "title": "SK하이닉스, HBF 첫 표준규격 공개",
+                        "quote": "차세대 스토리지 표준이 공개됐다.",
+                        "source_label": "yna.co.kr",
+                        "source_url": "https://www.yna.co.kr/view/1",
+                        "published_at": "2026-08-05T10:22:30+00:00",
+                    }
+                ],
             }
         ],
     }

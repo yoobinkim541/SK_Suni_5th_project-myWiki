@@ -70,7 +70,8 @@ class FakeSupabase:
 
 
 def _analysis(version_id, category, *, score=None, importance=None,
-              created_at="2026-08-04T00:00:00+00:00", workspace_id=WORKSPACE_ID):
+              created_at="2026-08-04T00:00:00+00:00", workspace_id=WORKSPACE_ID,
+              core_summary=None, quoted=None):
     return {
         "document_version_id": version_id,
         "primary_category": category,
@@ -78,24 +79,55 @@ def _analysis(version_id, category, *, score=None, importance=None,
         "importance_score": importance,
         "created_at": created_at,
         "workspace_id": workspace_id,
+        "core_summary": core_summary,
+        "summary_evidence_refs": (
+            [{"quoted_text": quoted, "supports": ["core_summary"]}] if quoted else []
+        ),
     }
 
 
-def _db(analysis_rows, documents):
-    """analysis 행과 documents를 주면 document_versions는 1:1로 자동 생성한다."""
-    versions = [
-        {"id": r["document_version_id"], "document_id": f"d-{r['document_version_id']}"}
-        for r in analysis_rows
-    ]
+# 수집 소스 — 종류별로 키워드가 있는 자리가 다르다.
+SOURCES = [
+    {"id": "s-hbm", "name": "네이버 - HBM", "config": {"query": "HBM"},
+     "base_url": "", "workspace_id": WORKSPACE_ID},
+    {"id": "s-dram", "name": "네이버 - DRAM", "config": {"query": "DRAM"},
+     "base_url": "", "workspace_id": WORKSPACE_ID},
+    {"id": "s-rss", "name": "Google RSS - SK하이닉스", "config": {},
+     "base_url": "https://news.google.com/rss/search?q=SK%ED%95%98%EC%9D%B4%EB%8B%89%EC%8A%A4&hl=ko",
+     "workspace_id": WORKSPACE_ID},
+    {"id": "s-dart", "name": "DART - SK하이닉스", "config": {}, "base_url": "",
+     "workspace_id": WORKSPACE_ID},
+]
+
+
+def _db(analysis_rows, documents, versions=None, sources=None):
+    """analysis 행과 documents를 주면 document_versions는 1:1로 자동 생성한다.
+
+    한 문서에 버전이 여럿인 상황을 만들려면 versions를 직접 넘긴다.
+    """
+    if versions is None:
+        versions = [
+            {"id": r["document_version_id"], "document_id": f"d-{r['document_version_id']}"}
+            for r in analysis_rows
+        ]
     return FakeSupabase({
         "document_analysis_results": analysis_rows,
         "document_versions": versions,
         "documents": documents,
+        "sources": sources if sources is not None else SOURCES,
     })
 
 
-def _doc(version_id, title, workspace_id=WORKSPACE_ID):
-    return {"id": f"d-{version_id}", "title": title, "workspace_id": workspace_id}
+def _doc(version_id, title, workspace_id=WORKSPACE_ID, url=None, published_at=None,
+         document_id=None, source_id="s-hbm"):
+    return {
+        "id": document_id or f"d-{version_id}",
+        "title": title,
+        "workspace_id": workspace_id,
+        "canonical_url": url or f"https://www.example.com/{version_id}",
+        "published_at": published_at or "2026-08-04T00:00:00+00:00",
+        "source_id": source_id,
+    }
 
 
 # ------------------------------------------------------------
@@ -156,16 +188,21 @@ def test_기간_밖과_다른_workspace는_제외한다():
     assert stats.total_documents == 1
 
 
-def test_다른_workspace_문서는_제목을_노출하지_않는다():
-    """document_versions에는 workspace_id가 없다. documents 조회의 eq가 유일한 격리 지점이다."""
+def test_다른_workspace_문서는_아예_세지_않는다():
+    """document_versions에는 workspace_id가 없다. documents 조회의 eq가 유일한 격리 지점이다.
+
+    건수를 문서 단위로 세면서, 볼 수 없는 문서는 카드에도 안 잡힌다 — 분석 행만
+    세던 때는 "보이지 않는 문서 1건"이 숫자에 남았다.
+    """
     rows = [_analysis("v1", "제품·기술", score=50)]
     docs = [_doc("v1", "남의 워크스페이스 제목", workspace_id="ws-2")]
 
     stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
 
     by_id = {c.id: c for c in stats.categories}
-    assert by_id["product-tech"].count == 1  # 분석 행은 내 것이라 세지만
-    assert by_id["product-tech"].top_issue == ""  # 제목은 새어나오지 않는다
+    assert by_id["product-tech"].count == 0
+    assert by_id["product-tech"].top_issue == ""
+    assert by_id["product-tech"].recent_documents == []
 
 
 def test_미분류_행은_어느_카드에도_넣지_않는다():
@@ -269,6 +306,218 @@ def test_id_슬러그가_프론트와_일치한다():
         "product-tech", "competitor", "customer-demand",
         "supply-chain", "policy", "market",
     }
+
+
+# ------------------------------------------------------------
+# keywords — 원그래프 오른쪽 (수집 키워드 기준)
+# ------------------------------------------------------------
+
+
+def test_keywords는_수집_키워드별_문서_수다():
+    rows = [_analysis(f"v{i}", "제품·기술") for i in range(3)]
+    docs = [
+        _doc("v0", "기사1", source_id="s-hbm"),
+        _doc("v1", "기사2", source_id="s-hbm"),
+        _doc("v2", "기사3", source_id="s-dram"),
+    ]
+
+    stats = service.get_category_stats(
+        WORKSPACE_ID, supabase=_db(rows, docs, sources=SOURCES), now=NOW
+    )
+
+    by_id = {c.id: c for c in stats.categories}
+    kws = {k.word: k.count for k in by_id["product-tech"].keywords}
+    assert kws == {"HBM": 2, "DRAM": 1}
+
+
+def test_조각_합이_카드_건수와_일치한다():
+    """왼쪽 파이(문서 수)와 오른쪽 파이가 같은 축에서 읽혀야 한다."""
+    rows = [_analysis(f"v{i}", "제품·기술") for i in range(4)]
+    docs = [_doc(f"v{i}", f"기사{i}", source_id="s-hbm") for i in range(4)]
+
+    stats = service.get_category_stats(
+        WORKSPACE_ID, supabase=_db(rows, docs, sources=SOURCES), now=NOW
+    )
+
+    by_id = {c.id: c for c in stats.categories}
+    card = by_id["product-tech"]
+    assert sum(k.count for k in card.keywords) == card.count
+
+
+def test_같은_문서의_버전이_여럿이면_조각도_한_번만_센다():
+    rows = [
+        _analysis("v1", "제품·기술", created_at="2026-08-01T00:00:00+00:00"),
+        _analysis("v2", "제품·기술", created_at="2026-08-04T00:00:00+00:00"),
+    ]
+    versions = [
+        {"id": "v1", "document_id": "d-same"},
+        {"id": "v2", "document_id": "d-same"},
+    ]
+    docs = [_doc("v1", "같은 기사", document_id="d-same", source_id="s-hbm")]
+
+    stats = service.get_category_stats(
+        WORKSPACE_ID, supabase=_db(rows, docs, versions=versions, sources=SOURCES), now=NOW
+    )
+
+    by_id = {c.id: c for c in stats.categories}
+    assert [(k.word, k.count) for k in by_id["product-tech"].keywords] == [("HBM", 1)]
+
+
+def test_rss_소스는_base_url의_q에서_키워드를_뽑는다():
+    """구글 뉴스 RSS는 config.query가 없고 검색어를 URL에 싣는다."""
+    rows = [_analysis("v1", "제품·기술")]
+    docs = [_doc("v1", "기사", source_id="s-rss")]
+
+    stats = service.get_category_stats(
+        WORKSPACE_ID, supabase=_db(rows, docs, sources=SOURCES), now=NOW
+    )
+
+    by_id = {c.id: c for c in stats.categories}
+    assert [k.word for k in by_id["product-tech"].keywords] == ["SK하이닉스"]
+
+
+def test_질의어가_없는_소스는_이름으로_대체한다():
+    """DART 공시는 검색어 개념이 없다."""
+    rows = [_analysis("v1", "제품·기술")]
+    docs = [_doc("v1", "공시", source_id="s-dart")]
+
+    stats = service.get_category_stats(
+        WORKSPACE_ID, supabase=_db(rows, docs, sources=SOURCES), now=NOW
+    )
+
+    by_id = {c.id: c for c in stats.categories}
+    assert [k.word for k in by_id["product-tech"].keywords] == ["DART - SK하이닉스"]
+
+
+def test_keywords는_상한을_넘지_않는다():
+    """KeywordPie의 PALETTE가 7색이라 조각이 너무 많으면 색이 돈다."""
+    many = {f"s-{i}": {"id": f"s-{i}", "name": f"소스{i}", "config": {"query": f"kw{i}"},
+                       "base_url": "", "workspace_id": WORKSPACE_ID} for i in range(12)}
+    rows = [_analysis(f"v{i}", "제품·기술") for i in range(12)]
+    docs = [_doc(f"v{i}", f"기사{i}", source_id=f"s-{i}") for i in range(12)]
+
+    stats = service.get_category_stats(
+        WORKSPACE_ID, supabase=_db(rows, docs, sources=list(many.values())), now=NOW
+    )
+
+    by_id = {c.id: c for c in stats.categories}
+    assert len(by_id["product-tech"].keywords) == service.MAX_PIE_KEYWORDS
+
+
+# ------------------------------------------------------------
+# recent_documents — 관련 뉴스 모달
+# ------------------------------------------------------------
+
+
+def test_같은_문서의_버전이_여럿이면_한_번만_나온다():
+    """재수집으로 버전이 늘면 분석 행이 여러 개 생긴다(실측 459행 -> 275문서)."""
+    rows = [
+        _analysis("v1", "제품·기술", created_at="2026-08-01T00:00:00+00:00", quoted="옛 인용"),
+        _analysis("v2", "제품·기술", created_at="2026-08-04T00:00:00+00:00", quoted="새 인용"),
+    ]
+    # 두 버전이 같은 문서를 가리킨다
+    versions = [
+        {"id": "v1", "document_id": "d-same"},
+        {"id": "v2", "document_id": "d-same"},
+    ]
+    docs = [_doc("v1", "같은 기사", document_id="d-same")]
+
+    stats = service.get_category_stats(
+        WORKSPACE_ID, supabase=_db(rows, docs, versions=versions), now=NOW
+    )
+
+    by_id = {c.id: c for c in stats.categories}
+    recent = by_id["product-tech"].recent_documents
+    assert len(recent) == 1
+    # 최신 분석 행의 인용문을 쓴다
+    assert recent[0].quote == "새 인용"
+
+
+def test_recent_documents는_발행일_내림차순이다():
+    rows = [_analysis(f"v{i}", "제품·기술") for i in range(3)]
+    docs = [
+        _doc("v0", "가장 오래된", published_at="2026-08-01T00:00:00+00:00"),
+        _doc("v1", "가장 최근", published_at="2026-08-05T00:00:00+00:00"),
+        _doc("v2", "중간", published_at="2026-08-03T00:00:00+00:00"),
+    ]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    titles = [d.title for d in by_id["product-tech"].recent_documents]
+    assert titles == ["가장 최근", "중간", "가장 오래된"]
+
+
+def test_recent_documents는_상한을_넘지_않는다():
+    rows = [_analysis(f"v{i}", "제품·기술") for i in range(10)]
+    docs = [_doc(f"v{i}", f"기사 {i}") for i in range(10)]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert len(by_id["product-tech"].recent_documents) == service.MAX_RECENT_DOCUMENTS
+
+
+def test_quote는_quoted_text_core_summary_순으로_폴백한다():
+    rows = [
+        _analysis("v1", "제품·기술", quoted="원문 인용", core_summary="합성 요약"),
+        _analysis("v2", "경쟁사", core_summary="요약만 있음"),
+        _analysis("v3", "정책·규제"),
+    ]
+    docs = [_doc("v1", "기사1"), _doc("v2", "기사2"), _doc("v3", "기사3")]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].recent_documents[0].quote == "원문 인용"
+    assert by_id["competitor"].recent_documents[0].quote == "요약만 있음"
+    assert by_id["policy"].recent_documents[0].quote == ""
+
+
+def test_긴_인용문은_자른다():
+    rows = [_analysis("v1", "제품·기술", quoted="가" * 400)]
+    docs = [_doc("v1", "기사")]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    quote = by_id["product-tech"].recent_documents[0].quote
+    assert len(quote) == service.QUOTE_MAX_LEN
+    assert quote.endswith("…")
+
+
+def test_source_label은_도메인에서_www를_뗀다():
+    rows = [_analysis("v1", "제품·기술"), _analysis("v2", "경쟁사")]
+    docs = [
+        _doc("v1", "기사1", url="https://www.hankyung.com/article/123"),
+        _doc("v2", "기사2", url="https://biz.chosun.com/it/456"),
+    ]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].recent_documents[0].source_label == "hankyung.com"
+    assert by_id["competitor"].recent_documents[0].source_label == "biz.chosun.com"
+
+
+def test_recent_documents의_제목도_꼬리표를_벗긴다():
+    rows = [_analysis("v1", "제품·기술")]
+    docs = [_doc("v1", "SK하이닉스 HBF 표준규격 공개 - 연합뉴스")]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].recent_documents[0].title == "SK하이닉스 HBF 표준규격 공개"
+
+
+def test_다른_workspace_문서는_뉴스에도_안_나온다():
+    rows = [_analysis("v1", "제품·기술", quoted="남의 인용")]
+    docs = [_doc("v1", "남의 기사", workspace_id="ws-2")]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].recent_documents == []
 
 
 def test_level은_소문자_3종만_나온다():

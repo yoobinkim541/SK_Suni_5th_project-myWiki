@@ -202,6 +202,24 @@ class DashboardSummaryOut(BaseModel):
 # 카테고리 현황 — GET /categories/stats 전용
 # ---------------------------------------------------------------------------
 
+class CategoryKeywordOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    word: str
+    count: int
+
+
+class CategoryDocumentOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    title: str
+    quote: str
+    source_label: str
+    source_url: str
+    # 상대시각('1시간 전')은 프론트가 만든다. 여기선 ISO 문자열 그대로 내보낸다.
+    published_at: Optional[str]
+
+
 class CategoryStatOut(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -213,6 +231,8 @@ class CategoryStatOut(BaseModel):
     # 프론트 CategoryCard가 이 세 값만 라벨·색상으로 변환한다. 다른 값이 가면
     # 카드에 "신뢰도 : "만 남고 값이 빠지므로 여기서 막는다.
     level: Literal["high", "mid", "low"]
+    keywords: list[CategoryKeywordOut] = []
+    recent_documents: list[CategoryDocumentOut] = []
 
 
 class CategoryStatsOut(BaseModel):

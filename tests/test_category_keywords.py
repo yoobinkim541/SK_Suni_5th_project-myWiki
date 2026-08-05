@@ -1,7 +1,12 @@
 """카테고리 태그 추출 테스트."""
 from __future__ import annotations
 
-from src.categories.keywords import CATEGORY_KEYWORDS, CATEGORY_SLUGS, extract_tags
+from src.categories.keywords import (
+    CATEGORY_KEYWORDS,
+    CATEGORY_SLUGS,
+    count_keywords,
+    extract_tags,
+)
 
 
 def test_제목에서_카테고리_키워드를_뽑는다():
@@ -55,3 +60,45 @@ def test_알_수_없는_카테고리는_빈_리스트():
 def test_키워드_사전과_슬러그가_같은_6종을_덮는다():
     assert set(CATEGORY_KEYWORDS) == set(CATEGORY_SLUGS)
     assert len(CATEGORY_SLUGS) == 6
+
+
+# ------------------------------------------------------------
+# count_keywords — 원그래프가 쓰는 빈도
+# ------------------------------------------------------------
+
+
+def test_count_keywords는_제목_수를_센다():
+    """한 제목에 같은 키워드가 여러 번 나와도 1이다 — 조각이 '문서 건수'를 뜻해야
+    카드의 건수와 같은 축에서 읽힌다."""
+    titles = ["HBM 확대, HBM 증설", "HBM 수요", "DRAM 가격"]
+
+    counts = dict(count_keywords(titles, "제품·기술"))
+
+    assert counts["HBM"] == 2
+    assert counts["DRAM"] == 1
+
+
+def test_count_keywords는_빈도_내림차순이다():
+    titles = ["삼성전자 실적", "삼성전자 투자", "마이크론 증설"]
+
+    result = count_keywords(titles, "경쟁사")
+
+    assert result[0] == ("삼성전자", 2)
+    assert [c for _, c in result] == sorted([c for _, c in result], reverse=True)
+
+
+def test_count_keywords는_limit_없으면_전부_돌려준다():
+    titles = ["HBM DRAM NAND DDR 메모리 공정"]
+
+    assert len(count_keywords(titles, "제품·기술")) > 3
+    assert len(count_keywords(titles, "제품·기술", limit=2)) == 2
+
+
+def test_extract_tags는_count_keywords와_같은_순서다():
+    """카드 태그와 원그래프가 다른 결과를 내면 안 된다."""
+    titles = ["HBM 메모리 공정 개선", "HBM DRAM 성능", "메모리 신기술"]
+
+    tags = extract_tags(titles, "제품·기술")
+    counted = [word for word, _ in count_keywords(titles, "제품·기술", limit=3)]
+
+    assert tags == counted
