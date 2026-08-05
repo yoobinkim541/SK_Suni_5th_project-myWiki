@@ -42,6 +42,15 @@ export default function TrendChart({ data = MOCK_TREND }) {
   return (
     <div className="chart">
       <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} role="img" aria-label="최근 수집 및 채택 건수 추이">
+        {/* TailAdmin 스타일 area 채우기 — 위는 진하고 아래로 갈수록 투명해진다.
+            fill 자체는 globals.css의 .chart .area가 이 id를 가리켜서 적용한다
+            (CSS가 presentation attribute보다 우선하므로 여기 attribute만으론 안 먹는다). */}
+        <defs>
+          <linearGradient id="trend-area-gradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--green)" stopOpacity="0.6" />
+            <stop offset="100%" stopColor="var(--green)" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
         <g className="grid">
           {yTicks.slice(0, -1).map((t) => (
             <line key={t} x1={PLOT_LEFT} y1={barY(t)} x2={PLOT_RIGHT} y2={barY(t)} />
