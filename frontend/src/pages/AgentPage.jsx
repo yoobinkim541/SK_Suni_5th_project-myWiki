@@ -454,11 +454,14 @@ export default function AgentPage({ profile }) {
 
       <div className={`chat ag-pane ${pane.key} on`}>
         <div>
-          {/* 컨텍스트 배너 — 팀은 참여 멤버, 개인은 "비공개" 배지 */}
+          {/* 컨텍스트 배너 — 팀은 참여 멤버, 개인은 "비공개" 배지.
+              "내 에이전트" 제목은 MOCK_AGENT_PANES.mine.ctx.title(하드코딩된 이름)
+              대신 로그인한 실제 사용자 이름(authorName)을 쓴다 — fetchAgentPanes()가
+              conversations만 실데이터로 바꾸고 ctx는 목업을 그대로 넘겨서 생긴 문제였다. */}
           <div className={`ag-ctx ${pane.key}`}>
             <span className="ic">{pane.ctx.badge}</span>
             <div className="tx">
-              <b>{pane.ctx.title}</b>
+              <b>{pane.key === 'mine' ? `${authorName} · 개인 에이전트` : pane.ctx.title}</b>
               <span>{pane.ctx.desc}</span>
             </div>
             {pane.ctx.avatars ? (
