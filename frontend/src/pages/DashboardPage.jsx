@@ -6,17 +6,21 @@
 //   KPI 숫자(수집 문서 312건 등)도 전엔 이 파일에 그냥 박혀 있었는데, data/mockDashboard.js의
 //   MOCK_KPI_SUMMARY로 빼서 같이 fetchDashboard()로 받아오게 했습니다.
 //
-// (3번 수정사항 반영은 그대로 유지)
-//  1) 섹션 순서: "최근 현황"(KPI) → "산업 동향 분석"(그래프)이 맨 위, 그다음 최신 뉴스 →
-//     카테고리·키워드 → 최근 산업 이슈.
-//  2) 검색창(.search)은 완전히 제거. 대신 "관심사"(App.jsx)와 "오늘의 키워드" 클릭으로
-//     뉴스를 좁히는 두 갈래 탐색만 남겨뒀습니다.
+// 섹션 순서: 최근 현황(KPI) → 지식 축적화(KnowledgeGraph, 장식용) → 산업 동향 분석(그래프)
+//   → 최신 뉴스 → 오늘의 키워드 → 최근 산업 이슈.
+// 검색창(.search)은 없고, "관심사"(App.jsx, 선호조사에서 고른 키워드)와 "오늘의 키워드" 클릭
+// 두 갈래로만 뉴스를 좁힙니다.
+//
+// "카테고리 현황" 섹션은 삭제했습니다(CategoryPreview.jsx는 더 이상 이 페이지에서 안 씀 —
+// 카테고리 현황 페이지 자체는 그대로 있습니다). 대신 "최신 뉴스"와 "최근 산업 이슈"를
+// 명확히 구분합니다 — 최신 뉴스는 관심 키워드에 따라 달라지는 언론사 기사만, 최근 산업
+// 이슈는 관심사와 무관하게 모두에게 같은 항목을 공시·IR 등 공식 문서 출처로 보여줍니다.
 
 import { useState, useEffect } from 'react';
 import KpiCard from '../components/dashboard/KpiCard';
 import TrendChart from '../components/dashboard/TrendChart';
 import IssueList from '../components/dashboard/IssueList';
-import CategoryPreview from '../components/dashboard/CategoryPreview';
+import KnowledgeGraph from '../components/dashboard/KnowledgeGraph';
 import { fetchDashboard } from '../services/dashboardApi';
 import { filterNewsByInterests } from '../data/mockOnboarding';
 
@@ -28,13 +32,10 @@ const PIPELINE_STEPS = [
   { name: '보고서 생성', time: '07:42 · 1건' },
 ];
 
-// 원문/출처 아이콘 — "공시 원문"은 아래 화살표, 그 외 "뉴스"는 사선 화살표
-function ExtLinkIcon({ isDoc }) {
-  return isDoc ? (
-    <svg viewBox="0 0 24 24" fill="none">
-      <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ) : (
+// 원문/출처 링크 아이콘 — 문서든 뉴스든 항상 같은 우측 상단 대각선 화살표(↗)로 통일한다.
+// (라벨 텍스트로 "공시 원문"/"뉴스"를 구분하지, 아이콘 모양은 더 이상 나누지 않는다.)
+function ExtLinkIcon() {
+  return (
     <svg viewBox="0 0 24 24" fill="none">
       <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -53,7 +54,6 @@ export default function DashboardPage({ onNavigate, interests = [] }) {
   const [news, setNews] = useState([]);
   const [issues, setIssues] = useState([]);
   const [trend, setTrend] = useState([]);
-  const [categoryPreview, setCategoryPreview] = useState([]);
   const [keywords, setKeywords] = useState([]);
   const [kpiSummary, setKpiSummary] = useState(null);
 
@@ -69,7 +69,6 @@ export default function DashboardPage({ onNavigate, interests = [] }) {
       setNews(data.news);
       setIssues(data.issues);
       setTrend(data.trend);
-      setCategoryPreview(data.categoryPreview);
       setKeywords(data.keywords);
       setKpiSummary(data.kpiSummary);
       setLoading(false);
@@ -77,9 +76,14 @@ export default function DashboardPage({ onNavigate, interests = [] }) {
     return () => { alive = false; };
   }, []);
 
-  // 필터 우선순위: 키워드 칩을 누르면 그 키워드만, 아니면 첫 화면에서 고른 관심사 기준.
+  // "최신 뉴스"는 언론사 기사만 보여준다 — 공시·IR 같은 원문 문서는 아래 "최근 산업 이슈"
+  // 쪽 소스이므로 여기서 제외한다(안 그러면 관심사를 아무것도 안 고른 사용자에게 두 섹션이
+  // 같은 항목을 중복으로 보여주게 된다).
+  const articleNews = news.filter((n) => !n.isDoc);
+  // 필터 우선순위: 키워드 칩을 누르면 그 키워드만, 아니면 첫 화면(선호조사)에서 고른 관심 키워드 기준.
+  // 관심 키워드를 하나도 안 골랐으면 필터 없이 전체 기사를 최신순으로 보여준다.
   const activeFilters = keywordFilter ? [keywordFilter] : interests;
-  const filteredNews = filterNewsByInterests(news, activeFilters);
+  const filteredNews = filterNewsByInterests(articleNews, activeFilters);
   const isFiltered = activeFilters.length > 0;
   const visibleNews = showAllNews || keywordFilter ? filteredNews : filteredNews.slice(0, 4);
 
@@ -127,6 +131,15 @@ export default function DashboardPage({ onNavigate, interests = [] }) {
         </div>
       </section>
 
+      {/* 1.5) 지식 축적화 네트워크 — myWiki가 쌓아온 카테고리·키워드를 시각화한 장식용 그래프 */}
+      <section className="sec">
+        <div className="sh">
+          <span className="t">지식 축적화</span>
+          <span className="s">myWiki가 자동으로 분류·연결하는 카테고리와 키워드</span>
+        </div>
+        <KnowledgeGraph />
+      </section>
+
       {/* 2) 산업 동향 분석 그래프 */}
       <section className="sec">
         <div className="sh">
@@ -151,7 +164,7 @@ export default function DashboardPage({ onNavigate, interests = [] }) {
               <span className="chip" key={f}>{f}</span>
             ))}
             <button type="button" className="clr" onClick={() => setKeywordFilter(null)}>
-              {keywordFilter ? '키워드 해제' : `전체 ${news.length}건 보기`}
+              {keywordFilter ? '키워드 해제' : `전체 ${articleNews.length}건 보기`}
             </button>
           </div>
         )}
@@ -161,10 +174,9 @@ export default function DashboardPage({ onNavigate, interests = [] }) {
             <article className="news-card" key={n.title}>
               <div className="card-top">
                 <span className="badge">{n.category}</span>
-                <a className="ext-link" href={n.sourceUrl} target="_blank" rel="noopener"
-                  title={n.isDoc ? `${n.sourceLabel} 원문으로 이동` : '원문 기사로 이동'}>
-                  <ExtLinkIcon isDoc={n.isDoc} />
-                  {n.isDoc ? '공시 원문' : '뉴스'}
+                <a className="ext-link" href={n.sourceUrl} target="_blank" rel="noopener" title="원문 기사로 이동">
+                  <ExtLinkIcon />
+                  뉴스
                 </a>
               </div>
               <h4>{n.title}</h4>
@@ -192,38 +204,33 @@ export default function DashboardPage({ onNavigate, interests = [] }) {
         )}
       </section>
 
-      {/* 4) 카테고리 현황 미리보기 + 오늘의 키워드 */}
+      {/* 4) 오늘의 키워드 — 세로 목록 대신 가로 칩으로 배치("카테고리 현황" 섹션은 삭제) */}
       <section className="sec">
-        <div className="split">
-          <CategoryPreview
-            categories={categoryPreview}
-            onViewAll={() => onNavigate?.('cat')}
-          />
-          <div>
-            <div className="sh">
-              <span className="t">오늘의 키워드</span>
-              <span className="s">누르면 뉴스가 좁혀집니다</span>
-              <span className="r">언급 순</span>
-            </div>
-            <div className="kwlist">
-              {keywords.map((kw) => (
-                <div
-                  className={`kwrow${keywordFilter === kw.word ? ' on' : ''}`}
-                  key={kw.word}
-                  onClick={() => handleKeywordClick(kw.word)}
-                >
-                  <span className="h">#</span>{kw.word}<span className="ct">{kw.count}회</span>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className="sh">
+          <span className="t">오늘의 키워드</span>
+          <span className="s">누르면 뉴스가 좁혀집니다</span>
+          <span className="r">언급 순</span>
+        </div>
+        <div className="kwchips">
+          {keywords.map((kw) => (
+            <button
+              type="button"
+              className={`kwchip${keywordFilter === kw.word ? ' on' : ''}`}
+              key={kw.word}
+              onClick={() => handleKeywordClick(kw.word)}
+            >
+              <span className="h">#</span>{kw.word}<span className="ct">{kw.count}회</span>
+            </button>
+          ))}
         </div>
       </section>
 
-      {/* 5) 최근 산업 이슈 */}
-      <section className="sec">
+      {/* 5) 최근 산업 이슈 — "최신 뉴스"와 구분되게 톤 다른 패널에 담고, 관심사와 무관하게
+          모든 사용자에게 동일한 항목을 보여준다(출처도 공시·IR 등 공식 문서 위주). */}
+      <section className="sec sec-issues">
         <div className="sh">
           <span className="t">최근 산업 이슈</span>
+          <span className="badge-official">공식 근거 기반</span>
           <span className="c">{issues.length}건</span>
           <span className="s">신뢰도 → 제목 → 출처 순</span>
           <span className="r"><a onClick={() => onNavigate?.('report')}>일일 리포트 →</a></span>

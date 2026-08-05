@@ -1555,3 +1555,94 @@ a.fn:hover{text-decoration:underline}
 .ob-chips.scrollable{max-height:260px;overflow-y:auto;padding-right:4px}
 .ob-chip.ob-more{background:var(--tint);border-style:dashed;color:var(--ink-2);font-weight:700}
 .ob-chip.ob-more:hover{border-color:var(--green);color:var(--green)}
+
+/* ---------- 대시보드 "오늘의 키워드" — 세로 목록 → 가로 칩 레이아웃 ---------- */
+.kwchips{display:flex;flex-wrap:wrap;gap:10px}
+.kwchip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;
+  color:var(--ink-2);background:var(--panel);border:1px solid var(--hair);border-radius:20px;
+  padding:8px 14px;cursor:pointer;transition:all var(--dur-fast) var(--ease)}
+.kwchip .h{color:var(--faint);font-weight:700}
+.kwchip .ct{font-size:10.5px;font-weight:300;color:var(--faint)}
+.kwchip:hover{border-color:var(--green);color:var(--green)}
+.kwchip.on{background:var(--green-tint);border-color:var(--green);color:var(--green);font-weight:700}
+.kwchip.on .h{color:var(--green)}
+
+/* ---------- 대시보드 "최근 산업 이슈" — 최신 뉴스와 시각적으로 구분되는 패널 ---------- */
+.sec-issues{background:var(--tint);border-radius:20px;padding:26px 28px;border:1px solid var(--hair)}
+.sec-issues .sh .t{color:var(--ink-2)}
+.sec-issues .rows{border-top-color:var(--ink-2)}
+.sec-issues .badge-official{display:inline-flex;align-items:center;gap:5px;font-size:10px;
+  font-weight:700;color:var(--green);background:var(--green-tint);border-radius:20px;
+  padding:3px 10px;margin-left:8px}
+
+/* ---------- 지식 축적화 네트워크 그래프 (KnowledgeGraph.jsx) ---------- */
+/* 반응형 크기·여백은 컴포넌트 쪽에서 Tailwind 유틸리티 클래스로 준다(w-full, max-h-, px- 등).
+   여기 globals.css는 SVG 노드·선·애니메이션처럼 Tailwind로 표현하기 번거로운 것만 담당한다. */
+.kg-wrap{background:radial-gradient(120% 120% at 50% 18%,var(--green-tint) 0%,transparent 62%);
+  perspective:1500px}
+/* 정적 기울기(rotateX) 대신 계속 좌우로 살짝 흔들리는 sway 애니메이션 — "3D로 계속 떠 있는" 느낌 */
+.kg-svg{transform-style:preserve-3d;animation:kg-sway 9s ease-in-out infinite}
+.kg-wrap:hover .kg-svg{animation-play-state:paused;transform:rotateX(4deg) rotateY(0deg) scale(1.015)}
+
+.kg-line{stroke:var(--hair);stroke-width:1.5;opacity:0;
+  transition:opacity .6s var(--ease)}
+.kg-line-main{stroke:var(--green);stroke-opacity:.42;stroke-width:2.2}
+.kg-line-ring{stroke:var(--green);stroke-opacity:.22;stroke-width:1.4}
+.kg-line-leaf{stroke-dasharray:2 4}
+.kg-wrap.in .kg-line{opacity:1}
+
+/* 카테고리 원 — 그림자 레이어(아래로 살짝 오프셋) + 방사형 그라디언트로 광원이 있는 듯한 입체감 */
+.kg-cat{opacity:0;transform:scale(.55);transform-origin:center;transform-box:fill-box;
+  transition:opacity .5s var(--ease),transform .5s cubic-bezier(.2,1.4,.4,1)}
+.kg-wrap.in .kg-cat{opacity:1;transform:scale(1)}
+.kg-cat:hover{transform:scale(1.08) translateY(-4px)}
+.kg-cat-circle-shadow{fill:#000;opacity:.18}
+:root[data-theme="dark"] .kg-cat-circle-shadow{opacity:.36}
+.kg-cat-circle{fill:url(#kgNodeGrad);stroke:#fff;stroke-opacity:.3;stroke-width:1.5;
+  filter:drop-shadow(0 16px 28px rgba(21,120,80,.32))}
+:root[data-theme="dark"] .kg-cat-circle{stroke:#0d1512;stroke-opacity:.4}
+.kg-cat-label{fill:#fff;font-size:16.5px;font-weight:800;letter-spacing:-.01em;
+  paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:2px}
+:root[data-theme="dark"] .kg-cat-label{fill:#0d1512;stroke:rgba(255,255,255,.18)}
+
+/* 리프(키워드) 점 — 스케일인 후 각자 다른 딜레이로 계속 위아래로 둥둥 떠다닌다 */
+.kg-leaf{opacity:0;transform:scale(.3);transform-origin:center;transform-box:fill-box;
+  transition:opacity .45s var(--ease),transform .45s cubic-bezier(.2,1.4,.4,1)}
+.kg-wrap.in .kg-leaf{opacity:1;animation:kg-float 3.6s var(--ease) infinite;
+  animation-delay:var(--kg-float-delay,0s)}
+.kg-wrap.in .kg-leaf{transform:scale(1)}
+.kg-leaf-dot{fill:var(--green);opacity:.65}
+.kg-leaf-label{fill:var(--muted);font-size:12px;font-weight:600}
+
+.kg-hub-glow{fill:var(--green);opacity:.16;animation:kg-pulse 2.6s var(--ease) infinite}
+.kg-hub-circle{fill:var(--panel);stroke:var(--green);stroke-width:2.5;
+  filter:drop-shadow(0 18px 34px rgba(21,120,80,.24))}
+
+/* 허브 로고 오버레이 — TopBar.jsx의 라이트/다크 로고 전환 패턴과 동일 */
+.kg-hub-logo-img.logo-dark{display:none}
+:root[data-theme="dark"] .kg-hub-logo-img.logo-light{display:none}
+:root[data-theme="dark"] .kg-hub-logo-img.logo-dark{display:block}
+
+@keyframes kg-pulse{
+  0%,100%{transform:scale(1);opacity:.16}
+  50%{transform:scale(1.14);opacity:.28}
+}
+@keyframes kg-float{
+  0%,100%{transform:scale(1) translateY(0)}
+  50%{transform:scale(1) translateY(-5px)}
+}
+@keyframes kg-sway{
+  0%,100%{transform:rotateX(7deg) rotateY(-5deg)}
+  50%{transform:rotateX(7deg) rotateY(5deg)}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .kg-svg,.kg-wrap:hover .kg-svg{transform:none;animation:none}
+  .kg-line,.kg-cat,.kg-leaf{transition:none;opacity:1;transform:none;animation:none}
+  .kg-hub-glow{animation:none}
+}
+
+@media (max-width:720px){
+  .kg-cat-label{font-size:13.5px}
+  .kg-leaf-label{font-size:10px}
+}
