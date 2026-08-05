@@ -81,6 +81,21 @@ function toViewMessage(msg, scope) {
     return { role: 'me', text: msg.content, author: toAuthor(msg.author_name), _id: msg.id };
   }
 
+  // LLM 폴백 응답 — 위키 근거를 못 찾아 일반 지식으로 답한 것(core.py의 is_llm_fallback).
+  // has_answer=true라 NO_ANSWER_PREFIX 체크에는 안 걸리지만, 위키 citations가 있는
+  // 정상 응답과는 절대 헷갈리면 안 되므로 이 분기를 그보다 먼저 둔다 — citations
+  // 파싱 자체를 안 하고 llmFallback 플래그만 세워서, ChatMessage.jsx가 근거 태그
+  // 대신 "LLM 답변" 배지를 그리게 한다.
+  if (msg.is_llm_fallback) {
+    return {
+      role: 'ai',
+      llmFallback: true,
+      paragraphs: [[msg.content]],
+      acts: scope === 'mine' ? ['팀에 공유', '복사', '다시 생성', '삭제'] : ['복사', '다시 생성', '삭제'],
+      _id: msg.id,
+    };
+  }
+
   // 근거 부족 응답
   if (typeof msg.content === 'string' && msg.content.startsWith(NO_ANSWER_PREFIX)) {
     return {
