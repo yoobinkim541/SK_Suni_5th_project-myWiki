@@ -1646,3 +1646,36 @@ a.fn:hover{text-decoration:underline}
   .kg-cat-label{font-size:13.5px}
   .kg-leaf-label{font-size:10px}
 }
+/* ===== 모바일 상단바 로고 이미지 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 아이콘+텍스트가 합쳐진 이미지라 기존 텍스트("myWiki")는 제거했습니다.
+   상단바 높이에 맞춰 높이만 제한하고 가로는 비율대로 둡니다. */
+.m-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+.m-logo-img {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+
+/* 라이트/다크 전환 — PC(.brand2-logo-img)와 같은 규칙을 모바일에도 적용 */
+.m-logo-img.logo-dark {
+  display: none;
+}
+:root[data-theme="dark"] .m-logo-img.logo-light {
+  display: none;
+}
+:root[data-theme="dark"] .m-logo-img.logo-dark {
+  display: block;
+}
+
+/* 화면이 아주 좁을 때는 조금 더 줄입니다. */
+@media (max-width: 360px) {
+  .m-logo-img {
+    height: 19px;
+  }
+}
+
