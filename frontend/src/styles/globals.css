@@ -410,6 +410,14 @@ svg text{font-family:inherit}
   padding-left:10px;border-left:1px solid var(--hair)}
 .ev .f{font-size:10px;font-weight:300;color:var(--faint);margin-top:7px}
 
+.mascot-float{display:flex;justify-content:center;padding:24px 0;
+  animation:mascot-bob 3s ease-in-out infinite}
+.mascot-float img{width:160px;height:auto}
+@keyframes mascot-bob{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-10px)}
+}
+
 @media (max-width:1020px){
   .app{grid-template-columns:1fr}
   .side{border-right:0;border-bottom:1px solid var(--hair)}

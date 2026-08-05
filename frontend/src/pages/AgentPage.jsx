@@ -35,9 +35,21 @@ import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
 import ShareToTeamModal from '../components/agent/ShareToTeamModal';
 import ParticipantsModal from '../components/agent/ParticipantsModal';
+import mascotImg from '../assets/mascot.png';
 
 const PANE_KEYS = ['team', 'mine'];
 const PANE_VISIBILITY = { team: 'team', mine: 'private' };
+
+// 근거 원문 컬럼(.col)에 두는 마스코트 — 근거가 0개면 목록이 비어있는 자리에,
+// 1개 이상이면 .ev 카드 목록 아래에 온다(JSX 흐름상 배치라 근거가 늘어나면
+// 같이 밀려 내려간다 — position: absolute로 겹치게 띄우지 않음).
+function MascotFloat() {
+  return (
+    <div className="mascot-float">
+      <img src={mascotImg} alt="마이위키 마스코트" />
+    </div>
+  );
+}
 
 export default function AgentPage({ profile }) {
   const [panes, setPanes] = useState(null);
@@ -654,6 +666,9 @@ export default function AgentPage({ profile }) {
         {/* 근거 원문 */}
         <div className="col">
           <h5>근거 원문<span className="c">{current?.evidence.length ?? 0}</span></h5>
+
+          {(current?.evidence ?? []).length === 0 && <MascotFloat />}
+
           {(current?.evidence ?? []).map((e) => {
             // e.sourceName이 null일 수 있습니다(문서에 매체 정보가 연결 안 된 경우).
             const sourceName = e.sourceName || '출처 확인 중';
@@ -675,6 +690,8 @@ export default function AgentPage({ profile }) {
               </div>
             );
           })}
+
+          {(current?.evidence ?? []).length > 0 && <MascotFloat />}
         </div>
       </div>
 
