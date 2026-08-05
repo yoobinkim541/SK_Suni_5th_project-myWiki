@@ -497,6 +497,8 @@ svg text{font-family:inherit}
 .pp-oauth.google .ic{background:#4285F4}
 .pp-oauth.github .ic{background:#181717}
 .pp-oauth.kakao .ic{background:#FEE500;color:#3c1e1e}
+/* provider key가 그대로 클래스명이 된다. 'custom:naver'의 ':'는 CSS 특수문자라 이스케이프한다. */
+.pp-oauth.custom\:naver .ic{background:#03C75A}
 .pp-note{font-size:10px;font-weight:300;color:var(--faint);margin-top:12px;
   padding-top:10px;border-top:1px solid var(--hair-3);line-height:1.6}
 .pp-me{display:flex;align-items:center;gap:11px;padding-bottom:12px;border-bottom:1px solid var(--hair-2)}

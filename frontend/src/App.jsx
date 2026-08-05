@@ -292,7 +292,7 @@ export default function App() {
     setSettingsOpen(false);
     setProfileOpen((o) => !o);
   }
-  // provider: 'google' | 'github' | 'kakao' — 브라우저가 OAuth 제공자로 리다이렉트된다.
+  // provider: 'google' | 'github' | 'custom:naver' — 브라우저가 OAuth 제공자로 리다이렉트된다.
   // 돌아온 뒤의 상태 반영은 위 onAuthStateChange가 처리한다.
   function handleLogin(provider) {
     setProfileOpen(false);
