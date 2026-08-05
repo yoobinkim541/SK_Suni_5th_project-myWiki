@@ -30,6 +30,7 @@ import {
   addParticipant,
   removeParticipant,
   listWorkspaceMembers,
+  mergeEvidenceLists,
 } from '../services/agentApi';
 import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
@@ -200,7 +201,7 @@ export default function AgentPage({ profile }) {
       updateConversation(activePane, current.id, (c) => ({
         ...c,
         messages: [...c.messages, aiMessage],
-        evidence: evidence.length ? evidence : c.evidence,
+        evidence: mergeEvidenceLists(c.evidence, evidence),
       }));
     } catch (e) {
       setError(e.message || '답변을 가져오지 못했습니다.');
@@ -415,7 +416,7 @@ export default function AgentPage({ profile }) {
       updateConversation(activePane, current.id, (c) => ({
         ...c,
         messages: c.messages.map((m) => (m._id === messageId ? updated : m)),
-        evidence: evidence.length ? evidence : c.evidence,
+        evidence: mergeEvidenceLists(c.evidence, evidence),
       }));
       setMessageAction(messageId, 'regen', { status: 'done' });
       setTimeout(() => setMessageAction(messageId, 'regen', { status: 'idle' }), 1500);
