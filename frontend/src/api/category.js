@@ -1,24 +1,30 @@
-// [설계 미정 · 백엔드 불가] CategoryPage.jsx의 카테고리(메모리/파운드리/장비)는
-// DB 어느 테이블에도 대응하는 컬럼이 없다. 자리만 잡아둔 상태이고, 호출하면 백엔드가
-// 없어 항상 실패한다.
+// [백엔드 미구현] 분류 체계는 확정됐고, 남은 건 백엔드 엔드포인트 하나뿐이다.
 //
-// 2026-08-05 재확인 — 이 주석에 있던 "page_type 5종"은 낡은 정보였다. 실제 현황:
-//   analysis 분류        6종  제품·기술 / 경쟁사 / 고객·수요산업 / 공급망·생산 / 정책·규제 / 시장·경영
-//   wiki_pages.page_type 8종  industry / company / technology / supply_chain /
-//                             policy / market / issue / term  (api/wiki.js WIKI_PAGE_TYPE_LABELS)
-//   카테고리 현황 화면    3종  메모리 / 파운드리 / 장비
+// 2026-08-05 정정 — 이 파일에 있던 두 서술이 모두 사실과 달랐다.
+//   "page_type 5종"                        -> 실제 8종
+//   "카테고리 현황 화면은 메모리/파운드리/장비" -> 실제로는 아래 6종
+// data/mockCategory.js는 처음부터 6종을 쓰고 있었다. '파운드리'는 카테고리가 아니라
+// mockOnboarding.js의 키워드 사전과 목업 본문에만 등장하는 단어다.
 //
-// 즉 "3곳이 제각각"이 아니라 앞의 두 곳은 6개가 서로 대응하고, **이 화면의 3종만
-// 동떨어져 있다.** 실질 안건은 "카테고리 현황을 어디에 맞출 것인가" 하나다.
+// 확정된 분류 (팀 확인 완료, 2026-08-05):
+//   제품·기술 / 경쟁사 / 고객·수요산업 / 공급망·생산 / 정책·규제 / 시장·경영
 //
-// 팀 결정이 필요한 선택지:
-//   ① page_type 8종 재사용 — 백엔드 API 1개만 추가하면 된다. 스키마 변경 없음 (가장 작다)
-//   ② 메모리/파운드리/장비 유지 — 분류 컬럼·테이블 신설(SQL) + 분류 로직 신설이 따라온다
-//   ③ 화면 보류 — MVP 범위에서 빼고 목업 유지
-// 결정 전까지 services/categoryApi.js와 data/mockCategory.js를 건드리지 않는다.
+// 이 6종은 세 곳이 이미 같은 값을 쓴다:
+//   document_analysis_results.primary_category  (문서 438건에 채워져 있음)
+//   data/mockOnboarding.js INTEREST_KEYWORD_GROUPS  (선호조사 키워드 사전)
+//   data/mockCategory.js MOCK_CATEGORIES            (이 화면의 목업)
+// 즉 프론트는 손댈 게 없고, primary_category를 집계하는 API만 만들면 실연동된다.
+//
+// 필요한 엔드포인트: GET /categories/stats
+//   집계원  document_analysis_results.primary_category (+ documents 조인)
+//   스키마 변경 불필요. 분류 로직 신설도 불필요 — 이미 분류돼 있다.
 import { apiFetch } from './client';
 
-/** @returns {Promise<{name: string, count: number, percent: number}[]>} */
+/**
+ * 카테고리 현황 집계. MOCK_CATEGORIES와 같은 shape로 돌려받아야 화면이 그대로 동작한다.
+ * @returns {Promise<{id: string, name: string, count: number,
+ *                    topIssue: string, tags: string[], level: string}[]>}
+ */
 export function fetchCategoryStats() {
-  return apiFetch('/categories/stats'); // 분류 기준 확정 후 백엔드 담당 정해서 구현
+  return apiFetch('/categories/stats'); // 백엔드 구현 전까지 호출 시 404
 }
