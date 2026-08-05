@@ -377,24 +377,78 @@ def update_agent_message(message_id: str, result: AgentResult, prompt_version: s
     return message
 
 
-def _flatten_citation_source_url(row: dict) -> dict:
-    """document_versions(document_id) -> documents(canonical_url) 임베드 결과를 source_url로 펼친다."""
-    document_versions = row.pop("document_versions", None) or {}
-    documents = document_versions.get("documents") or {}
-    row["source_url"] = documents.get("canonical_url")
-    return row
+def _enrich_message_citations(rows: list[dict]) -> list[dict]:
+    """message_citations 원본 행에 문서 제목·매체명·게시일·개별 신뢰도를 붙인다.
+
+    src/wiki/query.py의 _enrich_sources와 같은 패턴(순차 조회) — "근거 원문" 사이드바가
+    렌더링하려는 발췌(quoted_text)+제목+매체명+날짜+신뢰도 중 제목/매체명/날짜/신뢰도가
+    이전에는 전혀 채워지지 않아, 프론트가 그 카드를 "출처 정보 확인 중" 상태에서
+    벗어나지 못하는 원인이 됐다.
+    """
+    if not rows:
+        return rows
+
+    document_version_ids = list({r["document_version_id"] for r in rows})
+    db = get_supabase()
+
+    versions_res = (
+        db.table("document_versions")
+        .select("id, document_id")
+        .in_("id", document_version_ids)
+        .execute()
+    )
+    document_id_by_version = {row["id"]: row["document_id"] for row in versions_res.data}
+
+    document_ids = list({doc_id for doc_id in document_id_by_version.values() if doc_id})
+    documents_by_id: dict[str, dict] = {}
+    if document_ids:
+        documents_res = (
+            db.table("documents")
+            .select("id, title, canonical_url, published_at, source_id")
+            .in_("id", document_ids)
+            .execute()
+        )
+        documents_by_id = {row["id"]: row for row in documents_res.data}
+
+    source_ids = list({row["source_id"] for row in documents_by_id.values() if row.get("source_id")})
+    source_name_by_id: dict[str, str] = {}
+    if source_ids:
+        sources_res = db.table("sources").select("id, name").in_("id", source_ids).execute()
+        source_name_by_id = {row["id"]: row["name"] for row in sources_res.data}
+
+    analysis_res = (
+        db.table("document_analysis_results")
+        .select("document_version_id, reliability_score")
+        .in_("document_version_id", document_version_ids)
+        .execute()
+    )
+    reliability_by_version = {
+        row["document_version_id"]: row["reliability_score"]
+        for row in analysis_res.data
+        if row.get("reliability_score") is not None
+    }
+
+    for row in rows:
+        document_id = document_id_by_version.get(row["document_version_id"])
+        document = documents_by_id.get(document_id) if document_id else None
+        row["document_title"] = document.get("title") if document else None
+        row["source_url"] = document.get("canonical_url") if document else None
+        row["published_at"] = document.get("published_at") if document else None
+        row["source_name"] = source_name_by_id.get(document.get("source_id")) if document else None
+        row["reliability_score"] = reliability_by_version.get(row["document_version_id"])
+    return rows
 
 
 def list_message_citations(message_id: str) -> list[dict]:
     res = (
         get_supabase()
         .table("message_citations")
-        .select("*, document_versions(document_id, documents(canonical_url))")
+        .select("*")
         .eq("message_id", message_id)
         .order("citation_order")
         .execute()
     )
-    return [_flatten_citation_source_url(row) for row in res.data]
+    return _enrich_message_citations(res.data)
 
 
 def delete_chat_message(message_id: str) -> None:

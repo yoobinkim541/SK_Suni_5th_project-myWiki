@@ -56,6 +56,10 @@ class CitationOut(BaseModel):
     relevance_score: Optional[float]
     citation_order: Optional[int]
     source_url: Optional[str] = None
+    document_title: Optional[str] = None
+    source_name: Optional[str] = None
+    published_at: Optional[str] = None
+    reliability_score: Optional[int] = None
 
 
 class ChatMessageOut(BaseModel):
