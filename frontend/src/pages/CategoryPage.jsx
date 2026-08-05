@@ -1,8 +1,7 @@
 // 카테고리 현황 페이지 — PC/모바일 공용
 //
-// 데이터는 services/categoryApi.js를 거쳐 받습니다. 카드·요약은 실백엔드
-// (GET /categories/stats)에 연결돼 있고, 카드 클릭 시 뜨는 "관련 뉴스"는
-// CategoryRow.jsx 안에서 fetchNewsByCategory()로 따로 받아옵니다(아직 목업).
+// 데이터는 services/categoryApi.js를 거쳐 받습니다. 카드·상단 요약·원그래프·관련 뉴스가
+// 전부 GET /categories/stats 한 번의 응답에서 나옵니다.
 
 import { useState, useEffect } from 'react';
 import CategoryDetail from '../components/category/CategoryDetail';
