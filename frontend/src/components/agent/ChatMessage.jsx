@@ -13,9 +13,53 @@
 // 그 경우만 react-markdown으로 렌더링해서 **bold**/목록 같은 마크다운이 그대로 텍스트로
 // 보이지 않게 합니다(WikiCard.jsx의 .md 렌더링과 같은 방식). mock 데이터의 문장 중간
 // 각주 번호(paragraphs 안에 숫자가 섞인 형태)는 기존처럼 CitationTag로 그대로 둡니다.
+//
+// 실제 답변 본문 안의 "...조치입니다[1]." 같은 [N] 각주는 linkifyCitationNodes가
+// react-markdown의 p/li 렌더러를 대체해서 message.cites[].url로 링크로 바꿉니다 —
+// WikiCard.jsx가 위키 본문에서 하는 것과 같은 방식이지만, 여기는 doc.sources가 아니라
+// message.cites(citationOrder 대신 no)를 기준으로 찾아서 별도로 구현했습니다.
 
+import { Children, cloneElement, isValidElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import CitationTag from '../wiki/CitationTag';
+
+const CITATION_RE = /\[(\d+)\]/g;
+
+function linkifyCitationText(text, cites, keyPrefix) {
+  const parts = text.split(CITATION_RE);
+  return parts.map((part, i) => {
+    if (i % 2 === 0) return part;
+    const no = Number(part);
+    const cite = cites.find((c) => c.no === no);
+    // 매칭되는 근거가 없거나 url이 없으면(백엔드가 아직 원문을 못 찾은 경우 등)
+    // 링크를 지어내지 않고 원문 그대로 둡니다.
+    if (!cite?.url) return `[${part}]`;
+    return (
+      <a className="fn" key={`${keyPrefix}-cite-${i}`} href={cite.url} target="_blank" rel="noopener" title={`근거 ${no}`}>
+        {no}
+      </a>
+    );
+  });
+}
+
+function linkifyCitationNodes(children, cites, keyPrefix = 'c') {
+  return Children.map(children, (child, i) => {
+    if (typeof child === 'string') return linkifyCitationText(child, cites, `${keyPrefix}-${i}`);
+    if (isValidElement(child) && child.props?.children) {
+      return cloneElement(child, {
+        children: linkifyCitationNodes(child.props.children, cites, `${keyPrefix}-${i}`),
+      });
+    }
+    return child;
+  });
+}
+
+function citationComponents(cites) {
+  return {
+    p: ({ children }) => <p>{linkifyCitationNodes(children, cites)}</p>,
+    li: ({ children }) => <li>{linkifyCitationNodes(children, cites)}</li>,
+  };
+}
 
 const ACT_LABEL = {
   wiki: { idle: '위키에 저장', loading: '저장 중…', done: '위키에 저장됨' },
@@ -80,7 +124,7 @@ export default function ChatMessage({ message, flag, flagPriv = false, onAction,
           (message.paragraphs || []).map((parts, pi) =>
             parts.length === 1 && typeof parts[0] === 'string' ? (
               <div className="md" key={pi}>
-                <ReactMarkdown>{parts[0]}</ReactMarkdown>
+                <ReactMarkdown components={citationComponents(message.cites || [])}>{parts[0]}</ReactMarkdown>
               </div>
             ) : (
               <p key={pi}>

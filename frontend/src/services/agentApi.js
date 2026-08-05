@@ -27,14 +27,16 @@ function parseNoAnswer(content) {
   };
 }
 
-// citations[] → 화면 cites[{no, key}]
-// 주의: 백엔드는 document_version_id만 주고 출처 종류(dart/etnews 등)를 알려주지 않습니다.
-// key를 임의로 지어내면 잘못된 출처를 표시하게 되므로 null로 둡니다.
-// (documents 조인이 백엔드에 추가되면 여기서 실제 key를 채웁니다.)
+// citations[] → 화면 cites[{no, key, url}]
+// 주의: 백엔드는 출처 종류(dart/etnews 등) 자체는 안 주기 때문에 key는 임의로
+// 지어내지 않고 null로 둡니다(mock 전용 registry 조회용 — getSource(null)은 못 찾음).
+// url은 백엔드가 document_versions -> documents(canonical_url) 조인으로 채워 주는
+// source_url을 그대로 씁니다 — ChatMessage.jsx가 본문 [N] 각주를 이 url로 링크합니다.
 function toCites(citations = []) {
   return citations.map((c, i) => ({
     no: c.citation_order ?? i + 1,
     key: null,
+    url: c.source_url ?? null,
     documentVersionId: c.document_version_id,
   }));
 }
