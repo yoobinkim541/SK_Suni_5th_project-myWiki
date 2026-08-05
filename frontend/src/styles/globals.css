@@ -18,6 +18,10 @@
 
   --ease:cubic-bezier(.22,.61,.36,1);
   --dur-fast:.16s; --dur-base:.28s; --dur-slow:.5s;
+
+  /* TailAdmin 마케팅 대시보드 참고 — 테두리 위주 카드에 부드러운 그림자를 얹는다.
+     border는 var(--hair-3)(옅은 톤)로 낮추고 이 그림자를 같이 쓴다. */
+  --shadow-card: 0 1px 2px rgba(21,23,26,.04), 0 2px 8px rgba(21,23,26,.06);
 }
 :root[data-theme="dark"]{
   --ink:#eef0f2; --ink-2:#c7ccd1; --muted:#8f979d; --faint:#5c6469;
@@ -28,6 +32,10 @@
   --conf-high:#3fb98b; --conf-high-tint:#122720;
   --conf-mid:#9aa2a8;  --conf-mid-tint:#22262a;
   --conf-low:#d9584a;  --conf-low-tint:#2d1512;
+
+  /* 다크는 패널 배경 자체가 거의 검정이라 라이트와 같은 옅은 그림자는 안 보인다 —
+     불투명도를 올려서 카드 경계가 살짝이라도 뜨게 한다. */
+  --shadow-card: 0 1px 2px rgba(0,0,0,.24), 0 2px 10px rgba(0,0,0,.32);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -156,7 +164,10 @@ svg text{font-family:inherit}
 .chart text.xl{text-anchor:middle}
 .chart .bars rect{fill:var(--track)}
 .chart .bars rect.now{fill:var(--hair)}
-.chart .area{fill:var(--green-tint)}
+/* TrendChart.jsx의 <defs> 안 <linearGradient id="trend-area-gradient">를 가리킨다 —
+   위에서 진하고 아래로 갈수록 투명해지는 TailAdmin 스타일 채우기. CSS가 SVG
+   presentation attribute(fill)보다 우선 적용되므로, 그라데이션은 여기서 지정해야 한다. */
+.chart .area{fill:url(#trend-area-gradient)}
 .chart .line{fill:none;stroke:var(--green);stroke-width:1.8;
   stroke-linejoin:round;stroke-linecap:round}
 .chart .dots circle{fill:var(--panel);stroke:var(--green);stroke-width:1.4}
@@ -928,7 +939,8 @@ a.fn:hover{text-decoration:underline}
 /* ---------- 대시보드 최신 뉴스(상단 고정) ---------- */
 .news-feed{margin-bottom:6px}
 .news-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-.news-card{border:1px solid var(--hair);border-radius:16px;padding:16px 18px;background:var(--panel);
+.news-card{border:1px solid var(--hair-3);border-radius:16px;padding:16px 18px;background:var(--panel);
+  box-shadow:var(--shadow-card);
   transition:border-color var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease)}
 .news-card:hover{border-color:var(--green);transform:translateY(-3px);box-shadow:0 16px 30px -16px rgba(21,23,26,.18)}
 .news-card.hidden{display:none}
@@ -1187,7 +1199,8 @@ a.fn:hover{text-decoration:underline}
 
 /* Card.jsx — 범용 흰 카드 틀. 시안에 "어디서나 쓰는 카드" 클래스가 없어
    .set-card 와 동일한 값으로 새로 만들었습니다(.cd 는 카테고리 카드 전용이라 재사용 불가). */
-.panel-card{border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:var(--panel)}
+.panel-card{border:1px solid var(--hair-3);border-radius:12px;overflow:hidden;background:var(--panel);
+  box-shadow:var(--shadow-card)}
 
 /* TopBar.jsx (PC) — 시안 .deck 의 h1 과 같은 값 + 로고 아이콘(LogoMark). */
 .deck .brand2{display:flex;align-items:center;gap:6px;
