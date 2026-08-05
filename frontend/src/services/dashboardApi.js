@@ -10,6 +10,8 @@
 //   [목업] issues       백엔드 없음
 //   [목업] trend        백엔드 없음
 //   [목업] categoryPreview  백엔드 없음. 분류 체계 미합의 상태라 착수 전 팀 결정 필요
+//                       + #92(대시보드 개편)로 DashboardPage에서 렌더링이 빠졌다.
+//                         fetchDashboard()는 아직 이 값을 반환하지만 지금은 쓰이지 않는다.
 //   [목업] keywords     백엔드 없음
 //
 // 목업 항목은 백엔드가 생기기 전까지 지우지 않습니다 — 지우면 화면이 빕니다.
@@ -48,7 +50,8 @@ export function fetchTrend() {
   return delay(MOCK_TREND);
 }
 
-// [목업] 백엔드 없음. 분류 체계가 합의되기 전에는 실연동하지 않습니다 (api/category.js 참고)
+// [목업 · 현재 미사용] #92 이후 DashboardPage가 CategoryPreview를 렌더링하지 않습니다.
+// 백엔드도 없고 분류 체계도 미합의라, 화면에 되살릴지부터 팀 결정이 필요합니다 (api/category.js 참고).
 export function fetchCategoryPreview() {
   return delay(MOCK_CATEGORY_PREVIEW);
 }
