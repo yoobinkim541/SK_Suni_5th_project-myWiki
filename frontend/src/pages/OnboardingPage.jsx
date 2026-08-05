@@ -1,6 +1,6 @@
 // 온보딩 — 선호 조사 화면 (첫 진입)
 //
-//   진행 단계 바 → "관심사를 알려 주세요" → 관심 키워드(복수, 처음 20개 + 더보기) / 직무(택1)
+//   진행 단계 바 → "관심사를 알려 주세요" → 관심 키워드(복수, 처음 20개 + 더보기 누를 때마다 20개씩 추가) / 직무(택1)
 //   → 하단 "키워드 N개 선택됨 · 건너뛰기 · myWiki 시작하기"
 // 연령대 선택은 제거했습니다.
 //
@@ -18,8 +18,9 @@ import {
   ROLE_OPTIONS,
 } from '../data/mockOnboarding';
 
-// 처음 화면에는 이 개수만큼만 보여주고, "더보기"를 누르면 전체 키워드가 펼쳐집니다.
-const INTEREST_KEYWORDS_VISIBLE_COUNT = 20;
+// 처음엔 이 개수만 보여주고, "더보기"를 누를 때마다 이 개수만큼씩 추가로 펼칩니다
+// (한 번에 전체를 펼치지 않음 — 목록이 길어지면 .ob-chips가 스크롤됩니다).
+const INTEREST_KEYWORDS_PAGE_SIZE = 20;
 
 export default function OnboardingPage({
   onComplete,
@@ -29,11 +30,10 @@ export default function OnboardingPage({
 }) {
   const [keywords, setKeywords] = useState(initialKeywords);
   const [role, setRole] = useState(initialRole);
-  const [showAllKeywords, setShowAllKeywords] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(INTEREST_KEYWORDS_PAGE_SIZE);
 
-  const visibleKeywords = showAllKeywords
-    ? INTEREST_KEYWORDS
-    : INTEREST_KEYWORDS.slice(0, INTEREST_KEYWORDS_VISIBLE_COUNT);
+  const visibleKeywords = INTEREST_KEYWORDS.slice(0, visibleCount);
+  const hasMore = visibleCount < INTEREST_KEYWORDS.length;
 
   function toggleKeyword(word) {
     setKeywords((prev) =>
@@ -60,7 +60,7 @@ export default function OnboardingPage({
           <div className="ob-h">관심사를 알려 주세요</div>
           <div className="ob-sub">
             선택한 항목은 워크스페이스에 저장되어 수집 키워드·이슈 랭킹·리포트 우선순위에
-            반영됩니다. 나중에 설정에서 변경할 수 있습니다.
+            반영됩니다.
           </div>
 
           {/* 관심 키워드 — 복수 선택 */}
@@ -69,7 +69,7 @@ export default function OnboardingPage({
               관심 키워드
               <span className="ob-q-s">복수 선택</span>
             </div>
-            <div className="ob-chips">
+            <div className={`ob-chips${visibleCount > INTEREST_KEYWORDS_PAGE_SIZE ? ' scrollable' : ''}`}>
               {visibleKeywords.map((w) => (
                 <button
                   type="button"
@@ -80,13 +80,18 @@ export default function OnboardingPage({
                   {w}
                 </button>
               ))}
-              {!showAllKeywords && (
+              {hasMore && (
                 <button
                   type="button"
-                  className="ob-chip"
-                  onClick={() => setShowAllKeywords(true)}
+                  className="ob-chip ob-more"
+                  onClick={() =>
+                    setVisibleCount((c) =>
+                      Math.min(c + INTEREST_KEYWORDS_PAGE_SIZE, INTEREST_KEYWORDS.length)
+                    )
+                  }
                 >
-                  더보기 +{INTEREST_KEYWORDS.length - INTEREST_KEYWORDS_VISIBLE_COUNT}
+                  더보기 +
+                  {Math.min(INTEREST_KEYWORDS_PAGE_SIZE, INTEREST_KEYWORDS.length - visibleCount)}
                 </button>
               )}
             </div>

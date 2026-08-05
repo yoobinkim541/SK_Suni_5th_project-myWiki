@@ -93,7 +93,6 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
-  const [guestMode, setGuestMode] = useState(false);
   const [entryStep, setEntryStep] = useState(null); // 'landing' | 'survey' | null(=일반 앱 화면)
   const [profile, setProfile] = useState(null);
   const [notiReport, setNotiReport] = useState(true);
@@ -258,11 +257,6 @@ export default function App() {
   // 대시보드·리포트의 "관련 위키" 링크에서 navigateTo('wiki', 'hbm4') 처럼 넘기면
   // 위키 페이지가 해당 문서를 열고 시작합니다.
   function navigateTo(key, payload) {
-    if (guestMode && key !== 'dash') {
-      // 게스트는 대시보드 외 메뉴를 못 본다 — 화면 전환 대신 로그인 유도(프로필 드롭다운 오픈).
-      setProfileOpen(true);
-      return;
-    }
     setView(key);
     if (key === 'wiki' && payload) setWikiDocId(payload);
     setDrawerOpen(false);
@@ -298,7 +292,6 @@ export default function App() {
   }
   function handleLogout() {
     setProfileOpen(false);
-    setGuestMode(false);
     signOut();
   }
 
@@ -327,27 +320,13 @@ export default function App() {
 
   // 신규 계정 로그인 직후 — 사람확인/로그인 없이 곧장 선호조사.
   if (entryStep === 'survey') {
-    return (
-      <EntryFlow
-        initialStep="survey"
-        onSurveyComplete={handleOnboardingComplete}
-        onGuestSkip={() => {}}
-      />
-    );
+    return <EntryFlow initialStep="survey" onSurveyComplete={handleOnboardingComplete} />;
   }
 
-  // 첫 방문(세션 없음, 게스트도 아님) — 랜딩부터.
-  if (entryStep === 'landing' && !guestMode) {
-    return (
-      <EntryFlow
-        initialStep="landing"
-        onSurveyComplete={handleOnboardingComplete}
-        onGuestSkip={() => {
-          setGuestMode(true);
-          setPrefs({ keywords: [], role: null });
-        }}
-      />
-    );
+  // 첫 방문(세션 없음) — 랜딩부터. "건너뛰고 둘러보기"는 EntryFlow 안에서 미리보기 화면만
+  // 보여주고 실제 데이터가 붙은 메인 대시보드로는 보내지 않는다(로그인해야만 진입 가능).
+  if (entryStep === 'landing') {
+    return <EntryFlow initialStep="landing" onSurveyComplete={handleOnboardingComplete} />;
   }
 
   return (
