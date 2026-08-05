@@ -740,14 +740,11 @@ a.cite:hover .ex{color:var(--green)}
   padding:2px 7px;border-radius:4px;background:var(--green-tint);color:var(--green)}
 .who .fl.priv{background:var(--tint);color:var(--muted)}
 
-/* 위키 근거 없이 일반 지식으로 답한 응답(core.py의 is_llm_fallback) 배지 —
-   위키 citations가 있는 정상 답변과 절대 헷갈리면 안 되므로 green이 아닌
-   amber 계열로 명확히 다르게 준다. */
-.llm-fallback-badge{display:inline-flex;align-items:center;font-size:10.5px;
-  font-weight:700;letter-spacing:.02em;color:var(--amber);
-  background:color-mix(in srgb,var(--amber) 12%,transparent);
-  border:1px solid color-mix(in srgb,var(--amber) 30%,transparent);
-  border-radius:20px;padding:4px 12px;margin-bottom:10px}
+/* 위키 근거 없이 일반 지식으로 답한 응답(core.py의 is_llm_fallback) 표시 —
+   .none(근거 부족 카드)과 같은 왼쪽 세로선 언어를 그대로 쓰되, 위키 citations가
+   있는 정상 답변과 절대 헷갈리면 안 되므로 색만 green이 아닌 amber로 다르게 준다. */
+.llm-note{border-left:2px solid var(--amber);padding-left:15px;margin-bottom:12px;
+  font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--amber)}
 .ag-pane.mine .thread{border-top-color:var(--hair)}
 
 
