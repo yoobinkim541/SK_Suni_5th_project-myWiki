@@ -41,6 +41,7 @@ from .schemas import (
     ShareToTeamRequest,
     WorkspaceMemberOut,
 )
+from .category_router import router as category_router
 from .dashboard_router import router as dashboard_router
 from .notifications_router import router as notifications_router
 from .settings_router import router as settings_router
@@ -77,6 +78,7 @@ app.include_router(wiki_router)
 app.include_router(settings_router)
 app.include_router(notifications_router)
 app.include_router(dashboard_router)
+app.include_router(category_router)
 
 
 TITLE_MAX_LEN = 40
