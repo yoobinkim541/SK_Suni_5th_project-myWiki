@@ -415,6 +415,7 @@ class AnalysisResultForReport(BaseModel):
     title: str
     canonical_url: str | None = None
     source_name: str | None = None
+    source_type: str | None = None  # 'disclosure'면 report/selector.py가 근거 개수 요건을 면제한다.
     published_at: str | None = None
     primary_category: str
     secondary_categories: list[str] = Field(default_factory=list)

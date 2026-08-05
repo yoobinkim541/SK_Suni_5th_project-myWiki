@@ -96,8 +96,25 @@ def test_get_report_candidates_applies_seoul_date_range_and_metadata_mapping() -
     assert candidates[0].analysis_result_id == "analysis-doc-end-minus-current"
     assert candidates[0].document_version_id == "ver-doc-end-minus-v1"
     assert candidates[0].source_name == "연합뉴스"
+    assert candidates[0].source_type == "rss"
     assert candidates[0].canonical_url == "https://example.com/doc-end-minus"
     assert candidates[0].ranking_score == Decimal("90.2")
+
+
+def test_get_report_candidates_maps_disclosure_source_type() -> None:
+    """selector.py의 공시 예외(analysis/README.md 참조)가 source_type을 보고
+    판단하므로, sources.source_type이 candidate까지 그대로 전달돼야 한다."""
+    tables = _tables_for_candidates(published_ats={"doc-1": "2026-08-02T03:00:00+00:00"})
+    tables["sources"] = [{"id": "source-1", "name": "DART - SK하이닉스", "source_type": "disclosure"}]
+
+    candidates = get_report_candidates(
+        workspace_id="ws-1",
+        report_date=date(2026, 8, 2),
+        supabase=FakeSupabase(tables),
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].source_type == "disclosure"
 
 
 def test_get_report_candidates_uses_single_complete_analysis_row() -> None:
@@ -281,7 +298,7 @@ def test_get_report_candidates_does_not_limit_candidate_count() -> None:
 
 
 def _tables_for_candidates(*, published_ats: dict[str, str]) -> dict[str, list[dict[str, object]]]:
-    sources = [{"id": "source-1", "name": "연합뉴스"}]
+    sources = [{"id": "source-1", "name": "연합뉴스", "source_type": "rss"}]
     documents: list[dict[str, object]] = []
     versions: list[dict[str, object]] = []
     rows: list[dict[str, object]] = []

@@ -384,6 +384,9 @@ NAVER_CLIENT_ID=
 NAVER_CLIENT_SECRET=
 GNEWS_API_KEY=
 
+# src/collectors/ — DART 공시 수집 (https://opendart.fss.or.kr/api)
+DART_API_KEY=
+
 # src/notifications/ — 위키 발행 브라우저 푸시 알림
 VAPID_PRIVATE_KEY=
 VAPID_CLAIMS_SUB=mailto:your-email@example.com
