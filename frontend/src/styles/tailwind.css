@@ -1,0 +1,6 @@
+/* Tailwind 진입점 — globals.css(기존 시안 CSS) 뒤에 로드해서, 새로 작성하는 컴포넌트가
+   반응형 유틸리티 클래스를 쓸 수 있게 합니다. preflight(리셋)는 껐습니다(tailwind.config.js) —
+   기존 globals.css 스타일과 부딪히지 않게 하기 위함입니다. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
