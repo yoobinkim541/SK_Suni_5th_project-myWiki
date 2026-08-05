@@ -6,16 +6,16 @@
 //   되어 있는데, 이 id가 없으면 그 스타일이 안 먹어서 카테고리에 기사가 많을 때
 //   모달이 화면 밖으로 넘쳐버립니다. 이제 기사가 몇 건이든 목록 안에서 스크롤됩니다.
 //
-// ⚠ 지금 여기 뜨는 건수·날짜·시간은 전부 data/mockDashboard.js의 정적인 목업 텍스트입니다.
-//   "5건"이나 "12분 전" 같은 값이 자동으로 바뀌는 게 아니라, 지금 이 컴포넌트가 받는
-//   newsItems 배열이 바뀔 때만 화면이 바뀝니다. 지금은 그 배열이 하드코딩된 목업이라
-//   실제로 뉴스가 새로 들어와도 화면엔 반영되지 않고, 백엔드 API로 뉴스 목록을 fetch해서
-//   이 배열 자리를 채우게 되면 그때부터 "실시간"이 됩니다(정확히는 API를 다시 부를 때마다
-//   최신값으로 갱신 — 진짜 실시간 push가 되려면 폴링이나 웹소켓 같은 별도 처리가 더 필요해요).
-//   시간 표시도 마찬가지로 지금은 "12분 전" 같은 문자열을 그대로 박아둔 것뿐이라,
-//   실제 연동 시에는 서버가 내려주는 타임스탬프를 상대시간으로 변환하는 로직이 따로 필요합니다.
+// 목록은 GET /categories/stats의 recent_documents에서 옵니다(분류당 최신 5건).
+// 시각은 서버가 ISO로 주고 formatRelative가 렌더 시점에 '2시간 전'으로 바꿉니다 —
+// 서버가 문자열을 만들면 탭을 오래 열어뒀을 때 그 값이 틀린 채로 굳습니다.
+//
+// ⚠ 인용문(quote)은 대체로 빈칸입니다. 인용문은 분석 4단계 중 중요도 단계 산출물인데
+//   그 단계가 하루쯤 뒤처져서, 최신순으로 뽑는 이 목록에는 아직 없습니다.
+//   스케줄러 타임아웃(P1)이 풀리면 채워집니다.
 
 import { useEffect } from 'react';
+import { formatRelative } from '../../lib/relativeTime';
 
 export default function CategoryNewsModal({ category, newsItems = [], onClose }) {
   useEffect(() => {
@@ -35,7 +35,9 @@ export default function CategoryNewsModal({ category, newsItems = [], onClose })
       <div className="mw-modal open" role="dialog" aria-modal="true" aria-label="카테고리 관련 뉴스">
         <div className="mw-hd">
           <div>
-            <div className="eb">CATEGORY · {newsItems.length}건</div>
+            {/* '최근'을 붙인다. 카드는 분류 전체 건수(예: 45건)를 보여주는데 여기는
+                최신 몇 건만 담기므로, 숫자만 쓰면 분류가 줄어든 것처럼 읽힌다. */}
+            <div className="eb">CATEGORY · 최근 {newsItems.length}건</div>
             <h3>{category.name}</h3>
           </div>
           <button className="mw-x" onClick={onClose} aria-label="닫기">✕</button>
@@ -47,12 +49,14 @@ export default function CategoryNewsModal({ category, newsItems = [], onClose })
               <div className="cat-news-item"><p>관련 뉴스가 없습니다.</p></div>
             ) : (
               newsItems.map((n) => (
-                <article className="cat-news-item" key={n.title}>
+                // 제목이 같은 기사가 여러 매체로 재배포되는 일이 있어 key는 URL로 잡는다.
+                <article className="cat-news-item" key={n.sourceUrl || n.title}>
                   <h4>{n.title}</h4>
-                  <p>{n.quote}</p>
+                  {n.quote ? <p>{n.quote}</p> : null}
                   <div className="meta">
                     <a className="s" href={n.sourceUrl} target="_blank" rel="noopener">{n.sourceLabel}</a>
-                    <span>{n.time}</span>
+                    {/* 목업은 '12분 전' 완성 문자열(time), 실데이터는 ISO(publishedAt) */}
+                    <span>{n.publishedAt ? formatRelative(n.publishedAt) : n.time}</span>
                   </div>
                 </article>
               ))
