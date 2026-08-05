@@ -81,9 +81,10 @@ ARTICLE_HTML = b"<html><body><article><p>chip demand</p></article></body></html>
 
 
 class _FakeResponse:
-    def __init__(self, payload: dict, status_code: int = 200) -> None:
+    def __init__(self, payload: dict, status_code: int = 200, content: bytes = b"") -> None:
         self._payload = payload
         self.status_code = status_code
+        self.content = content
 
     def json(self) -> dict:
         return self._payload
@@ -688,4 +689,183 @@ def test_fetch_article_resolves_google_news_link_before_http_get(
     item = fetchers._fetch_article({"name": "구글 RSS"}, GOOGLE_NEWS_LINK, None, None)
 
     assert calls == ["https://www.mt.co.kr/stock/2026/08/03/x"]
-    assert item is not None
+
+
+# ------------------------------------------------------------
+# DART 공시 수집기 (disclosure)
+#
+# list.json / document.xml 응답 구조는 2026-08-05에 실제 DART Open API를
+# 호출해 확인한 형태를 그대로 옮겼다(값은 예시로 바꿈).
+# ------------------------------------------------------------
+
+DART_LIST_RESPONSE = {
+    "status": "000",
+    "message": "정상",
+    "list": [
+        {
+            "corp_code": "00164779",
+            "corp_name": "SK하이닉스",
+            "stock_code": "000660",
+            "report_nm": "연결재무제표기준영업(잠정)실적(공정공시)",
+            "rcept_no": "20260729800013",
+            "flr_nm": "SK하이닉스",
+            "rcept_dt": "20260729",
+            "rm": "유",
+        }
+    ],
+}
+
+DART_NO_DATA_RESPONSE = {"status": "013", "message": "조회된 데이타가 없습니다."}
+DART_AUTH_ERROR_RESPONSE = {"status": "010", "message": "등록되지 않은 키입니다."}
+
+
+def _zip_bytes(files: dict[str, bytes]) -> bytes:
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, content in files.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
+
+
+DART_DOCUMENT_ZIP = _zip_bytes({"20260729800013.xml": b"<html><body>\xec\x8b\xa4\xec\xa0\x81 \xeb\xb0\x9c\xed\x91\x9c</body></html>"})
+
+
+@pytest.fixture
+def disclosure_source() -> dict:
+    return {
+        "id": str(uuid4()),
+        "name": "DART - SK하이닉스",
+        "source_type": "disclosure",
+        "config": {"corp_code": "00164779", "request_delay_sec": 0},
+    }
+
+
+def _stub_dart_api(
+    monkeypatch: pytest.MonkeyPatch,
+    list_payload: dict,
+    list_status: int = 200,
+    document_content: bytes = DART_DOCUMENT_ZIP,
+    document_status: int = 200,
+) -> dict:
+    """httpx.get을 가로채 list.json/document.xml 두 엔드포인트를 URL로 갈라서 응답한다."""
+    import httpx
+
+    captured: dict = {"list_calls": [], "document_calls": []}
+
+    def fake_get(url: str, **kwargs):
+        if url == fetchers.DART_LIST_URL:
+            captured["list_calls"].append(kwargs.get("params", {}))
+            return _FakeResponse(list_payload, list_status)
+        if url == fetchers.DART_DOCUMENT_URL:
+            captured["document_calls"].append(kwargs.get("params", {}))
+            return _FakeResponse({}, document_status, content=document_content)
+        raise AssertionError(f"예상하지 못한 URL 호출: {url}")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setenv("DART_API_KEY", "test-key-not-real")
+    return captured
+
+
+def test_fetch_disclosure_raises_without_corp_code(
+    monkeypatch: pytest.MonkeyPatch, request_obj: CollectRequest
+) -> None:
+    monkeypatch.setenv("DART_API_KEY", "test-key-not-real")
+    source = {"id": str(uuid4()), "name": "DART", "source_type": "disclosure", "config": {}}
+
+    with pytest.raises(fetchers.FetchError, match="corp_code"):
+        fetchers.fetch_disclosure(source, request_obj)
+
+
+def test_fetch_disclosure_raises_without_api_key(
+    monkeypatch: pytest.MonkeyPatch, disclosure_source: dict, request_obj: CollectRequest
+) -> None:
+    monkeypatch.delenv("DART_API_KEY", raising=False)
+
+    with pytest.raises(fetchers.FetchError, match="DART_API_KEY"):
+        fetchers.fetch_disclosure(disclosure_source, request_obj)
+
+
+def test_fetch_disclosure_raises_on_auth_error(
+    monkeypatch: pytest.MonkeyPatch, disclosure_source: dict, request_obj: CollectRequest
+) -> None:
+    _stub_dart_api(monkeypatch, DART_AUTH_ERROR_RESPONSE)
+
+    with pytest.raises(fetchers.FetchError, match="DART 공시검색 API 응답 오류"):
+        fetchers.fetch_disclosure(disclosure_source, request_obj)
+
+
+def test_fetch_disclosure_returns_empty_on_no_data_status(
+    monkeypatch: pytest.MonkeyPatch, disclosure_source: dict, request_obj: CollectRequest
+) -> None:
+    """status='013'(조회된 데이타 없음)은 에러가 아니라 빈 결과다."""
+    _stub_dart_api(monkeypatch, DART_NO_DATA_RESPONSE)
+
+    outcome = fetchers.fetch_disclosure(disclosure_source, request_obj)
+
+    assert outcome.items == []
+    assert outcome.skip_reasons == {}
+
+
+def test_fetch_disclosure_extracts_document_and_uses_viewer_url_as_canonical(
+    monkeypatch: pytest.MonkeyPatch, disclosure_source: dict, request_obj: CollectRequest
+) -> None:
+    """
+    본문은 document.xml(zip 안 HTML)에서 오지만, canonical_url은 사람이 클릭해서
+    보는 main.do 뷰어 주소여야 한다 — main.do 자체는 JS로 본문을 늦게 채우는
+    frameset이라 body로 못 쓴다.
+    """
+    _stub_dart_api(monkeypatch, DART_LIST_RESPONSE)
+
+    outcome = fetchers.fetch_disclosure(disclosure_source, request_obj)
+
+    assert len(outcome.items) == 1
+    item = outcome.items[0]
+    assert item.url == "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260729800013"
+    assert item.content_type == "text/html"
+    assert b"<html>" in item.body
+    assert item.title_hint == "연결재무제표기준영업(잠정)실적(공정공시)"
+    assert item.published_at_hint == datetime(2026, 7, 29, tzinfo=timezone.utc)
+
+
+def test_fetch_disclosure_skips_filings_older_than_since(
+    monkeypatch: pytest.MonkeyPatch, disclosure_source: dict
+) -> None:
+    _stub_dart_api(monkeypatch, DART_LIST_RESPONSE)
+    request = CollectRequest(
+        workspace_id=uuid4(), source_id=uuid4(), since=datetime(2026, 7, 30, tzinfo=timezone.utc)
+    )
+
+    outcome = fetchers.fetch_disclosure(disclosure_source, request)
+
+    assert outcome.items == []
+    assert outcome.skip_reasons == {"older_than_since": 1}
+
+
+def test_fetch_disclosure_skips_blocked_document_response(
+    monkeypatch: pytest.MonkeyPatch, disclosure_source: dict, request_obj: CollectRequest
+) -> None:
+    _stub_dart_api(monkeypatch, DART_LIST_RESPONSE, document_status=404, document_content=b"")
+
+    outcome = fetchers.fetch_disclosure(disclosure_source, request_obj)
+
+    assert outcome.items == []
+    assert outcome.skip_reasons == {"blocked_or_empty": 1}
+
+
+def test_fetch_disclosure_sends_corp_code_and_date_range(
+    monkeypatch: pytest.MonkeyPatch, disclosure_source: dict
+) -> None:
+    captured = _stub_dart_api(monkeypatch, DART_NO_DATA_RESPONSE)
+    request = CollectRequest(
+        workspace_id=uuid4(), source_id=uuid4(), since=datetime(2026, 7, 1, tzinfo=timezone.utc)
+    )
+
+    fetchers.fetch_disclosure(disclosure_source, request)
+
+    params = captured["list_calls"][0]
+    assert params["corp_code"] == "00164779"
+    assert params["bgn_de"] == "20260701"
+    assert params["crtfc_key"] == "test-key-not-real"
