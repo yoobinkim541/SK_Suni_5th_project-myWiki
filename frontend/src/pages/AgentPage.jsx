@@ -14,7 +14,6 @@
 // ShareToTeamModal로 대상을 고르게 하고, 성공하면 팀 탭으로 전환해 그 세션을 보여줍니다.
 
 import { useEffect, useRef, useState } from 'react';
-import { getSource } from '../services/wikiApi';
 import {
   fetchAgentPanes,
   fetchConversation,
@@ -39,11 +38,6 @@ import ParticipantsModal from '../components/agent/ParticipantsModal';
 
 const PANE_KEYS = ['team', 'mine'];
 const PANE_VISIBILITY = { team: 'team', mine: 'private' };
-
-// 출처 key가 없을 때 쓰는 기본값.
-// 백엔드 citations에는 document_version_id만 있고 출처 종류(공시/뉴스)가 없습니다.
-// 임의로 지어내면 잘못된 근거를 표시하게 되므로, 확인 불가임을 그대로 드러냅니다.
-const UNKNOWN_SOURCE = { name: '출처 확인 중', url: null, title: '출처 정보 없음' };
 
 export default function AgentPage({ profile }) {
   const [panes, setPanes] = useState(null);
@@ -604,20 +598,20 @@ export default function AgentPage({ profile }) {
         <div className="col">
           <h5>근거 원문<span className="c">{current?.evidence.length ?? 0}</span></h5>
           {(current?.evidence ?? []).map((e) => {
-            // e.key가 null일 수 있습니다(백엔드가 출처 종류를 주지 않는 경우).
-            const src = (e.key && getSource(e.key)) || UNKNOWN_SOURCE;
-            const isDoc = src.name.includes('공시') || src.name.includes('IR');
+            // e.sourceName이 null일 수 있습니다(문서에 매체 정보가 연결 안 된 경우).
+            const sourceName = e.sourceName || '출처 확인 중';
+            const isDoc = sourceName.includes('공시') || sourceName.includes('IR');
             return (
               <div className="ev" key={e.no}>
                 <div className="t">
                   <span className="no">{e.no}</span>
-                  <span className={`src${isDoc ? ' doc' : ''}`}>{src.name}</span>
+                  <span className={`src${isDoc ? ' doc' : ''}`}>{sourceName}</span>
                 </div>
                 <h6>{e.title}</h6>
                 <div className="x">{e.excerpt}</div>
                 <div className="f">{e.foot}</div>
-                {src.url && (
-                  <a className="lk" href={src.url} target="_blank" rel="noopener">
+                {e.url && (
+                  <a className="lk" href={e.url} target="_blank" rel="noopener">
                     {isDoc ? 'DART 원문 열기 ↗' : '원문 열기 ↗'}
                   </a>
                 )}

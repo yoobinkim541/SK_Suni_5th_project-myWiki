@@ -19,7 +19,8 @@ export function getSource(key) {
   return WIKI_SOURCES[key] ?? null;
 }
 
-function formatDate(iso) {
+// agentApi.js(에이전트 "근거 원문" 카드)도 같은 포맷/기준을 써야 해서 export한다.
+export function formatDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
@@ -30,7 +31,7 @@ function formatDate(iso) {
 
 // document_analysis_results/ranking.py의 신뢰도 구간(<40 낮음, <70 보통, 그 외 높음)과
 // 동일한 기준으로 라벨링합니다 — 백엔드가 이미 쓰는 임계값과 어긋나지 않게.
-function reliabilityLabel(score) {
+export function reliabilityLabel(score) {
   if (score < 40) return '낮음';
   if (score < 70) return '보통';
   return '높음';
