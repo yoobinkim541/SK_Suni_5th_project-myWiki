@@ -14,8 +14,9 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 
-from src.api import auth
+from src.api import auth, db
 
 
 @pytest.fixture
@@ -86,4 +87,56 @@ def test_decode_supabase_jwt_rejects_wrong_audience(monkeypatch: pytest.MonkeyPa
 
     with pytest.raises(HTTPException) as exc_info:
         auth._decode_supabase_jwt(token)
+    assert exc_info.value.status_code == 401
+
+
+def _credentials(token: str) -> HTTPAuthorizationCredentials:
+    return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+
+def test_get_current_user_rejects_soft_deleted_profile(monkeypatch: pytest.MonkeyPatch, ec_keypair) -> None:
+    """탈퇴 처리(soft_delete_profile)로 deleted_at이 찍힌 계정은, 아직 유효기간이 안 지난
+    JWT를 들고 있어도 이후 요청은 막혀야 한다 — 탈퇴 API가 마지막에 auth 사용자를 지우기
+    전까지의 방어선."""
+    private_key, public_key = ec_keypair
+    monkeypatch.setattr(auth, "_get_jwk_client", lambda: _FakeJWKClient(public_key))
+    monkeypatch.setattr(
+        db, "get_profile",
+        lambda user_id: {"id": "user-1", "display_name": "탈퇴자", "deleted_at": "2026-08-06T00:00:00Z"},
+    )
+    token = _make_token(private_key)
+
+    with pytest.raises(HTTPException) as exc_info:
+        auth.get_current_user(_credentials(token))
+    assert exc_info.value.status_code == 401
+
+
+def test_get_current_user_allows_active_profile(monkeypatch: pytest.MonkeyPatch, ec_keypair) -> None:
+    private_key, public_key = ec_keypair
+    monkeypatch.setattr(auth, "_get_jwk_client", lambda: _FakeJWKClient(public_key))
+    monkeypatch.setattr(
+        db, "get_profile",
+        lambda user_id: {"id": "user-1", "display_name": "활성 사용자", "deleted_at": None},
+    )
+    token = _make_token(private_key)
+
+    profile = auth.get_current_user(_credentials(token))
+
+    assert profile["id"] == "user-1"
+
+
+def test_get_current_user_rejects_missing_profile(monkeypatch: pytest.MonkeyPatch, ec_keypair) -> None:
+    private_key, public_key = ec_keypair
+    monkeypatch.setattr(auth, "_get_jwk_client", lambda: _FakeJWKClient(public_key))
+    monkeypatch.setattr(db, "get_profile", lambda user_id: None)
+    token = _make_token(private_key)
+
+    with pytest.raises(HTTPException) as exc_info:
+        auth.get_current_user(_credentials(token))
+    assert exc_info.value.status_code == 404
+
+
+def test_get_current_user_rejects_missing_credentials() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        auth.get_current_user(None)
     assert exc_info.value.status_code == 401
