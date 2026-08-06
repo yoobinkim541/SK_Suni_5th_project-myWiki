@@ -17,6 +17,7 @@ from .models import (
     ReportCandidate,
     ReportCitationDraft,
     ReportSectionDraft,
+    ReportSectionStatus,
     ReportWikiReferenceDraft,
     WikiContext,
 )
@@ -299,6 +300,7 @@ def to_report_section_draft(
         watch_points=[point.text for point in payload.watch_points],
         news_citations=news_citations,
         wiki_references=wiki_references,
+        status=ReportSectionStatus.COMPLETED,
     )
 
 

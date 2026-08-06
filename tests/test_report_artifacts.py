@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from io import BytesIO
 from datetime import date, datetime, timezone
 
 import pytest
+from pypdf import PdfReader
 
 from src.analysis.importance_models import ImpactDirection, TimeHorizon
 from src.analysis.models import Category
@@ -15,6 +17,7 @@ from src.report.artifact_service import (
     ReportArtifactUploadError,
     build_report_artifact_object_key,
     compute_markdown_content_hash,
+    _render_generated_report_pdf,
     create_and_save_markdown_artifact,
     encode_markdown_payload,
     save_markdown_report_artifact,
@@ -23,6 +26,7 @@ from src.report.models import (
     GeneratedReport,
     ReportCitationDraft,
     ReportSectionDraft,
+    ReportSectionStatus,
     ReportStatus,
     ReportType,
     ReportWikiReferenceDraft,
@@ -465,3 +469,17 @@ def test_save_markdown_report_artifact_does_not_create_urls() -> None:
 
     assert not hasattr(artifact, "signed_url")
     assert not hasattr(artifact, "public_url")
+
+
+def test_render_generated_report_pdf_includes_llm_analysis_blocks() -> None:
+    report = make_report()
+    section = report.sections[0]
+    section.status = ReportSectionStatus.COMPLETED
+
+    payload = _render_generated_report_pdf(report)
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(payload)).pages)
+
+    assert "summary" in extracted
+    assert "fact" in extracted
+    assert "implication" in extracted
+    assert "watch" in extracted

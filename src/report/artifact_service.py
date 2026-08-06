@@ -499,12 +499,12 @@ def _render_generated_report_pdf(report: GeneratedReport) -> bytes:
         PdfSection(
             category=normalize_pdf_text(section.category.value),
             title=normalize_pdf_text(section.title),
-            body=normalize_pdf_text(section.current_summary or "No content"),
+            body=normalize_pdf_text(_build_pdf_section_body(section)),
             confidence_label=normalize_pdf_text(_build_pdf_confidence_label(section)),
             evidences=tuple(
                 PdfEvidenceLine(
-                    document_version_id=normalize_pdf_text(citation.document_version_id),
-                    quoted_text=normalize_pdf_text((citation.evidence_text or "Citation reference").strip() or "Citation reference"),
+                    document_version_id=normalize_pdf_text(citation.document_title or citation.document_version_id),
+                    quoted_text=normalize_pdf_text(_build_pdf_citation_text(citation)),
                     relevance_score=citation.relevance_score,
                 )
                 for citation in section.news_citations[:3]
@@ -521,6 +521,32 @@ def _render_generated_report_pdf(report: GeneratedReport) -> bytes:
         sections=sections,
     )
     return render_daily_report_pdf(document)
+
+
+def _build_pdf_section_body(section) -> str:
+    parts = [(section.current_summary or "").strip()]
+    for heading, values in (
+        ("\ud575\uc2ec \uc0ac\uc2e4", section.key_facts),
+        ("SK\ud558\uc774\ub2c9\uc2a4 \uc2dc\uc0ac\uc810", section.implications),
+        ("\uad00\ucc30 \ud3ec\uc778\ud2b8", section.watch_points),
+    ):
+        normalized = [str(value).strip() for value in values if str(value).strip()]
+        if normalized:
+            parts.append(heading)
+            parts.extend(f"\u2022 {value}" for value in normalized)
+    return "\n\n".join(part for part in parts if part) or "\ub0b4\uc6a9 \uc5c6\uc74c"
+
+
+def _build_pdf_citation_text(citation) -> str:
+    evidence_text = (citation.evidence_text or "").strip()
+    if evidence_text:
+        return evidence_text
+    attribution = [
+        value.strip()
+        for value in (citation.document_title, citation.source_name, citation.published_at)
+        if value and value.strip()
+    ]
+    return " | ".join(attribution) or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c"
 
 
 def _build_pdf_confidence_label(section) -> str:
