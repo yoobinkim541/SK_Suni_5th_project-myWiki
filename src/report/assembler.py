@@ -24,7 +24,7 @@ try:
 except ZoneInfoNotFoundError:
     SEOUL_TZ = timezone(timedelta(hours=9), name="Asia/Seoul")
 
-DEFAULT_REPORT_TITLE = "SK하이닉스 산업 동향 일일 보고서"
+DEFAULT_REPORT_TITLE = "일일 산업 동향 보고서"
 CATEGORY_ORDER: tuple[Category, ...] = (
     Category.PRODUCT_TECHNOLOGY,
     Category.COMPETITOR,
