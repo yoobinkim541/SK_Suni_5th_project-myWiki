@@ -199,7 +199,14 @@ def _collect_news_sources(sections: Sequence[ReportSectionDraft]) -> list[Report
             if document_version_id in seen:
                 continue
             seen.add(document_version_id)
-            collected.append(ReportNewsSource(document_version_id=document_version_id))
+            collected.append(
+                ReportNewsSource(
+                    document_version_id=document_version_id,
+                    document_title=citation.document_title,
+                    source_name=citation.source_name,
+                    published_at=citation.published_at,
+                )
+            )
     return collected
 
 
@@ -216,6 +223,7 @@ def _collect_wiki_sources(sections: Sequence[ReportSectionDraft]) -> list[Report
                 ReportWikiSource(
                     wiki_page_id=reference.wiki_page_id,
                     wiki_version_id=wiki_version_id,
+                    wiki_title=reference.wiki_title,
                 )
             )
     return collected

@@ -43,6 +43,9 @@ def make_section(issue_key: str, *, title: str, current_summary: str | None = No
                 analysis_result_id=f"analysis-{issue_key}",
                 document_version_id=f"doc-ver-{issue_key}",
                 citation_order=1,
+                document_title=f"{issue_key} 관련 기사 제목 - 뉴시스",
+                source_name="Google RSS - SK하이닉스",
+                published_at="2026-08-02T07:23:01+00:00",
             )
         ],
         wiki_references=[
@@ -50,6 +53,7 @@ def make_section(issue_key: str, *, title: str, current_summary: str | None = No
                 wiki_page_id=f"wiki-page-{issue_key}",
                 wiki_version_id=f"wiki-ver-{issue_key}",
                 reference_order=1,
+                wiki_title=f"{issue_key} 위키 문서 제목",
             )
         ],
     )
@@ -94,11 +98,19 @@ def make_report() -> GeneratedReport:
             monitoring_points=["모니터링 포인트"],
         ),
         news_sources=[
-            ReportNewsSource(document_version_id="doc-ver-issue-1"),
+            ReportNewsSource(
+                document_version_id="doc-ver-issue-1",
+                document_title="issue-1 관련 기사 제목 - 뉴시스",
+                source_name="Google RSS - SK하이닉스",
+                published_at="2026-08-02T07:23:01+00:00",
+            ),
             ReportNewsSource(document_version_id="doc-ver-issue-2"),
         ],
         wiki_sources=[
-            ReportWikiSource(wiki_page_id="wiki-page-issue-1", wiki_version_id="wiki-ver-issue-1"),
+            ReportWikiSource(
+                wiki_page_id="wiki-page-issue-1", wiki_version_id="wiki-ver-issue-1",
+                wiki_title="issue-1 위키 문서 제목",
+            ),
             ReportWikiSource(wiki_page_id="wiki-page-issue-2", wiki_version_id="wiki-ver-issue-2"),
         ],
         created_at=datetime(2026, 8, 2, 8, 15, tzinfo=timezone.utc),
@@ -158,11 +170,21 @@ def test_render_generated_report_markdown_renders_strings_and_lists() -> None:
     assert "- issue-1 두 번째 사실" in markdown
 
 
-def test_render_generated_report_markdown_renders_section_refs() -> None:
+def test_render_generated_report_markdown_renders_section_refs_with_attribution_not_raw_ids() -> None:
     markdown = render_generated_report_markdown(make_report())
 
-    assert "- [N1] doc-ver-issue-1" in markdown
-    assert "- [W1] wiki-page-issue-1" in markdown
+    assert "- [N1] issue-1 관련 기사 제목 - 뉴시스 · Google RSS - SK하이닉스 · 2026.08.02" in markdown
+    assert "- [W1] issue-1 위키 문서 제목" in markdown
+    assert "doc-ver-issue-1" not in markdown
+    assert "wiki-page-issue-1" not in markdown
+
+
+def test_render_generated_report_markdown_falls_back_when_attribution_missing() -> None:
+    markdown = render_generated_report_markdown(make_report())
+
+    assert "출처 정보 확인 안 됨" in markdown
+    assert "doc-ver-issue-2" not in markdown
+    assert "wiki-page-issue-2" not in markdown
 
 
 def test_render_generated_report_markdown_rejects_duplicate_section_refs() -> None:
@@ -209,11 +231,12 @@ def test_render_generated_report_markdown_renders_all_sources() -> None:
     markdown = render_generated_report_markdown(make_report())
 
     assert "### 뉴스 기사" in markdown
-    assert "1. doc-ver-issue-1" in markdown
-    assert "2. doc-ver-issue-2" in markdown
+    assert "1. issue-1 관련 기사 제목 - 뉴시스 · Google RSS - SK하이닉스 · 2026.08.02" in markdown
+    assert "2. 출처 정보 확인 안 됨" in markdown
     assert "### 참고 Wiki" in markdown
-    assert "1. wiki-page-issue-1" in markdown
-    assert "2. wiki-page-issue-2" in markdown
+    assert "1. issue-1 위키 문서 제목" in markdown
+    assert "doc-ver-issue-1" not in markdown
+    assert "wiki-page-issue-1" not in markdown
 
 
 def test_render_generated_report_markdown_handles_empty_lists_without_python_repr() -> None:

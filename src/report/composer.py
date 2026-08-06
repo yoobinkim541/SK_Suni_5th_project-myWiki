@@ -318,6 +318,9 @@ def build_report_citation_drafts(
                 document_version_id=source.document_version_id,
                 citation_order=order,
                 citation_role="section_support",
+                document_title=source.title,
+                source_name=source.source_name,
+                published_at=source.published_at,
             )
         )
     return drafts
@@ -340,6 +343,7 @@ def build_report_wiki_reference_drafts(
                 reference_order=order,
                 reference_role="section_context",
                 similarity_score=source.similarity_score,
+                wiki_title=source.title,
             )
         )
     return drafts
