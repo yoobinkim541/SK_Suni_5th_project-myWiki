@@ -16,6 +16,9 @@ SAMPLE_CITATION = {
     "document_version_id": "dv-1",
     "quoted_text": "HBM4는 차세대 메모리다.",
     "citation_order": 1,
+    "document_title": "SK하이닉스 HBM4 발표",
+    "source_name": "전자신문",
+    "published_at": "2026-08-01",
 }
 
 
@@ -27,8 +30,9 @@ def test_user_prompt_includes_question_answer_and_evidence():
     )
     assert "HBM4가 뭐야?" in prompt
     assert "HBM4는 차세대 메모리다. [1]" in prompt
-    assert "document_version_id=dv-1" in prompt
+    assert "SK하이닉스 HBM4 발표 · 전자신문 · 2026-08-01" in prompt
     assert "HBM4는 차세대 메모리다." in prompt
+    assert "document_version_id" not in prompt
 
 
 def test_user_prompt_handles_no_citations():
@@ -66,7 +70,8 @@ def test_compose_chat_wiki_draft_builds_structured_markdown(monkeypatch):
     assert "## 핵심 근거" in draft.markdown
     assert "- HBM4는 차세대 메모리다." in draft.markdown
     assert "## 출처" in draft.markdown
-    assert "(document_version_id=dv-1)" in draft.markdown
+    assert "(SK하이닉스 HBM4 발표 · 전자신문 · 2026-08-01)" in draft.markdown
+    assert "document_version_id" not in draft.markdown
 
 
 def test_compose_chat_wiki_draft_uses_injected_llm_client(monkeypatch):

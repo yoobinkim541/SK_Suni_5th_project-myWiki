@@ -499,6 +499,9 @@ SAMPLE_CITATION = {
     "relevance_score": 0.9,
     "citation_order": 1,
     "source_url": "https://example.com/a",
+    "document_title": "SK하이닉스 HBM4 발표",
+    "source_name": "전자신문",
+    "published_at": "2026-08-01",
 }
 
 
@@ -853,6 +856,8 @@ def test_save_to_wiki_uses_real_compose_chat_wiki_draft_fallback(make_client, mo
     assert "## 질문" in markdown
     assert "## 답변 요약" in markdown
     assert "## 출처" in markdown
+    assert "SK하이닉스 HBM4 발표 · 전자신문 · 2026-08-01" in markdown
+    assert "document_version_id" not in markdown
 
 
 # ---------------------------------------------------------------------------

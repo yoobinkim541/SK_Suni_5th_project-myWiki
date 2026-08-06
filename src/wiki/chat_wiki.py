@@ -41,13 +41,29 @@ class ChatWikiLLMResult(BaseModel):
     key_evidence: list[str] = Field(min_length=1)
 
 
+def _citation_source_label(citation: dict) -> str:
+    """citation dict에서 사람이 읽을 수 있는 '제목 · 매체명 · 게시일' 라벨을 만든다.
+
+    citations는 src/api/db.py의 list_message_citations() -> _enrich_message_citations()가
+    이미 채워 넣은 document_title/source_name/published_at을 그대로 읽는다 — 여기서 새로
+    DB 조회를 하지 않는다. 값이 없을 수 있으므로(문서 조회 실패 등) None을 문자열 "None"으로
+    그대로 노출하지 않도록 빈 문자열/플레이스홀더로 대체한다. document_version_id 같은 원문
+    UUID는 절대 여기 포함하지 않는다 — LLM/사람에게 노출된 raw UUID 포맷을 LLM이 자기 출력에
+    흉내 내는 사고가 이미 한 번 있었다(2026-08-06 위키 23건 오염 사고).
+    """
+    title = citation.get("document_title") or "출처 미상"
+    source_name = citation.get("source_name") or ""
+    published_at = citation.get("published_at") or ""
+    return f"{title} · {source_name} · {published_at}"
+
+
 def _build_chat_wiki_user_prompt(question: str, answer: str, citations: list[dict]) -> str:
     lines = ["[질문]", question, "", "[답변]", answer, "", "[근거]"]
     if citations:
         for citation in citations:
             quoted = citation.get("quoted_text") or ""
-            doc_id = citation.get("document_version_id") or ""
-            lines.append(f"- document_version_id={doc_id}: {quoted}")
+            label = _citation_source_label(citation)
+            lines.append(f"- {label}: {quoted}")
     else:
         lines.append("없음")
     return "\n".join(lines)
@@ -62,8 +78,8 @@ def _build_sources_lines(citations: list[dict]) -> list[str]:
     lines = ["## 출처"]
     for citation in citations:
         quoted = citation.get("quoted_text") or ""
-        doc_id = citation.get("document_version_id") or ""
-        lines.append(f"- {quoted} (document_version_id={doc_id})")
+        label = _citation_source_label(citation)
+        lines.append(f"- {quoted} ({label})")
     return lines
 
 

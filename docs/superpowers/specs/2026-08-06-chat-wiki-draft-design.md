@@ -57,8 +57,17 @@ src/wiki/chat_wiki.py
 ...
 
 ## 출처
-- {citation.quoted_text} (document_version_id={citation.document_version_id})
+- {citation.quoted_text} ({document_title} · {source_name} · {published_at})
 ```
+
+`document_title`/`source_name`/`published_at`은 `citations`의 `document_version_id`만으로는 얻을 수
+없다 — `src/wiki/query.py`의 `_enrich_sources()`와 같은 방식으로
+`document_version_id -> document_versions.document_id -> documents(title/canonical_url/published_at/source_id)
+-> sources.name` 조인이 한 번 더 필요하다. **`document_version_id`를 markdown 본문에 그대로 쓰지 않는다** —
+2026-08-06에 발행된 위키 페이지 23건에서 "## 출처" 절에 원문 UUID가 그대로 노출되던 버그(원인:
+`src/wiki/generation_prompts.py`/`dedup_prompts.py`가 LLM에게 참조용으로 보여준
+`document_version_id=X` 형식을 LLM이 출력에도 그대로 흉내 냄)를 이미 한 번 정리했다 — 같은 실수를
+반복하지 않도록 이 템플릿 구현 시에도 반드시 사람이 읽을 수 있는 제목·매체명·날짜로 표시한다.
 
 - `title`, `answer_summary`, `key_evidence`는 LLM 응답(`ChatWikiLLMResult`)에서 옴.
 - `## 출처` 섹션은 LLM을 거치지 않고 코드에서 `citations` 리스트로 직접 조립한다 — `generation.py`의 `_build_issue_page_markdown`이 출처 섹션을 만드는 방식과 동일한 패턴(`{evidence} (document_version_id=...)`).
