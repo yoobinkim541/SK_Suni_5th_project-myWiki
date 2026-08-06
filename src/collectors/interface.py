@@ -22,6 +22,7 @@ from ..pipeline_common.constants import JOB_TYPE_COLLECT, SOURCE_TYPES, TARGET_T
 from ..pipeline_common.models import CollectedDocument, CollectRequest, RawFetchResult
 from ..pipeline_common.refs import get_document_refs, get_markdown
 from ..pipeline_common.timeutil import parse_datetime
+from ..pipeline_common.urls import normalize_url
 from ..pipeline_common.versioning import next_document_version_no
 from . import fetchers
 from .fetchers import FetchError
@@ -130,7 +131,10 @@ def collect(request: CollectRequest) -> list[CollectedDocument]:
     total = len(outcome.items)
 
     for index, item in enumerate(outcome.items, start=1):
-        url = (item.url or "").strip()
+        # canonical_url은 uq_documents_workspace_url이 걸린 문서 식별자다. 표기만
+        # 다른 주소가 별개 문서가 되지 않게 여기 한 곳에서 통일한다 — 아래 조회·INSERT가
+        # 모두 이 url을 쓰므로 수집기별로 흩어놓지 않는다.
+        url = (normalize_url(item.url) or "").strip()
         if not url:
             # canonical_url이 NULL이면 uq_documents_workspace_url이 적용되지 않아
             # 같은 문서가 무한 중복된다. 문서를 만들지 않고 사유만 남긴다 (명세 §4-2).

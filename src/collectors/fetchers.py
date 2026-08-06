@@ -79,6 +79,13 @@ class FetchError(Exception):
     """소스 전체를 읽을 수 없는 실패. collect()가 소스 job을 failed로 남긴다."""
 
 
+class UnresolvedURLError(Exception):
+    """
+    항목 1건의 원문 주소를 확정하지 못한 실패. 소스 전체는 정상이므로 FetchError가
+    아니라 별도 예외다. 호출부가 잡아서 skip 사유만 남기고 다음 항목으로 넘어간다.
+    """
+
+
 @dataclass
 class FetchOutcome:
     """수집 결과와, 문서를 만들지 않고 건너뛴 사유 집계."""
@@ -178,9 +185,14 @@ def _resolve_google_news_url(url: str) -> str:
     그대로 요청하면 언론사 원문이 아니라 구글의 빈 중계 페이지를 받아서
     전처리 단계에서 "정제 결과가 비어 있다"로 매번 실패한다.
 
-    google뉴스 링크가 아니면 원래 url을 그대로 돌려준다. 디코딩 실패 시에도
-    예외를 던지지 않고 원래 url로 폴백한다 — 이후 흐름(전처리 실패)은 지금과
-    동일하게 처리되므로 수집 자체가 죽는 것보단 낫다.
+    google뉴스 링크가 아니면 원래 url을 그대로 돌려준다.
+
+    디코딩에 실패하면 UnresolvedURLError를 던져 그 항목을 수집하지 않는다.
+    예전에는 구글 주소로 폴백했는데, 그러면 그 값이 documents.canonical_url에
+    그대로 저장된다. 그 문서는 (1) 같은 기사가 언론사 원문 주소로 다시 들어왔을 때
+    uq_documents_workspace_url이 안 걸려 영구히 별개 문서로 남고,
+    (2) 본문이 구글 중계 셸이라 전처리가 매번 "정제 결과가 비어 있다"로 실패한다.
+    어차피 쓸 수 없는 문서라 만들지 않는 편이 낫다.
     """
     if "news.google.com" not in url:
         return url
@@ -188,11 +200,11 @@ def _resolve_google_news_url(url: str) -> str:
         from googlenewsdecoder import gnewsdecoder
 
         result = gnewsdecoder(url, interval=1)
-    except Exception:  # noqa: BLE001 - 디코더 내부 예외 종류가 다양하다
-        return url
+    except Exception as exc:  # noqa: BLE001 - 디코더 내부 예외 종류가 다양하다
+        raise UnresolvedURLError(f"구글 뉴스 주소 디코딩 실패: {url}") from exc
     if isinstance(result, dict) and result.get("status") and result.get("decoded_url"):
         return result["decoded_url"]
-    return url
+    raise UnresolvedURLError(f"구글 뉴스 주소 디코딩 실패: {url}")
 
 
 def _fetch_article(
@@ -208,6 +220,10 @@ def _fetch_article(
     body, content_type, status, final_url = _http_get(url, source)
     if status in _BLOCKED_STATUS or status >= 400 or not body:
         return None
+    if "news.google.com" in final_url:
+        # 디코딩은 됐는데 리다이렉트가 다시 구글로 돌아온 경우. 저장하면 안 되는
+        # 값이 canonical_url로 들어가므로 여기서도 막는다.
+        raise UnresolvedURLError(f"최종 주소가 구글 경유 주소다: {final_url}")
     return RawFetchResult(
         source_name=source["name"],
         url=final_url,
@@ -261,6 +277,9 @@ def fetch_rss(source: dict, request: CollectRequest) -> FetchOutcome:
         _sleep_between_requests(source)
         try:
             item = _fetch_article(source, url, getattr(entry, "title", None), published_at)
+        except UnresolvedURLError:
+            outcome.skip("google_url_unresolved")
+            continue
         except FetchError:
             outcome.skip("fetch_failed")
             continue
@@ -277,7 +296,11 @@ def fetch_website(source: dict, request: CollectRequest) -> FetchOutcome:
     if not url:
         raise FetchError("website 소스에 base_url이 없다")
     outcome = FetchOutcome()
-    item = _fetch_article(source, url, source.get("name"), None)
+    try:
+        item = _fetch_article(source, url, source.get("name"), None)
+    except UnresolvedURLError:
+        outcome.skip("google_url_unresolved")
+        return outcome
     if item is None:
         outcome.skip("blocked_or_empty")
     else:
@@ -447,6 +470,9 @@ def fetch_naver_news(source: dict, request: CollectRequest) -> FetchOutcome:
             # description은 RawFetchResult로 넘기지 않아 정제 대상이 아니다.
             # 넘기게 되면 title과 같이 strip_html()을 거쳐야 한다.
             item = _fetch_article(source, url, strip_html(entry.get("title")), published_at)
+        except UnresolvedURLError:
+            outcome.skip("google_url_unresolved")
+            continue
         except FetchError:
             outcome.skip("fetch_failed")
             continue
@@ -525,6 +551,9 @@ def fetch_gnews(source: dict, request: CollectRequest) -> FetchOutcome:
         _sleep_between_requests(source)
         try:
             item = _fetch_article(source, url, entry.get("title"), published_at)
+        except UnresolvedURLError:
+            outcome.skip("google_url_unresolved")
+            continue
         except FetchError:
             outcome.skip("fetch_failed")
             continue

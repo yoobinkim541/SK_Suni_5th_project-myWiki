@@ -87,6 +87,59 @@ def test_collect_creates_new_document(
 
 
 # ------------------------------------------------------------
+# 1-b. canonical_url 정규화 (pipeline_common/urls.py 배선)
+#
+# 함수 단위 검증은 test_urls.py에 있다. 여기서는 collect()가 실제로 그 함수를
+# 거쳐 documents.canonical_url을 정하는지, 그래서 문서가 합쳐지는지를 본다.
+# ------------------------------------------------------------
+
+
+def test_collect_normalizes_canonical_url(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed: StubFeed
+) -> None:
+    feed.set_article(url="https://example.com/news/1?oc=5&hl=en-US&idxno=99")
+
+    document = _collect_once(workspace_id, source_id)[0]
+
+    # 구글 표시 파라미터만 빠지고 CMS 식별자는 남는다
+    assert str(document.canonical_url) == "https://example.com/news/1?idxno=99"
+    assert supabase.rows("documents")[0]["canonical_url"] == "https://example.com/news/1?idxno=99"
+
+
+def test_collect_folds_urls_that_differ_only_by_google_params(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed: StubFeed
+) -> None:
+    """표시 파라미터만 다른 같은 기사가 두 문서가 되면 안 된다."""
+    feed.set_article(url="https://example.com/news/1?oc=5&hl=en-US")
+    first = _collect_once(workspace_id, source_id)[0]
+
+    feed.set_article(url="https://example.com/news/1?hl=ko&ceid=KR:ko")
+    second = _collect_once(workspace_id, source_id)[0]
+
+    assert second.is_new_document is False
+    assert second.document_id == first.document_id
+    assert len(supabase.rows("documents")) == 1
+
+
+def test_collect_keeps_www_variants_separate(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed: StubFeed
+) -> None:
+    """
+    www.을 지우지 않기로 한 결정을 고정한다. 지우면 기존 문서 209건과 값이
+    어긋나 다음 수집에서 전부 중복으로 재생성된다(2026-08-06 실측).
+    이 테스트가 깨지면 그 결정이 바뀐 것이므로 백필을 함께 검토해야 한다.
+    """
+    feed.set_article(url="https://www.example.com/news/1")
+    _collect_once(workspace_id, source_id)
+
+    feed.set_article(url="https://example.com/news/1")
+    second = _collect_once(workspace_id, source_id)[0]
+
+    assert second.is_new_document is True
+    assert len(supabase.rows("documents")) == 2
+
+
+# ------------------------------------------------------------
 # 2. 동일 해시 skip
 # ------------------------------------------------------------
 

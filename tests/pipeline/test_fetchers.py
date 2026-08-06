@@ -645,22 +645,25 @@ def test_resolve_google_news_url_decodes_successfully(monkeypatch: pytest.Monkey
     assert resolved == "https://www.mt.co.kr/stock/2026/08/03/x"
 
 
-def test_resolve_google_news_url_falls_back_when_decoder_reports_failure(
+def test_resolve_google_news_url_raises_when_decoder_reports_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    구글 주소로 폴백하면 그 값이 canonical_url에 저장돼 같은 기사가 원문 주소로
+    다시 들어왔을 때 별개 문서가 된다. 폴백 대신 항목을 버린다.
+    """
     import googlenewsdecoder
 
     monkeypatch.setattr(
         googlenewsdecoder, "gnewsdecoder", lambda url, interval=1: {"status": False, "message": "boom"}
     )
 
-    resolved = fetchers._resolve_google_news_url(GOOGLE_NEWS_LINK)
+    with pytest.raises(fetchers.UnresolvedURLError):
+        fetchers._resolve_google_news_url(GOOGLE_NEWS_LINK)
 
-    assert resolved == GOOGLE_NEWS_LINK
 
-
-def test_resolve_google_news_url_falls_back_when_decoder_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """디코더가 죽어도 수집 자체는 안 죽어야 한다 — 원래 주소로 폴백."""
+def test_resolve_google_news_url_raises_when_decoder_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """디코더가 죽어도 수집 자체는 안 죽어야 한다 — 소스가 아니라 항목 1건만 버린다."""
     import googlenewsdecoder
 
     def boom(url, interval=1):
@@ -668,9 +671,16 @@ def test_resolve_google_news_url_falls_back_when_decoder_raises(monkeypatch: pyt
 
     monkeypatch.setattr(googlenewsdecoder, "gnewsdecoder", boom)
 
-    resolved = fetchers._resolve_google_news_url(GOOGLE_NEWS_LINK)
+    with pytest.raises(fetchers.UnresolvedURLError):
+        fetchers._resolve_google_news_url(GOOGLE_NEWS_LINK)
 
-    assert resolved == GOOGLE_NEWS_LINK
+
+def test_unresolved_url_error_is_not_a_fetch_error() -> None:
+    """
+    소스 전체 실패(FetchError)와 구분돼야 한다. 섞이면 항목 1건 때문에
+    소스 job이 failed로 남는다.
+    """
+    assert not issubclass(fetchers.UnresolvedURLError, fetchers.FetchError)
 
 
 def test_fetch_article_resolves_google_news_link_before_http_get(
@@ -689,6 +699,80 @@ def test_fetch_article_resolves_google_news_link_before_http_get(
     item = fetchers._fetch_article({"name": "구글 RSS"}, GOOGLE_NEWS_LINK, None, None)
 
     assert calls == ["https://www.mt.co.kr/stock/2026/08/03/x"]
+
+
+def test_fetch_article_rejects_final_url_that_is_still_google(
+    monkeypatch: pytest.MonkeyPatch, stub_article
+) -> None:
+    """디코딩은 됐는데 리다이렉트가 구글로 되돌아오면 canonical_url로 쓸 수 없다."""
+    import googlenewsdecoder
+
+    monkeypatch.setattr(
+        googlenewsdecoder,
+        "gnewsdecoder",
+        lambda url, interval=1: {"status": True, "decoded_url": "https://www.mt.co.kr/stock/x"},
+    )
+    stub_article({"https://www.mt.co.kr/stock/x": GOOGLE_NEWS_LINK})
+
+    with pytest.raises(fetchers.UnresolvedURLError):
+        fetchers._fetch_article({"name": "구글 RSS"}, GOOGLE_NEWS_LINK, None, None)
+
+
+GOOGLE_RSS_FEED = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>구글 뉴스</title>
+<item><title>SK하이닉스 기사</title><link>{GOOGLE_NEWS_LINK}</link>
+<pubDate>Mon, 03 Aug 2026 07:04:00 GMT</pubDate></item>
+</channel></rss>"""
+
+
+def test_fetch_rss_skips_item_when_google_url_unresolved(
+    monkeypatch: pytest.MonkeyPatch, request_obj: CollectRequest
+) -> None:
+    """
+    디코딩 실패 항목은 문서를 만들지 않고 사유만 남긴다. 구글 주소가
+    canonical_url로 저장되면 같은 기사가 원문 주소로 다시 들어와도 별개 문서가 된다.
+    """
+    import googlenewsdecoder
+
+    monkeypatch.setattr(
+        googlenewsdecoder, "gnewsdecoder", lambda url, interval=1: {"status": False, "message": "boom"}
+    )
+    monkeypatch.setattr(
+        fetchers, "_http_get", lambda url, source: (GOOGLE_RSS_FEED.encode(), "application/xml", 200, url)
+    )
+    source = {"name": "구글 RSS", "source_type": "rss", "base_url": "https://news.google.com/rss/search?q=x"}
+
+    outcome = fetchers.fetch_rss(source, request_obj)
+
+    assert outcome.items == []
+    assert outcome.skip_reasons == {"google_url_unresolved": 1}
+
+
+def test_fetch_rss_collects_item_when_google_url_decodes(
+    monkeypatch: pytest.MonkeyPatch, request_obj: CollectRequest
+) -> None:
+    """디코딩에 성공하면 언론사 원문 주소가 문서 식별자가 된다."""
+    import googlenewsdecoder
+
+    monkeypatch.setattr(
+        googlenewsdecoder,
+        "gnewsdecoder",
+        lambda url, interval=1: {"status": True, "decoded_url": "https://www.mt.co.kr/stock/2026/08/03/x"},
+    )
+
+    def fake_http_get(url: str, source: dict):
+        if "news.google.com/rss/search" in url:
+            return GOOGLE_RSS_FEED.encode(), "application/xml", 200, url
+        return ARTICLE_HTML, "text/html", 200, url
+
+    monkeypatch.setattr(fetchers, "_http_get", fake_http_get)
+    source = {"name": "구글 RSS", "source_type": "rss", "base_url": "https://news.google.com/rss/search?q=x"}
+
+    outcome = fetchers.fetch_rss(source, request_obj)
+
+    assert outcome.skip_reasons == {}
+    assert len(outcome.items) == 1
+    assert outcome.items[0].url == "https://www.mt.co.kr/stock/2026/08/03/x"
 
 
 # ------------------------------------------------------------
