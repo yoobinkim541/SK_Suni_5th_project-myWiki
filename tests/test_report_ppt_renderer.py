@@ -73,7 +73,7 @@ def test_build_daily_report_ppt_document_uses_completed_sections_only() -> None:
     )
 
     assert document.title == K_TITLE
-    assert document.subtitle == "daily-trends-2026-08-03"
+    assert document.subtitle == "AI 및 반도체 산업의 주요 변화를 이슈별로 정리한 데일리 브리핑"
     assert document.report_date == "2026-08-03"
     assert document.version == 2
     assert len(document.sections) == 1
@@ -98,12 +98,14 @@ def test_render_daily_report_ppt_returns_pptx_bytes() -> None:
     text = collect_ppt_text(pptx_bytes)
 
     assert pptx_bytes[:2] == b"PK"
-    assert K_TITLE in text
-    assert "Mywiki" in text
+    assert DEFAULT_PPT_TITLE in text
+    assert "MyWiki" in text
     assert "2026\ub144 8\uc6d4 3\uc77c" in text
     assert K_SECTION in text
     assert K_BODY in text
-    assert K_EVIDENCE in text
+    assert "전체 출처" in text
+    assert "daily-trends-2026-08-03" not in text
+    assert "Format" not in text
 
 
 def test_render_daily_report_ppt_prefers_report_date_over_generated_at() -> None:
@@ -132,3 +134,41 @@ def test_render_daily_report_ppt_creates_agenda_and_evidence_slides() -> None:
     presentation = Presentation(BytesIO(render_daily_report_ppt(report_document)))
 
     assert len(presentation.slides) >= 4
+
+
+
+def test_render_daily_report_ppt_uses_briefing_sequence_and_common_chrome() -> None:
+    report_document = build_daily_report_ppt_document(
+        report_key="daily:internal-id:2026-08-03",
+        version=1,
+        sections=[make_section()],
+        report_date=date(2026, 8, 3),
+    )
+
+    presentation = Presentation(BytesIO(render_daily_report_ppt(report_document)))
+    slide_text = ["\n".join(shape.text for shape in slide.shapes if hasattr(shape, "text")) for slide in presentation.slides]
+
+    assert len(presentation.slides) == 8
+    assert "오늘의 핵심 요약" in slide_text[1]
+    assert "주요 이슈 한눈에 보기" in slide_text[2]
+    assert "ISSUE 01." in slide_text[3]
+    assert "카테고리별 동향" in slide_text[4]
+    assert "종합 시사점" in slide_text[6]
+    assert "전체 출처" in slide_text[7]
+    assert all("2026.08.03" in text and "MyWiki" in text and "SK hynix Industry Trend Curation" in text for text in slide_text[1:])
+    assert all("daily:internal-id:2026-08-03" not in text for text in slide_text)
+
+
+def test_render_daily_report_ppt_hides_empty_sections() -> None:
+    document = build_daily_report_ppt_document(
+        report_key="daily-trends-2026-08-03",
+        version=1,
+        sections=[make_section(status=ReportSectionStatus.DRAFTING)],
+        report_date=date(2026, 8, 3),
+    )
+
+    text = collect_ppt_text(render_daily_report_ppt(document))
+
+    assert "분석 가능한 주요 이슈가 없습니다." in text
+    assert "No completed sections available." not in text
+    assert "Agenda" not in text
