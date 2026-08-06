@@ -4,7 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-TopicPageType = Literal["industry", "company", "technology", "term"]
+TopicPageType = Literal[
+    "industry", "company", "technology", "supply_chain", "policy", "market", "term"
+]
 WikiTopicAction = Literal["update_existing", "create_new", "skip"]
 
 
