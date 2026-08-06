@@ -236,30 +236,43 @@ def list_active_documents(workspace_id: UUID) -> list[dict]:
 # ------------------------------------------------------------
 
 
+_IN_CLAUSE_CHUNK_SIZE = 150
+"""
+.in_() 한 번에 넣을 id 개수 상한.
+
+백로그(active 문서 수)가 커지면 document_ids가 수백~수천 개가 되는데, 이걸
+전부 한 URL의 .in_(...)에 담으면 PostgREST가 400 Bad Request로 거부한다
+(2026-08-06 확인: run 31103317893 등에서 재현, latest_versions_by_document가
+document_ids ~500개로 크래시). id 하나(UUID, 36자)+콤마 기준 150개면 여유 있게
+안전권이라 이 값으로 잡았다.
+"""
+
+
+def _chunked(items: list, size: int) -> list[list]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
 def latest_versions_by_document(document_ids: list[UUID | str]) -> dict[str, dict]:
     """document_id -> 가장 최근 version_no 행. 버전이 없는 문서는 키가 없다.
 
     정제 대기 목록을 만들 때 문서마다 latest_version()을 부르면 N+1이 된다.
-    한 번에 받아 파이썬에서 문서별 최댓값을 고른다.
+    한 번에 받아 파이썬에서 문서별 최댓값을 고른다. document_ids가 많으면
+    _IN_CLAUSE_CHUNK_SIZE 단위로 나눠 여러 번 조회한다 (여전히 N+1은 아니다 —
+    문서 수가 아니라 상수 크기로 나눈 배치 수만큼만 조회).
 
     workspace 필터가 없다 — document_versions에는 workspace_id 컬럼이 없으므로
     (명세 §4-3) 호출자가 workspace로 걸러낸 document_ids를 넘겨야 한다.
     """
     if not document_ids:
         return {}
-    res = (
-        db.get_client()
-        .table("document_versions")
-        .select("*")
-        .in_("document_id", [str(did) for did in document_ids])
-        .execute()
-    )
     latest: dict[str, dict] = {}
-    for row in _rows(res):
-        key = str(row["document_id"])
-        current = latest.get(key)
-        if current is None or int(row["version_no"]) > int(current["version_no"]):
-            latest[key] = row
+    for chunk in _chunked([str(did) for did in document_ids], _IN_CLAUSE_CHUNK_SIZE):
+        res = db.get_client().table("document_versions").select("*").in_("document_id", chunk).execute()
+        for row in _rows(res):
+            key = str(row["document_id"])
+            current = latest.get(key)
+            if current is None or int(row["version_no"]) > int(current["version_no"]):
+                latest[key] = row
     return latest
 
 
@@ -292,28 +305,31 @@ def latest_completed_collect_jobs_by_document(
 def _latest_jobs_by_target(
     workspace_id: UUID, job_type: str, document_ids: list[UUID | str]
 ) -> dict[str, dict]:
-    """target_id -> 해당 job_type의 가장 최근 완료 job. 목록 단위 1회 조회 (N+1 금지)."""
+    """target_id -> 해당 job_type의 가장 최근 완료 job. document_ids를
+    _IN_CLAUSE_CHUNK_SIZE 단위로 나눠 조회한다 (N+1이 아니라 상수 크기 배치 —
+    latest_versions_by_document 위 주석 참조)."""
     if not document_ids:
         return {}
-    res = (
-        db.get_client()
-        .table("pipeline_jobs")
-        .select("*")
-        .eq("workspace_id", str(workspace_id))
-        .eq("job_type", job_type)
-        .eq("target_type", TARGET_TYPE_DOCUMENT)
-        .eq("status", STATUS_COMPLETED)
-        .in_("target_id", [str(did) for did in document_ids])
-        .execute()
-    )
     latest: dict[str, dict] = {}
-    for row in _rows(res):
-        key = str(row["target_id"])
-        current = latest.get(key)
-        if current is None or str(row.get("created_at") or "") > str(
-            current.get("created_at") or ""
-        ):
-            latest[key] = row
+    for chunk in _chunked([str(did) for did in document_ids], _IN_CLAUSE_CHUNK_SIZE):
+        res = (
+            db.get_client()
+            .table("pipeline_jobs")
+            .select("*")
+            .eq("workspace_id", str(workspace_id))
+            .eq("job_type", job_type)
+            .eq("target_type", TARGET_TYPE_DOCUMENT)
+            .eq("status", STATUS_COMPLETED)
+            .in_("target_id", chunk)
+            .execute()
+        )
+        for row in _rows(res):
+            key = str(row["target_id"])
+            current = latest.get(key)
+            if current is None or str(row.get("created_at") or "") > str(
+                current.get("created_at") or ""
+            ):
+                latest[key] = row
     return latest
 
 
