@@ -1,0 +1,44 @@
+/* 위키 좌측 문서 목록 전용 스타일 — WikiSideNav.jsx에서만 import 합니다.
+   globals.css 맨 아래 추가 방식은 PR이 동시에 열리면 무조건 충돌하므로 파일을 분리했습니다.
+   기존 .tree / .wiki 규칙은 globals.css에 그대로 두고, 여기서는 추가분만 정의합니다. */
+
+.tree .tg { margin-bottom: 14px; }
+.tree .tg .g {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.tree .tg .g .n {
+  font-size: 9px;
+  font-weight: 900;
+  color: var(--faint);
+  letter-spacing: 0;
+}
+
+.tree .treemore {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  padding: 3px 0 0;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+.tree .treemore:hover { color: var(--green); }
+.tree .treemore .chev { transition: transform var(--dur-base) var(--ease); }
+.tree .tg.open .treemore { color: var(--green); }
+.tree .tg.open .treemore .chev { transform: rotate(180deg); }
+
+/* 키워드 문서 목록 모달 : 기존 .kwm-item(a)과 같은 모양의 button */
+.kwm-item.kwd-item {
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  background: none;
+  cursor: pointer;
+}

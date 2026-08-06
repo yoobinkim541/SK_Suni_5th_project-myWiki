@@ -1,0 +1,85 @@
+/* 문서 상단 "연동 키워드" 줄 — WikiKeywordBar.jsx에서만 import 합니다.
+   기존 .kw-bar / .kw-chip 기본 스타일은 globals.css에 그대로 두고,
+   여기서는 접기·펼치기로 늘어난 부분만 추가 정의합니다. */
+
+.kw-bar .kw-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 펼친 상태에서는 줄이 세로로 늘어나므로 정렬을 위로 붙입니다. */
+.kw-bar.open {
+  display: block;
+  align-items: flex-start;
+}
+
+.kw-bar .kw-none {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* 이 문서의 핵심 키워드 강조 */
+.kw-bar .kw-chip.hot {
+  border-color: var(--green);
+  color: var(--green);
+  font-weight: 700;
+}
+
+/* 펼치기 / 접기 버튼 */
+.kw-bar .kw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  padding: 3px 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease);
+}
+.kw-bar .kw-toggle:hover { color: var(--green); }
+.kw-bar .kw-toggle .chev { transition: transform var(--dur-base) var(--ease); }
+.kw-bar.open .kw-toggle { color: var(--green); }
+.kw-bar.open .kw-toggle .chev { transform: rotate(180deg); }
+
+/* ---------- 펼친 상태 : 분류별 전체 키워드 ---------- */
+.kw-bar .kw-all {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair);
+}
+.kw-bar .kw-grp { margin-bottom: 14px; }
+.kw-bar .kw-grp:last-child { margin-bottom: 0; }
+
+.kw-bar .kw-glb {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .13em;
+  color: var(--faint);
+  margin-bottom: 7px;
+}
+.kw-bar .kw-glb span {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+/* 현재 보고 있는 문서의 분류 */
+.kw-bar .kw-glb.cur,
+.kw-bar .kw-glb.cur span { color: var(--green); }
+
+.kw-bar .kw-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

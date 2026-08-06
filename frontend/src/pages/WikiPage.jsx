@@ -2,6 +2,9 @@
 //
 // 동작 세 가지:
 //  1) 좌측 문서 목록(.tree)의 문서를 누르면 해당 문서로 전환됩니다.
+//     목록은 분류별 3개만 노출하고 나머지는 접습니다(WikiSideNav).
+//     연동 키워드는 문서 상단 줄(WikiKeywordBar)에만 둡니다 — 누르면 그 키워드가
+//     등장하는 문서 목록이 뜹니다(WikiKeywordDocsModal).
 //  2) 우측 "연결된 문서"를 누르면 그 문서로 이동합니다(문서 간 상호 이동).
 //  3) ⚠ 수정사항 4) 본문 안의 연동 키워드(.wiki-kw) 또는 상단 키워드 칩(.kw-chip)을 누르면
 //     그 키워드에 엮인 공시·IR 원문과 뉴스기사 목록이 모달로 뜹니다.
@@ -16,26 +19,19 @@
 
 import { useEffect, useState } from 'react';
 import { WIKI_KEYWORD_LINKS } from '../data/mockWiki';
+import { findDocsWithKeyword, getKeywordCategory } from '../data/wikiKeywords';
 import { fetchWikiTree, fetchWikiDoc, resolveWikiId } from '../services/wikiApi';
+import WikiSideNav from '../components/wiki/WikiSideNav';
 import WikiCard from '../components/wiki/WikiCard';
+import WikiKeywordDocsModal from '../components/wiki/WikiKeywordDocsModal';
 import WikiKeywordModal from '../components/wiki/WikiKeywordModal';
-import mascotWikiImg from '../assets/mascot-wiki.png';
-
-// 우측 컬럼("연결된 문서") 아래 두는 마스코트 — 에이전트 페이지의 MascotFloat와 같은
-// CSS(.mascot-float)를 공유해서 위/아래로 둥둥 뜨는 애니메이션이 동일하게 적용된다.
-function MascotFloat() {
-  return (
-    <div className="mascot-float">
-      <img src={mascotWikiImg} alt="마이위키 마스코트" />
-    </div>
-  );
-}
 
 export default function WikiPage({ docId }) {
   const [tree, setTree] = useState(null);
   const [current, setCurrent] = useState(null);
   const [doc, setDoc] = useState(null);
-  const [keyword, setKeyword] = useState(null);
+  const [keyword, setKeyword] = useState(null);   // 본문 키워드 → 원문·뉴스 모달
+  const [docKeyword, setDocKeyword] = useState(null); // 상단 키워드 칩 → 문서 목록 모달
   const [error, setError] = useState(null);
 
   // 최초 진입 시 좌측 트리를 불러오고, 대시보드·리포트에서 넘어온 docId가
@@ -108,24 +104,9 @@ export default function WikiPage({ docId }) {
       </div>
 
       <div className="wiki">
-        <div className="tree">
-          {tree.map((section) => (
-            <div key={section.group}>
-              <div className="g">{section.group}</div>
-              {section.items.map((item) => (
-                <a
-                  key={item.id}
-                  className={current === item.id ? 'on' : ''}
-                  onClick={() => setCurrent(item.id)}
-                >
-                  {item.title}
-                </a>
-              ))}
-            </div>
-          ))}
-        </div>
+        <WikiSideNav tree={tree} current={current} onSelect={setCurrent} />
 
-        <WikiCard doc={doc} onKeyword={setKeyword} />
+        <WikiCard doc={doc} onKeyword={setKeyword} onKeywordDocs={setDocKeyword} />
 
         <div>
           <div className="col">
@@ -154,8 +135,6 @@ export default function WikiPage({ docId }) {
               </button>
             ))}
           </div>
-
-          <MascotFloat />
         </div>
       </div>
 
@@ -163,6 +142,14 @@ export default function WikiPage({ docId }) {
         word={keyword}
         entry={keyword ? WIKI_KEYWORD_LINKS[keyword] : null}
         onClose={() => setKeyword(null)}
+      />
+
+      <WikiKeywordDocsModal
+        word={docKeyword}
+        docs={docKeyword ? findDocsWithKeyword(docKeyword, tree) : []}
+        category={docKeyword ? getKeywordCategory(docKeyword) : null}
+        onSelect={setCurrent}
+        onClose={() => setDocKeyword(null)}
       />
     </section>
   );
