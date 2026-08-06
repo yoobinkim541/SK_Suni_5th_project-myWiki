@@ -74,17 +74,23 @@ function getInitial(key, fallback) {
 }
 
 // 저장된 선호 조사 결과를 읽습니다. 키 자체가 없으면 null(= 아직 온보딩 전)을 돌려줍니다.
-// 저장 형태: { keywords: [], role: string|null }
-// (예전 버전은 배열만 저장했어서, 배열로 들어오면 keywords로 승격시킵니다)
+// 저장 형태: { keywords: [], role: string|null, userId: string|null }
+// (예전 버전은 배열만 저장했거나 userId가 없었어서, 없으면 null로 승격시킵니다)
+// ⚠ userId를 같이 저장하는 이유: localStorage는 계정이 아니라 "이 브라우저" 기준이다.
+//   userId 없이 keywords만 보고 판단하면, 한 브라우저에서 계정 A가 선호도를 저장한 뒤
+//   계정 B로 새로 로그인해도 "이미 선호도가 있다"고 오판해서 B는 선호조사 화면을 영영
+//   못 보게 된다 — 그래서 아래 determineEntryStep에서 저장된 userId와 현재 로그인한
+//   사용자의 id가 같을 때만 "이미 완료됨"으로 인정한다.
 function readPrefs() {
   try {
     const raw = localStorage.getItem(INTERESTS_KEY);
     if (raw === null) return null;
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return { keywords: parsed, role: null };
+    if (Array.isArray(parsed)) return { keywords: parsed, role: null, userId: null };
     return {
       keywords: Array.isArray(parsed?.keywords) ? parsed.keywords : [],
       role: parsed?.role ?? null,
+      userId: parsed?.userId ?? null,
     };
   } catch {
     return null;
@@ -194,12 +200,20 @@ export default function App() {
         setEntryStep('landing');
         return;
       }
+      // 저장된 선호도가 "지금 로그인한 이 계정" 것일 때만 완료된 걸로 인정한다(계정 기준).
+      // 그래서 신규 계정 체크(isNewAccount)보다 이 매칭을 먼저 본다 — 신규 계정이라도
+      // 이미 이 세션 안에서 선호조사를 끝냈으면(userId가 일치) 새로고침할 때마다 선호조사가
+      // 다시 뜨지 않는다.
       const existingPrefs = readPrefs();
-      if (existingPrefs !== null) {
+      if (existingPrefs !== null && existingPrefs.userId === session.user.id) {
         setPrefs(existingPrefs);
         setEntryStep(null);
         return;
       }
+      // ⚠ userId가 안 맞거나(다른 계정이 이 브라우저에 남긴 기록) 아예 기록이 없으면,
+      //   신규 계정인지를 본다. 예전엔 이 순서가 반대라, 브라우저에 선호도가 한 번이라도
+      //   저장돼 있으면(예: 다른 계정으로 쓰다가 "건너뛰기"로 빈 값이 저장된 경우) 새 계정으로
+      //   로그인해도 선호조사 화면을 아예 못 보고 대시보드로 직행했다.
       if (isNewAccount(session)) {
         setEntryStep('survey');
         return;
@@ -282,6 +296,9 @@ export default function App() {
     const value = {
       keywords: Array.isArray(result?.keywords) ? result.keywords : [],
       role: result?.role ?? null,
+      // profile은 세션이 잡히면서 이미 채워진 뒤라(determineEntryStep → 'survey' 진입 시점엔
+      // applySession이 setProfile을 먼저 부른 상태), 여기서 로그인한 사용자 id를 같이 저장한다.
+      userId: profile?.id ?? null,
     };
     setPrefs(value);
     try {
@@ -309,7 +326,7 @@ export default function App() {
   // 추가·삭제한다. role은 건드리지 않고 그대로 유지, keywords만 교체해서 저장.
   function updateInterests(nextKeywords) {
     setPrefs((prev) => {
-      const value = { keywords: nextKeywords, role: prev?.role ?? null };
+      const value = { keywords: nextKeywords, role: prev?.role ?? null, userId: prev?.userId ?? profile?.id ?? null };
       try {
         localStorage.setItem(INTERESTS_KEY, JSON.stringify(value));
       } catch {
