@@ -91,6 +91,7 @@ def get_daily_report(
             .execute()
             .data
         )
+        _enrich_report_citations(citation_rows, supabase=db)
 
     citations_by_section: dict[str, list[dict[str, Any]]] = {}
     for citation in citation_rows:
@@ -105,6 +106,10 @@ def get_daily_report(
                 "quoted_text": citation.get("quoted_text"),
                 "relevance_score": citation.get("relevance_score"),
                 "citation_order": citation.get("citation_order"),
+                "document_title": citation.get("document_title"),
+                "source_url": citation.get("source_url"),
+                "source_name": citation.get("source_name"),
+                "published_at": citation.get("published_at"),
             }
         )
 
@@ -148,6 +153,82 @@ def get_daily_report(
         "completed_at": report_row.get("completed_at"),
         "sections": sections,
     }
+
+
+def _enrich_report_citations(
+    rows: list[dict[str, Any]],
+    *,
+    supabase: Client,
+) -> list[dict[str, Any]]:
+    if not rows:
+        return rows
+
+    document_version_ids = list({str(row["document_version_id"]) for row in rows if row.get("document_version_id")})
+    if not document_version_ids:
+        return rows
+
+    version_rows = (
+        supabase.table("document_versions")
+        .select("id, document_id")
+        .in_("id", document_version_ids)
+        .execute()
+        .data
+    )
+    document_id_by_version = {
+        str(row["id"]): row.get("document_id")
+        for row in version_rows
+        if row.get("id") is not None
+    }
+
+    document_ids = list({str(doc_id) for doc_id in document_id_by_version.values() if doc_id})
+    documents_by_id: dict[str, dict[str, Any]] = {}
+    if document_ids:
+        document_rows = (
+            supabase.table("documents")
+            .select("id, title, canonical_url, published_at, source_id")
+            .in_("id", document_ids)
+            .execute()
+            .data
+        )
+        documents_by_id = {
+            str(row["id"]): row
+            for row in document_rows
+            if row.get("id") is not None
+        }
+
+    source_ids = list(
+        {
+            str(document["source_id"])
+            for document in documents_by_id.values()
+            if document.get("source_id") is not None
+        }
+    )
+    source_name_by_id: dict[str, str] = {}
+    if source_ids:
+        source_rows = (
+            supabase.table("sources")
+            .select("id, name")
+            .in_("id", source_ids)
+            .execute()
+            .data
+        )
+        source_name_by_id = {
+            str(row["id"]): str(row["name"])
+            for row in source_rows
+            if row.get("id") is not None and row.get("name") is not None
+        }
+
+    for row in rows:
+        document_version_id = str(row["document_version_id"])
+        document_id = document_id_by_version.get(document_version_id)
+        document = documents_by_id.get(str(document_id)) if document_id is not None else None
+        row["document_title"] = document.get("title") if document else None
+        row["source_url"] = document.get("canonical_url") if document else None
+        row["published_at"] = document.get("published_at") if document else None
+        source_id = document.get("source_id") if document else None
+        row["source_name"] = source_name_by_id.get(str(source_id)) if source_id is not None else None
+
+    return rows
 
 
 def get_daily_report_download(
