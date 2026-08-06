@@ -7,8 +7,9 @@
 // ⚠ 수정사항 4) 본문에 등장하는 "연동 키워드"를 자동으로 클릭 가능하게 만들었습니다.
 //   data/mockWiki.js의 WIKI_KEYWORD_LINKS에 등록된 단어가 본문 문자열에 나오면
 //   .wiki-kw 링크로 감싸고, 누르면 부모(WikiPage)가 연동 원문 모달을 엽니다.
-//   본문 위에는 이 문서에서 연동 가능한 키워드를 칩(.kw-bar)으로 한 번 더 노출해서,
-//   본문을 읽지 않고도 바로 원문으로 들어갈 수 있게 했습니다.
+//   본문 위 칩 줄(.kw-bar)은 WikiKeywordBar가 그립니다 — 이 문서 핵심 키워드 7개를
+//   두고, 펼치면 카탈로그 전체가 분류별로 뜹니다. 칩을 누르면 그 키워드가 등장하는
+//   문서 목록이 뜨고(본문 안 .wiki-kw는 그대로 원문·뉴스 모달입니다).
 //
 //   각주(①②③)와 역할이 다릅니다:
 //     각주    = "이 문장의 근거 1건"      → 해당 출처 원문 한 곳으로 바로 이동
@@ -17,6 +18,7 @@
 import { Children, cloneElement, isValidElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import CitationTag from './CitationTag';
+import WikiKeywordBar from './WikiKeywordBar';
 import { WIKI_KEYWORD_LINKS, getWikiKeywordList } from '../../data/mockWiki';
 
 // 실제 백엔드 markdown 본문의 "...조치입니다[1]." 같은 각주 번호를 doc.sources의
@@ -101,19 +103,8 @@ function linkifyKeywords(text, onKeyword, keyPrefix) {
   });
 }
 
-// 이 문서 본문에 실제로 등장하는 연동 키워드만 상단 칩으로 노출합니다.
-function collectDocKeywords(doc) {
-  const body = doc.zones
-    .flatMap((z) => (z.markdown ? [z.markdown] : z.paragraphs.flat()))
-    .filter((p) => typeof p === 'string')
-    .join(' ');
-  return getWikiKeywordList().filter((k) => body.includes(k));
-}
-
-export default function WikiCard({ doc, onKeyword }) {
+export default function WikiCard({ doc, onKeyword, onKeywordDocs }) {
   if (!doc) return null;
-
-  const docKeywords = collectDocKeywords(doc);
 
   return (
     <div className="doc">
@@ -129,17 +120,7 @@ export default function WikiCard({ doc, onKeyword }) {
         })}
       </div>
 
-      {docKeywords.length > 0 && (
-        <div className="kw-bar">
-          <span className="lb">연동 키워드</span>
-          {docKeywords.map((k) => (
-            <button type="button" className="kw-chip" key={k} onClick={() => onKeyword?.(k)}>
-              {k}
-              <span className="ex" aria-hidden="true">↗</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <WikiKeywordBar doc={doc} onKeyword={onKeywordDocs} />
 
       {doc.zones.map((zone) => (
         <div key={zone.title}>
