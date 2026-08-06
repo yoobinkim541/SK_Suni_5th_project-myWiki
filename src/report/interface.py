@@ -42,7 +42,7 @@ except ZoneInfoNotFoundError:
 
 
 class ReportSelectionConfig(BaseModel):
-    max_candidates: int | None = Field(default=None, ge=1)
+    max_candidates: int | None = Field(default=None, ge=1, le=20)
     # 2026-08-04 개정: 원래 70(= ReliabilityLevel.HIGH/ImportanceLevel.HIGH 하한, 둘 다
     # analysis/*_models.py의 LOW(0-39)/MEDIUM(40-69)/HIGH(70-100) 3단계 기준 공유)이었다.
     # 그런데 실제 수집되는 반도체 뉴스는 대부분 비공식·단일 출처라서
@@ -52,8 +52,8 @@ class ReportSelectionConfig(BaseModel):
     # 요구하는 게 사실상 "전부 거부"와 같았음). 채점 로직 자체는 설계대로 정상 동작 중이므로,
     # 로직을 고치는 대신 기준을 MEDIUM 이상(40)으로 낮췄다 — LOW(명백히 부실한 단일신호/충돌
     # 정황 등으로 캡이 걸린 건)만 걸러내고 MEDIUM 이상은 통과시킨다.
-    min_reliability_score: int = Field(default=40, ge=0, le=100)
-    min_importance_score: int = Field(default=40, ge=0, le=100)
+    min_reliability_score: int = Field(default=20, ge=0, le=100)
+    min_importance_score: int = Field(default=20, ge=0, le=100)
     min_ranking_score: Decimal | None = Field(default=None, ge=0, le=100)
     category_limits: dict[Category, int] | None = None
 
@@ -100,9 +100,9 @@ class ReportGenerationConfig(BaseModel):
     grouping: IssueGroupingConfig = Field(
         default_factory=lambda: IssueGroupingConfig(
             max_time_gap_hours=24,
-            min_title_similarity=0.2,
-            min_summary_similarity=0.2,
-            min_shared_title_tokens=1,
+            min_title_similarity=0.55,
+            min_summary_similarity=0.55,
+            min_shared_title_tokens=2,
             require_same_category=True,
         )
     )
@@ -110,6 +110,7 @@ class ReportGenerationConfig(BaseModel):
     composer: ReportComposerConfig = Field(default_factory=ReportComposerConfig)
     artifacts: ReportArtifactConfig = Field(default_factory=ReportArtifactConfig)
     explicit_group_keys: dict[str, str] | None = None
+    analysis_document_version_ids: list[str] | None = None
 
     @field_validator("requested_by", mode="before")
     @classmethod
@@ -148,11 +149,14 @@ def generate_daily_report(
 
     try:
         stage = "load_candidates"
-        candidates = get_report_candidates(
-            workspace_id=request.workspace_id,
-            report_date=request.report_date,
-            supabase=supabase,
-        )
+        candidate_kwargs = {
+            "workspace_id": request.workspace_id,
+            "report_date": request.report_date,
+            "supabase": supabase,
+        }
+        if pipeline_config.analysis_document_version_ids is not None:
+            candidate_kwargs["document_version_ids"] = pipeline_config.analysis_document_version_ids
+        candidates = get_report_candidates(**candidate_kwargs)
         logger.info(
             "report_generation_stage",
             extra={
@@ -166,7 +170,7 @@ def generate_daily_report(
         stage = "select_candidates"
         selected_candidates = select_report_candidates(
             candidates,
-            max_candidates=pipeline_config.selection.max_candidates or request.max_sections,
+            max_candidates=pipeline_config.selection.max_candidates or 20,
             min_reliability_score=pipeline_config.selection.min_reliability_score,
             min_importance_score=pipeline_config.selection.min_importance_score,
             min_ranking_score=pipeline_config.selection.min_ranking_score,
@@ -199,6 +203,7 @@ def generate_daily_report(
             config=pipeline_config.grouping,
             explicit_group_keys=pipeline_config.explicit_group_keys,
         )
+        issue_groups = issue_groups[:request.max_sections]
         if not issue_groups:
             raise ValueError("issue_groups must not be empty when candidates were selected.")
 
@@ -310,7 +315,7 @@ def _build_request_config(
         "max_sections": request.max_sections,
         "report_type": request.report_type.value,
         "selection": {
-            "max_candidates": config.selection.max_candidates or request.max_sections,
+            "max_candidates": config.selection.max_candidates or 20,
             "min_reliability_score": config.selection.min_reliability_score,
             "min_importance_score": config.selection.min_importance_score,
             "min_ranking_score": str(config.selection.min_ranking_score)
@@ -334,6 +339,7 @@ def _build_request_config(
             "formats": [artifact_type.value for artifact_type in config.artifacts.formats],
         },
         "explicit_group_keys": dict(config.explicit_group_keys or {}),
+        "analysis_document_count": len(config.analysis_document_version_ids or []),
     }
 
 
