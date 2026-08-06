@@ -4,7 +4,7 @@ from datetime import date as dt_date
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CreateSessionRequest(BaseModel):
@@ -89,7 +89,7 @@ class SaveToWikiResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Wiki 조회 — 프론트엔드 WikiPage 전용 (src/wiki/interface.py DTO를 그대로 반영)
+# Wiki 조회 ???�론?�엔??WikiPage ?�용 (src/wiki/interface.py DTO�?그�?�?반영)
 # ---------------------------------------------------------------------------
 
 class WikiPageSummaryOut(BaseModel):
@@ -163,7 +163,7 @@ class WikiPageContentOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 워크스페이스 설정 — GET/PATCH /settings 전용
+# ?�크?�페?�스 ?�정 ??GET/PATCH /settings ?�용
 # ---------------------------------------------------------------------------
 
 class WorkspaceSettingsOut(BaseModel):
@@ -185,7 +185,7 @@ class UpdateWorkspaceSettingsRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 메인 대시보드 KPI — GET /dashboard/summary 전용
+# 메인 ?�?�보??KPI ??GET /dashboard/summary ?�용
 # ---------------------------------------------------------------------------
 
 class DashboardSummaryOut(BaseModel):
@@ -200,23 +200,23 @@ class DashboardSummaryOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 일별 수집·채택 추이 — GET /dashboard/trend 전용
+# ?�별 ?�집·채택 추이 ??GET /dashboard/trend ?�용
 #
-# DashboardSummaryOut에 배열을 끼워넣지 않고 따로 뺐다. 저쪽은 스칼라 6개로
-# 프론트와 배선이 끝난 계약이라 모양을 흔들지 않는다.
+# DashboardSummaryOut??배열???�워?��? ?�고 ?�로 뺐다. ?�쪽�? ?�칼??6개로
+# ?�론?��? 배선???�난 계약?�라 모양???�들지 ?�는??
 # ---------------------------------------------------------------------------
 
 class TrendDayOut(BaseModel):
     model_config = {"from_attributes": True}
 
-    # KST 기준 날짜. 'YYYY-MM-DD'로 직렬화된다
+    # KST 기�? ?�짜. 'YYYY-MM-DD'�?직렬?�된??
     date: dt_date
     collected: int
-    # 그날 수집분 중 랭킹이 끝난 문서 수. 분석이 수집보다 늦게 돌아서
-    # 오늘 값은 거의 0으로 나오는 게 정상이다
+    # 그날 ?�집�?�???��???�난 문서 ?? 분석???�집보다 ??�� ?�아??
+    # ?�늘 값�? 거의 0?�로 ?�오??�??�상?�다
     adopted: int
-    # collected의 수집 경로별 내역. 그 밖의 source_type이 생기면
-    # news + disclosure < collected 가 될 수 있다
+    # collected???�집 경로�??�역. �?밖의 source_type???�기�?
+    # news + disclosure < collected 가 ?????�다
     news: int
     disclosure: int
 
@@ -228,7 +228,7 @@ class DashboardTrendOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 카테고리 현황 — GET /categories/stats 전용
+# 카테고리 ?�황 ??GET /categories/stats ?�용
 # ---------------------------------------------------------------------------
 
 class CategoryKeywordOut(BaseModel):
@@ -245,7 +245,7 @@ class CategoryDocumentOut(BaseModel):
     quote: str
     source_label: str
     source_url: str
-    # 상대시각('1시간 전')은 프론트가 만든다. 여기선 ISO 문자열 그대로 내보낸다.
+    # ?��??�각('1?�간 ??)?� ?�론?��? 만든?? ?�기??ISO 문자??그�?�??�보?�다.
     published_at: Optional[str]
 
 
@@ -257,8 +257,8 @@ class CategoryStatOut(BaseModel):
     count: int
     top_issue: str
     tags: list[str]
-    # 프론트 CategoryCard가 이 세 값만 라벨·색상으로 변환한다. 다른 값이 가면
-    # 카드에 "신뢰도 : "만 남고 값이 빠지므로 여기서 막는다.
+    # ?�론??CategoryCard가 ????값만 ?�벨·?�상?�로 변?�한?? ?�른 값이 가�?
+    # 카드??"?�뢰??: "�??�고 값이 빠�?므�??�기??막는??
     level: Literal["high", "mid", "low"]
     keywords: list[CategoryKeywordOut] = []
     recent_documents: list[CategoryDocumentOut] = []
@@ -272,7 +272,7 @@ class CategoryStatsOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 위키 발행 브라우저 푸시 알림 — POST/DELETE /notifications/subscribe 전용
+# ?�키 발행 브라?��? ?�시 ?�림 ??POST/DELETE /notifications/subscribe ?�용
 # ---------------------------------------------------------------------------
 
 class PushSubscriptionKeys(BaseModel):
@@ -283,3 +283,84 @@ class PushSubscriptionKeys(BaseModel):
 class SubscribeRequest(BaseModel):
     endpoint: str
     keys: PushSubscriptionKeys
+
+
+# ---------------------------------------------------------------------------
+# Daily report - GET/POST /reports/daily
+# ---------------------------------------------------------------------------
+
+class DailyReportCitationOut(BaseModel):
+    id: str
+    section_id: str
+    document_version_id: str
+    source_start_line: Optional[int] = None
+    source_end_line: Optional[int] = None
+    quoted_text: Optional[str] = None
+    relevance_score: Optional[float] = None
+    citation_order: Optional[int] = None
+    document_title: Optional[str] = None
+    source_url: Optional[str] = None
+    source_name: Optional[str] = None
+    published_at: Optional[str] = None
+
+
+class DailyReportSectionOut(BaseModel):
+    id: str
+    report_id: str
+    issue_key: str
+    section_order: int
+    title: str
+    content: dict | str | None = None
+    status: str
+    model_name: Optional[str] = None
+    prompt_version: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    citations: list[DailyReportCitationOut] = []
+
+
+class DailyReportOut(BaseModel):
+    report_id: str
+    workspace_id: str
+    report_key: str
+    version: int
+    title: str
+    report_type: str
+    status: str
+    date: str
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    sections: list[DailyReportSectionOut] = []
+
+
+class DailyReportGenerateRequest(BaseModel):
+    date: dt_date
+    max_sections: int = Field(default=15, ge=1)
+    language: str = "ko"
+    formats: Optional[list[str]] = None
+
+
+class DailyReportArtifactOut(BaseModel):
+    artifact_id: str
+    report_id: str
+    artifact_type: str
+    object_key: str
+    version: int
+    mime_type: Optional[str] = None
+    file_size: Optional[int] = None
+    created_at: Optional[str] = None
+
+
+class DailyReportGenerateResponse(BaseModel):
+    report_id: str
+    workspace_id: str
+    report_key: str
+    version: int
+    title: Optional[str] = None
+    report_type: str
+    status: str
+    date: str
+    artifact_id: str
+    artifact_type: str
+    artifact_object_key: str
+    artifacts: list[DailyReportArtifactOut]
