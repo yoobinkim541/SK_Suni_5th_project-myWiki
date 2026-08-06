@@ -205,6 +205,7 @@ def _collect_news_sources(sections: Sequence[ReportSectionDraft]) -> list[Report
                     document_title=citation.document_title,
                     source_name=citation.source_name,
                     published_at=citation.published_at,
+                    source_url=citation.source_url,
                 )
             )
     return collected

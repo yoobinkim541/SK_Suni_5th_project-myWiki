@@ -601,7 +601,7 @@ def _build_pdf_source_rows(report: GeneratedReport) -> tuple[PdfSourceLine, ...]
         if key in seen:
             continue
         seen.add(key)
-        rows.append(PdfSourceLine(source_type=f"\ub274\uc2a4 | {source.source_name or '\uc815\ubcf4 \uc5c6\uc74c'}", source_name=source.source_name or "", title=source.document_title or "\uc815\ubcf4 \uc5c6\uc74c", published_at=_format_pdf_source_date(source.published_at)))
+        rows.append(PdfSourceLine(source_type=f"\ub274\uc2a4 | {source.source_name or '\uc815\ubcf4 \uc5c6\uc74c'}", source_name=source.source_name or "", title=source.document_title or "\uc815\ubcf4 \uc5c6\uc74c", published_at=_format_pdf_source_date(source.published_at), url=source.source_url))
     for source in report.wiki_sources:
         key = ("\ub0b4\ubd80 Wiki", source.wiki_page_id, source.wiki_title or "")
         if key in seen:

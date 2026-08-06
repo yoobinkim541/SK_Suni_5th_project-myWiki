@@ -487,12 +487,20 @@ def _build_source_flowables(section: PdfSection, styles: StyleSheet1) -> list[ob
             Paragraph(_xml_text(source.source_type or K_NO_INFORMATION), styles["EvidenceBody"]),
             Paragraph(_xml_text(source.title or K_NO_INFORMATION), styles["EvidenceBody"]),
             Paragraph(_xml_text(source.published_at or K_NO_INFORMATION), styles["EvidenceBody"]),
-            Paragraph(_xml_text(link), styles["EvidenceBody"]),
+            _build_source_link(source.url, styles),
         ])
     table = Table(rows, colWidths=[10 * mm, 32 * mm, 68 * mm, 29 * mm, 31 * mm], repeatRows=1, hAlign="LEFT", splitByRow=1)
     table.setStyle(_table_style())
     flowables.append(table)
     return flowables
+
+
+def _build_source_link(url: str | None, styles: StyleSheet1) -> Paragraph:
+    if not url:
+        return Paragraph(_xml_text(K_NO_INFORMATION), styles["EvidenceBody"])
+    escaped_url = escape(url, quote=True)
+    label = "\uc6d0\ubb38 \ubcf4\uae30"
+    return Paragraph(f'<link href="{escaped_url}"><font color="#2563EB">{label}</font></link>', styles["EvidenceBody"])
 
 
 def _build_evidence_table(evidences: tuple[PdfEvidenceLine, ...], styles: StyleSheet1) -> Table:

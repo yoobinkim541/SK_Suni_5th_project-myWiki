@@ -324,6 +324,7 @@ def build_report_citation_drafts(
                 document_title=source.title,
                 source_name=source.source_name,
                 published_at=source.published_at,
+                source_url=source.canonical_url,
             )
         )
     return drafts
