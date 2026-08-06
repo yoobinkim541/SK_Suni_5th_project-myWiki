@@ -19,6 +19,17 @@ import { WIKI_KEYWORD_LINKS } from '../data/mockWiki';
 import { fetchWikiTree, fetchWikiDoc, resolveWikiId } from '../services/wikiApi';
 import WikiCard from '../components/wiki/WikiCard';
 import WikiKeywordModal from '../components/wiki/WikiKeywordModal';
+import mascotWikiImg from '../assets/mascot-wiki.png';
+
+// 우측 컬럼("연결된 문서") 아래 두는 마스코트 — 에이전트 페이지의 MascotFloat와 같은
+// CSS(.mascot-float)를 공유해서 위/아래로 둥둥 뜨는 애니메이션이 동일하게 적용된다.
+function MascotFloat() {
+  return (
+    <div className="mascot-float">
+      <img src={mascotWikiImg} alt="마이위키 마스코트" />
+    </div>
+  );
+}
 
 export default function WikiPage({ docId }) {
   const [tree, setTree] = useState(null);
@@ -143,6 +154,8 @@ export default function WikiPage({ docId }) {
               </button>
             ))}
           </div>
+
+          <MascotFloat />
         </div>
       </div>
 
