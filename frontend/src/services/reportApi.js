@@ -72,11 +72,11 @@ function normalizeIssue(section) {
   return {
     id: section.id,
     level,
-    category: content.category || '??',
+    category: content.category || '미분류',
     title: section.title,
     summary: content.current_summary || section.title,
     sourceIsDoc: Boolean(firstCitation?.source_url),
-    sourceLabel: firstCitation?.source_name || firstCitation?.document_title || '?? ??',
+    sourceLabel: firstCitation?.source_name || firstCitation?.document_title || '출처 없음',
     sourceUrl: firstCitation?.source_url || '#',
     sourceTitle:
       firstCitation?.document_title ||
@@ -94,7 +94,7 @@ function normalizeArchiveItem(report, issues, todayDate) {
   return {
     date: report.date,
     label: formatDateLabel(report.date),
-    day: report.date === todayDate ? '??' : '',
+    day: report.date === todayDate ? '오늘' : '',
     title: report.title,
     summary: overview,
     issues: issues.length,
@@ -106,7 +106,7 @@ function normalizeArchiveItem(report, issues, todayDate) {
 
 function buildOverview(issues) {
   if (!issues.length) {
-    return '?? ??? ?? ???? ?????? ?? ?? ??? ?? ?? ????.';
+    return '아직 생성된 리포트 본문이 없습니다.';
   }
 
   return issues
@@ -115,6 +115,54 @@ function buildOverview(issues) {
     .join(' ')
     .trim();
 }
+
+function buildPendingReportView(date = getTodayKSTDate()) {
+  const label = formatDateLabel(date);
+  const title = '일일 동향 보고서 생성 대기';
+  const summary = '아직 생성된 리포트가 없습니다. Word/PDF/PPT 버튼을 누르면 리포트를 생성한 뒤 다운로드합니다.';
+  const archiveItem = {
+    date,
+    label,
+    day: date === getTodayKSTDate() ? '오늘' : '',
+    title,
+    summary,
+    issues: 0,
+    wiki: 0,
+    level: 'mid',
+    old: false,
+  };
+
+  return {
+    raw: null,
+    issues: [],
+    summary: {
+      date: label,
+      statusLabel: '생성 대기',
+      kpis: [],
+      totalLabel: '전체 0건',
+      categories: [{ name: '전체', count: 0 }],
+      keywords: ['리포트 생성 대기'],
+    },
+    archive: [archiveItem],
+    today: {
+      label: `${label} - 리포트 생성 대기`,
+      date,
+    },
+    detail: {
+      date,
+      label,
+      day: archiveItem.day,
+      title,
+      summary,
+      level: archiveItem.level,
+      issueCount: 0,
+      wikiCount: 0,
+      overview: summary,
+      issues: [],
+    },
+  };
+}
+
 
 async function loadDailyReport(date = getTodayKSTDate()) {
   if (!reportCache.has(date)) {
@@ -131,7 +179,14 @@ async function loadDailyReport(date = getTodayKSTDate()) {
 }
 
 async function buildReportView(date = getTodayKSTDate()) {
-  const report = await loadDailyReport(date);
+  let report;
+  try {
+    report = await loadDailyReport(date);
+  } catch (error) {
+    if (error?.status === 404) return buildPendingReportView(date);
+    throw error;
+  }
+
   const issues = (report.sections || []).map(normalizeIssue);
   const archiveItem = normalizeArchiveItem(report, issues, getTodayKSTDate());
 
@@ -140,11 +195,11 @@ async function buildReportView(date = getTodayKSTDate()) {
     issues,
     summary: {
       date: formatDateLabel(report.date),
-      statusLabel: report.status === 'completed' ? '??? ?? ??' : report.status,
+      statusLabel: report.status === 'completed' ? '생성 완료' : report.status,
       kpis: [],
-      totalLabel: `?? ${issues.length}?`,
+      totalLabel: `전체 ${issues.length}건`,
       categories: [
-        { name: '??', count: issues.length },
+        { name: '전체', count: issues.length },
         ...Array.from(
           issues.reduce((map, issue) => {
             map.set(issue.category, (map.get(issue.category) || 0) + 1);
@@ -156,7 +211,7 @@ async function buildReportView(date = getTodayKSTDate()) {
     },
     archive: [archiveItem],
     today: {
-      label: `${formatDateLabel(report.date)} ?? ?? ??? ? ?? ${issues.length}?`,
+      label: `${formatDateLabel(report.date)} - 일일 동향 보고서 - 이슈 ${issues.length}건`,
       date: report.date,
     },
     detail: {

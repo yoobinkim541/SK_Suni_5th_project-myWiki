@@ -18,6 +18,7 @@ import ReportSection from '../components/report/ReportSection';
 
 export default function ReportPage({ onNavigate }) {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [summary, setSummary] = useState(null);
   const [archive, setArchive] = useState([]);
   const [today, setToday] = useState(null);
@@ -25,17 +26,28 @@ export default function ReportPage({ onNavigate }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    setError('');
+
     Promise.all([
       fetchReportSummary(),
       fetchReportArchive(),
       fetchTodayReport(),
-    ]).then(([s, a, t]) => {
-      if (!alive) return;
-      setSummary(s);
-      setArchive(a);
-      setToday(t);
-      setLoading(false);
-    });
+    ])
+      .then(([s, a, t]) => {
+        if (!alive) return;
+        setSummary(s);
+        setArchive(a);
+        setToday(t);
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(err?.message || '리포트를 불러오지 못했습니다.');
+      })
+      .finally(() => {
+        if (!alive) return;
+        setLoading(false);
+      });
+
     return () => { alive = false; };
   }, []);
 
@@ -48,12 +60,22 @@ export default function ReportPage({ onNavigate }) {
     );
   }
 
+
+  if (error || !summary || !today) {
+    return (
+      <section className="view on" id="v-report">
+        <div className="ph"><h2>일일 동향 보고서</h2></div>
+        <div className="loading">{error || '리포트를 불러오지 못했습니다.'}</div>
+      </section>
+    );
+  }
+
   return (
     <section className="view on" id="v-report">
       <div className="ph">
         <h2>일일 동향 보고서</h2>
         <span className="dt">{summary.date}</span>
-        <span className="st">수집 파이프라인 <b>정상</b></span>
+        <span className="st">{summary.statusLabel || <>수집 파이프라인 <b>정상</b></>}</span>
       </div>
 
       {/* ⚠ 분류·오늘의 키워드(ReportSummary)는 오늘 리포트 카드 아래에 오도록
