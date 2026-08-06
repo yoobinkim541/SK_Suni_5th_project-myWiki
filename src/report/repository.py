@@ -448,6 +448,7 @@ def _build_section_content_payload(section: ReportSectionDraft) -> dict[str, obj
         "representative_analysis_result_id": section.representative_analysis_result_id,
         "category": section.category.value,
         "importance_score": section.importance_score,
+        "reliability_score": section.reliability_score,
         "impact_direction": section.impact_direction.value if section.impact_direction is not None else None,
         "time_horizon": section.time_horizon.value if section.time_horizon is not None else None,
         "current_summary": section.current_summary,

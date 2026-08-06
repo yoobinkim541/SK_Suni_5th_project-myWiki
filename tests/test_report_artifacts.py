@@ -211,6 +211,7 @@ def _from_codepoints(*values: int) -> str:
 def test_daily_pdf_uses_requested_industry_report_structure() -> None:
     report = make_report()
     report.sections[0].status = "completed"
+    report.sections[0].reliability_score = 91
 
     pdf_bytes = _render_generated_report_pdf(report)
     extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
@@ -228,6 +229,11 @@ def test_daily_pdf_uses_requested_industry_report_structure() -> None:
     assert _from_codepoints(0xC758, 0xBBF8) in extracted
     assert _from_codepoints(0x53, 0x4B, 0xD558, 0xC774, 0xB2C9, 0xC2A4, 0x20, 0xC601, 0xD5A5) in extracted
     assert _from_codepoints(0xB2E4, 0xC74C, 0x20, 0xD655, 0xC778, 0x20, 0xC0AC, 0xD56D) in extracted
+    assert _from_codepoints(0xC911, 0xC694, 0xB3C4, 0x20, 0xB192, 0xC74C, 0x20, 0x39, 0x30, 0xC810) in extracted
+    assert _from_codepoints(0xC2E0, 0xB8B0, 0xB3C4, 0x20, 0xB192, 0xC74C, 0x20, 0x39, 0x31, 0xC810) in extracted
+    assert "MyWiki" in extracted
+    assert "SK hynix Industry Trend Curation" in extracted
+    assert "1 /" in extracted
 
 
 def test_build_report_artifact_object_key_uses_project_path_rule() -> None:

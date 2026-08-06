@@ -244,6 +244,7 @@ class ReportSectionDraft(BaseModel):
     representative_analysis_result_id: str
     category: Category
     importance_score: int | None = Field(default=None, ge=0, le=100)
+    reliability_score: int | None = Field(default=None, ge=0, le=100)
     impact_direction: ImpactDirection | None = None
     time_horizon: TimeHorizon | None = None
     title: str
