@@ -44,6 +44,19 @@ def get_supabase() -> Client:
     )
 
 
+_IN_CLAUSE_CHUNK_SIZE = 150
+"""
+.in_() 한 번에 넣을 id 개수 상한. 백로그가 커지면 id 목록이 수백 개가 되는데
+전부 한 URL의 .in_(...)에 담으면 PostgREST가 400 Bad Request로 거부한다
+(2026-08-06 확인: get_documents_ready_for_classification이 document_ids
+~300개로 크래시). src/pipeline_common/repository.py의 동일 상수와 같은 값.
+"""
+
+
+def _chunked(items: list, size: int = _IN_CLAUSE_CHUNK_SIZE) -> list[list]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
 def validate_document_workspace(*, workspace_id: str, document_version_id: str, supabase: Client | None = None) -> dict[str, Any]:
     db = supabase or get_supabase()
     version_rows = (
@@ -314,27 +327,33 @@ def get_documents_ready_for_classification(
     if not document_ids:
         return []
 
-    version_rows = (
-        db.table("document_versions")
-        .select("id,created_at")
-        .in_("document_id", document_ids)
-        .order("created_at", desc=True)
-        .limit(limit * 5)
-        .execute()
-        .data
-    )
-    version_ids = [row["id"] for row in version_rows]
+    version_rows: list[dict] = []
+    for chunk in _chunked(document_ids):
+        version_rows.extend(
+            db.table("document_versions")
+            .select("id,created_at")
+            .in_("document_id", chunk)
+            .order("created_at", desc=True)
+            .limit(limit * 5)
+            .execute()
+            .data
+        )
+    # 청크별로 order+limit이 걸려서 합친 뒤 다시 정렬·자른다.
+    version_rows.sort(key=lambda row: row["created_at"], reverse=True)
+    version_ids = [row["id"] for row in version_rows[: limit * 5]]
     if not version_ids:
         return []
 
-    analyzed_rows = (
-        db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
-        .select("document_version_id")
-        .in_("document_version_id", version_ids)
-        .execute()
-        .data
-    )
-    already_analyzed = {row["document_version_id"] for row in analyzed_rows}
+    already_analyzed: set[str] = set()
+    for chunk in _chunked(version_ids):
+        analyzed_rows = (
+            db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+            .select("document_version_id")
+            .in_("document_version_id", chunk)
+            .execute()
+            .data
+        )
+        already_analyzed.update(row["document_version_id"] for row in analyzed_rows)
 
     return [vid for vid in version_ids if vid not in already_analyzed][:limit]
 
