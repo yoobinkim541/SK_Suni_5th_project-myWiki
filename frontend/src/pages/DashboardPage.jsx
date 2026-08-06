@@ -6,8 +6,9 @@
 //   KPI 숫자(수집 문서 312건 등)도 전엔 이 파일에 그냥 박혀 있었는데, data/mockDashboard.js의
 //   MOCK_KPI_SUMMARY로 빼서 같이 fetchDashboard()로 받아오게 했습니다.
 //
-// 섹션 순서: 관심 키워드(InterestsBar, 추가·삭제) → 최근 현황(KPI) → 지식 축적화
-//   (KnowledgeGraph, 장식용) → 산업 동향 분석(그래프) → 최신 뉴스 → 오늘의 키워드 → 최근 산업 이슈.
+// 섹션 순서: 지식 축적화(KnowledgeGraph, 장식용 — 진입 직후 바로 보이도록 최상단) → 최근 현황(KPI)
+//   → 산업 동향 분석(그래프) → 관심 키워드(InterestsBar, 추가·삭제) → 최신 뉴스 → 오늘의 키워드
+//   → 최근 산업 이슈.
 // 검색창(.search)은 없고, "관심사"(App.jsx, 선호조사에서 고른 키워드)와 "오늘의 키워드" 클릭
 // 두 갈래로만 뉴스를 좁힙니다.
 //
@@ -93,24 +94,36 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
     document.querySelector('.news-feed')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  // "불러오는 중…" 텍스트 대신, 실제 대시보드 레이아웃(지식 축적화 그래프 → KPI 4개 →
+  // 산업 동향 분석 그래프) 자리를 흉내 낸 실루엣 블록이 위에서부터 순서대로 나타나는
+  // 스켈레톤을 보여준다(globals.css .dash-skeleton).
   if (loading) {
     return (
       <section className="view on" id="v-dash">
         <div className="ph"><h2>메인 대시보드</h2></div>
-        <div className="loading">불러오는 중…</div>
+        <div className="dash-skeleton">
+          <div className="sk-block sk-hero" />
+          <div className="sk-row">
+            <div className="sk-block" />
+            <div className="sk-block" />
+            <div className="sk-block" />
+            <div className="sk-block" />
+          </div>
+          <div className="sk-block sk-tall" />
+        </div>
       </section>
     );
   }
 
   return (
     <section className="view on" id="v-dash">
-      <div className="ph">
+      <div className="ph ph-tight">
         <h2>메인 대시보드</h2>
         <span className="dt">2026.07.24 금요일</span>
         <span className="st">반도체 도메인 · 일 배치 <b>정상</b></span>
       </div>
 
-      <div className="pipe">
+      <div className="pipe pipe-tight">
         {PIPELINE_STEPS.map((step, i) => (
           <span key={step.name} style={{ display: 'contents' }}>
             <span className="st"><span className="n">{step.name}</span><span className="tm">{step.time}</span></span>
@@ -120,22 +133,9 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
         <span className="nx">다음 실행 08:00 · 무인 자동</span>
       </div>
 
-      {/* 0) 관심 키워드 — 온보딩과 별개로 대시보드에서 바로 추가·삭제 */}
-      <InterestsBar interests={interests} onUpdateInterests={onUpdateInterests} />
-
-      {/* 1) 최근 현황 — 화면에 들어오자마자 보이는 첫 섹션 */}
-      <section className="sec">
-        <div className="sh"><span className="t">최근 현황</span><span className="r">7일 누적 기준</span></div>
-        <div className="kpi">
-          <KpiCard label="수집 문서" value={kpiSummary.collectedDocs.value} desc={kpiDesc(kpiSummary.collectedDocs.desc)} />
-          <KpiCard label="생성 보고서" value={kpiSummary.generatedReports.value} desc={kpiSummary.generatedReports.desc} />
-          <KpiCard label="위키 문서" value={kpiSummary.wikiDocs.value} desc={kpiDesc(kpiSummary.wikiDocs.desc)} />
-          {/* 평균 신뢰도는 색상 없이 기본 텍스트색으로 표시 (KpiCard 기본값) */}
-          <KpiCard label="평균 신뢰도" value={kpiSummary.avgConfidence.value} isText desc={kpiSummary.avgConfidence.desc} />
-        </div>
-      </section>
-
-      {/* 1.5) 지식 축적화 네트워크 — myWiki가 쌓아온 카테고리·키워드를 시각화한 장식용 그래프 */}
+      {/* 1) 지식 축적화 네트워크 — 파이프라인 바로 아래, 최근 현황보다도 먼저 바로 보이도록
+          최상단에 배치(장식용 그래프). 헤더·파이프라인 바의 위아래 여백을 좁혀서(ph-tight/
+          pipe-tight) 화면에 들어오자마자 이 그래프가 더 잘 보이게 했다. */}
       <section className="sec">
         <div className="sh">
           <span className="t">지식 축적화</span>
@@ -144,7 +144,20 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
         <KnowledgeGraph />
       </section>
 
-      {/* 2) 산업 동향 분석 그래프 */}
+      {/* 2) 최근 현황 — 카테고리 현황 페이지의 "오늘의 분류 요약"과 같은 .kpi/KpiCard를 쓰지만,
+          여기서는 .kpi-compact로 카드 크기만 살짝 줄인다(다른 페이지의 .kpi는 그대로 둠). */}
+      <section className="sec">
+        <div className="sh"><span className="t">최근 현황</span><span className="r">7일 누적 기준</span></div>
+        <div className="kpi kpi-compact">
+          <KpiCard label="수집 문서" value={kpiSummary.collectedDocs.value} desc={kpiDesc(kpiSummary.collectedDocs.desc)} />
+          <KpiCard label="생성 보고서" value={kpiSummary.generatedReports.value} desc={kpiSummary.generatedReports.desc} />
+          <KpiCard label="위키 문서" value={kpiSummary.wikiDocs.value} desc={kpiDesc(kpiSummary.wikiDocs.desc)} />
+          {/* 평균 신뢰도는 색상 없이 기본 텍스트색으로 표시 (KpiCard 기본값) */}
+          <KpiCard label="평균 신뢰도" value={kpiSummary.avgConfidence.value} isText desc={kpiSummary.avgConfidence.desc} />
+        </div>
+      </section>
+
+      {/* 3) 산업 동향 분석 그래프 */}
       <section className="sec">
         <div className="sh">
           <span className="t">산업 동향 분석</span>
@@ -154,7 +167,11 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
         <TrendChart data={trend} />
       </section>
 
-      {/* 3) 최신 뉴스 */}
+      {/* 3.5) 관심 키워드 — 온보딩과 별개로 대시보드에서 바로 추가·삭제. "산업 동향 분석"과
+          "최신 뉴스" 사이에 배치(고른 키워드가 바로 아래 최신 뉴스 필터에 반영되니 자연스럽게 이어짐) */}
+      <InterestsBar interests={interests} onUpdateInterests={onUpdateInterests} />
+
+      {/* 4) 최신 뉴스 */}
       <section className="sec news-feed">
         <div className="sh">
           <span className="t">최신 뉴스</span>
@@ -208,7 +225,7 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
         )}
       </section>
 
-      {/* 4) 오늘의 키워드 — 세로 목록 대신 가로 칩으로 배치("카테고리 현황" 섹션은 삭제) */}
+      {/* 5) 오늘의 키워드 — 세로 목록 대신 가로 칩으로 배치("카테고리 현황" 섹션은 삭제) */}
       <section className="sec">
         <div className="sh">
           <span className="t">오늘의 키워드</span>
@@ -229,7 +246,7 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
         </div>
       </section>
 
-      {/* 5) 최근 산업 이슈 — "최신 뉴스"와 구분되게 톤 다른 패널에 담고, 관심사와 무관하게
+      {/* 6) 최근 산업 이슈 — "최신 뉴스"와 구분되게 톤 다른 패널에 담고, 관심사와 무관하게
           모든 사용자에게 동일한 항목을 보여준다(출처도 공시·IR 등 공식 문서 위주). */}
       <section className="sec sec-issues">
         <div className="sh">

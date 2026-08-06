@@ -63,7 +63,10 @@ svg text{font-family:inherit}
 /* ---------- 앱 셸 ---------- */
 .app{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
 .side{background:var(--rail);border-right:1px solid var(--hair);
-  padding:26px 18px 22px;display:flex;flex-direction:column}
+  padding:26px 18px 22px;display:flex;flex-direction:column;
+  /* 스크롤해도 사이드바(다른 페이지로 넘어가는 메뉴)는 화면에 그대로 남아있고, 본문(.main)만
+     스크롤되게 한다. 모바일은 이미 .m-drawer/.m-tabbar가 position:fixed라 따로 손댈 게 없다. */
+  position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto}
 .brand .eb{font-size:9.5px;font-weight:300;letter-spacing:.1em;color:var(--faint)}
 .brand .nm{display:flex;align-items:center;gap:7px;
   font-size:18px;font-weight:900;letter-spacing:-.02em;margin-top:3px}
@@ -87,7 +90,7 @@ svg text{font-family:inherit}
   background:var(--green);color:#fff;font-size:11px;font-weight:700;
   display:flex;align-items:center;justify-content:center}
 
-.main{min-width:0;padding:32px 40px 80px;max-width:1180px}
+.main{min-width:0;padding:32px 40px 80px}
 .view{display:none}
 .view.on{display:block}
 
@@ -114,7 +117,17 @@ svg text{font-family:inherit}
 /* ---------- 파이프라인 ---------- */
 .pipe{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
   padding:14px 0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);
-  margin:22px 0}
+  margin:22px 0 8px}
+/* 파이프라인 바로 다음 섹션(대시보드에서는 "지식 축적화")은 기본 .sec 위쪽 여백(30px)이
+   더해지면 .pipe와 사이 간격이 과하게 벌어져서, 이 조합에서만 위쪽 패딩을 줄인다. */
+.pipe + .sec{padding-top:4px}
+/* 파이프라인 바로 다음 섹션의 제목("지식 축적화") 아래 여백도 같이 줄여서, 그래프가
+   파이프라인 바에 더 가까이 붙되 겹치지는 않을 만큼만 위로 올라와 보이게 한다. */
+.pipe + .sec .sh{margin-bottom:8px}
+/* 대시보드 전용 — 헤더·파이프라인 바 위아래 여백을 더 좁혀서, 화면에 들어오자마자
+   바로 아래 있는 지식 축적화 그래프가 스크롤 없이 최대한 잘 보이게 한다. */
+.ph-tight{padding-bottom:10px}
+.pipe-tight{margin-top:10px}
 .pipe .st{display:flex;align-items:baseline;gap:7px}
 .pipe .st .n{font-size:12.5px;font-weight:700}
 .pipe .st .n::before{content:"✓";color:var(--green);margin-right:5px;font-weight:900}
@@ -153,6 +166,14 @@ svg text{font-family:inherit}
 .kpi .v.txt{font-size:21px;letter-spacing:-.025em}
 .kpi .d{font-size:11px;font-weight:300;color:var(--faint);margin-top:8px}
 .kpi .d b{color:var(--green);font-weight:700}
+
+/* 대시보드 "최근 현황"만 카드 크기를 줄인 버전(.kpi-compact) — 카테고리 현황 페이지의
+   "오늘의 분류 요약"(.kpi 그대로 사용)은 건드리지 않고, 이 클래스가 붙은 곳만 작아진다. */
+.kpi-compact > div{padding:0 18px}
+.kpi-compact .k{font-size:10.5px;margin-bottom:6px}
+.kpi-compact .v{font-size:23px}
+.kpi-compact .v.txt{font-size:16px}
+.kpi-compact .d{font-size:10px;margin-top:5px}
 
 /* ---------- 차트 ---------- */
 .chart{margin-top:4px}
@@ -462,6 +483,7 @@ svg text{font-family:inherit}
 }
 .gear:hover{border-color:var(--green);color:var(--green);transform:rotate(30deg)}
 .gear.open{color:var(--green);border-color:var(--green)}
+.gear svg{width:16px;height:16px;flex:none}
 .settings-panel{
   position:fixed;top:60px;right:28px;z-index:80;
   background:var(--panel);border:1px solid var(--hair);border-radius:12px;
@@ -1604,33 +1626,28 @@ a.fn:hover{text-decoration:underline}
 
 /* ---------- 지식 축적화 네트워크 그래프 (KnowledgeGraph.jsx) ---------- */
 /* 반응형 크기·여백은 컴포넌트 쪽에서 Tailwind 유틸리티 클래스로 준다(w-full, max-h-, px- 등).
-   여기 globals.css는 SVG 노드·선·애니메이션처럼 Tailwind로 표현하기 번거로운 것만 담당한다. */
-.kg-wrap{background:radial-gradient(120% 120% at 50% 18%,var(--green-tint) 0%,transparent 62%);
-  perspective:1500px}
-/* 정적 기울기(rotateX) 대신 계속 좌우로 살짝 흔들리는 sway 애니메이션 — "3D로 계속 떠 있는" 느낌 */
-.kg-svg{transform-style:preserve-3d;animation:kg-sway 9s ease-in-out infinite}
-.kg-wrap:hover .kg-svg{animation-play-state:paused;transform:rotateX(4deg) rotateY(0deg) scale(1.015)}
+   여기 globals.css는 SVG 노드·선·애니메이션처럼 Tailwind로 표현하기 번거로운 것만 담당한다.
+   ⚠ 매트(flat) 스타일 — 3D 기울기(perspective/sway), 카테고리 노드의 방사형 그라디언트·
+   그림자는 뺐다. 다만 중앙 허브(그라디언트 글로우 + 로고)는 남기고, 허브↔카테고리를 잇는
+   선 6개만 뺐다(다 같은 중심에서 뻗어나가는 선이 있으면 지저분해 보인다는 피드백). */
+.kg-wrap{background:transparent}
+.kg-svg{display:block}
 
 .kg-line{stroke:var(--hair);stroke-width:1.5;opacity:0;
   transition:opacity .6s var(--ease)}
-.kg-line-main{stroke:var(--green);stroke-opacity:.42;stroke-width:2.2}
-.kg-line-ring{stroke:var(--green);stroke-opacity:.22;stroke-width:1.4}
-.kg-line-leaf{stroke-dasharray:2 4}
+.kg-line-ring{stroke:var(--green);stroke-opacity:.45;stroke-width:1.6}
+/* 카테고리→리프 스포크선 — 잘 보이도록 진하게 */
+.kg-line-leaf{stroke:var(--green);stroke-opacity:.85;stroke-dasharray:2 4}
 .kg-wrap.in .kg-line{opacity:1}
 
-/* 카테고리 원 — 그림자 레이어(아래로 살짝 오프셋) + 방사형 그라디언트로 광원이 있는 듯한 입체감 */
+/* 카테고리 원 — 그라디언트·그림자 없이 매트한 단색 채움 */
 .kg-cat{opacity:0;transform:scale(.55);transform-origin:center;transform-box:fill-box;
   transition:opacity .5s var(--ease),transform .5s cubic-bezier(.2,1.4,.4,1)}
 .kg-wrap.in .kg-cat{opacity:1;transform:scale(1)}
-.kg-cat:hover{transform:scale(1.08) translateY(-4px)}
-.kg-cat-circle-shadow{fill:#000;opacity:.18}
-:root[data-theme="dark"] .kg-cat-circle-shadow{opacity:.36}
-.kg-cat-circle{fill:url(#kgNodeGrad);stroke:#fff;stroke-opacity:.3;stroke-width:1.5;
-  filter:drop-shadow(0 16px 28px rgba(21,120,80,.32))}
-:root[data-theme="dark"] .kg-cat-circle{stroke:#0d1512;stroke-opacity:.4}
-.kg-cat-label{fill:#fff;font-size:16.5px;font-weight:800;letter-spacing:-.01em;
-  paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:2px}
-:root[data-theme="dark"] .kg-cat-label{fill:#0d1512;stroke:rgba(255,255,255,.18)}
+.kg-cat:hover{transform:scale(1.06)}
+.kg-cat-circle{fill:var(--green)}
+.kg-cat-label{fill:#fff;font-size:16.5px;font-weight:800;letter-spacing:-.01em}
+:root[data-theme="dark"] .kg-cat-label{fill:#0d1512}
 
 /* 리프(키워드) 점 — 스케일인 후 각자 다른 딜레이로 계속 위아래로 둥둥 떠다닌다 */
 .kg-leaf{opacity:0;transform:scale(.3);transform-origin:center;transform-box:fill-box;
@@ -1641,30 +1658,24 @@ a.fn:hover{text-decoration:underline}
 .kg-leaf-dot{fill:var(--green);opacity:.65}
 .kg-leaf-label{fill:var(--muted);font-size:12px;font-weight:600}
 
-.kg-hub-glow{fill:var(--green);opacity:.16;animation:kg-pulse 2.6s var(--ease) infinite}
-.kg-hub-circle{fill:var(--panel);stroke:var(--green);stroke-width:2.5;
-  filter:drop-shadow(0 18px 34px rgba(21,120,80,.24))}
-
-/* 허브 로고 오버레이 — TopBar.jsx의 라이트/다크 로고 전환 패턴과 동일 */
+/* 중앙 허브 — 그라디언트 글로우 + myWiki 로고(라이트/다크 자동 전환) */
+.kg-hub-glow{fill:var(--green);opacity:.07;animation:kg-pulse 2.6s var(--ease) infinite}
+.kg-hub-grad{fill:url(#kgHubGrad)}
+.kg-hub-logo-img{filter:drop-shadow(0 8px 16px rgba(21,120,80,.16))}
 .kg-hub-logo-img.logo-dark{display:none}
 :root[data-theme="dark"] .kg-hub-logo-img.logo-light{display:none}
 :root[data-theme="dark"] .kg-hub-logo-img.logo-dark{display:block}
 
 @keyframes kg-pulse{
-  0%,100%{transform:scale(1);opacity:.16}
-  50%{transform:scale(1.14);opacity:.28}
+  0%,100%{transform:scale(1);opacity:.07}
+  50%{transform:scale(1.14);opacity:.14}
 }
 @keyframes kg-float{
   0%,100%{transform:scale(1) translateY(0)}
   50%{transform:scale(1) translateY(-5px)}
 }
-@keyframes kg-sway{
-  0%,100%{transform:rotateX(7deg) rotateY(-5deg)}
-  50%{transform:rotateX(7deg) rotateY(5deg)}
-}
 
 @media (prefers-reduced-motion: reduce){
-  .kg-svg,.kg-wrap:hover .kg-svg{transform:none;animation:none}
   .kg-line,.kg-cat,.kg-leaf{transition:none;opacity:1;transform:none;animation:none}
   .kg-hub-glow{animation:none}
 }
@@ -1706,28 +1717,41 @@ a.fn:hover{text-decoration:underline}
   }
 }
 
-/* ---------- PC 사이드바 접기 토글(.deck의 .side-toggle) ---------- */
-.side-toggle{flex:none;width:36px;height:36px;border-radius:10px;border:1px solid var(--hair);
+/* ---------- PC 사이드바 브랜드(로고) 안 "myWiki" 줄 + 접기 토글, SideNav.jsx .nm-row ---------- */
+/* 펼친 상태: "반도체 동향 시스템"은 그대로 위 줄, 그 아래 줄에 토글 버튼 + "myWiki"를 나란히 */
+.nm-row{display:flex;align-items:center;gap:8px;margin-top:2px}
+.side-toggle{flex:none;width:30px;height:30px;border-radius:9px;border:1px solid var(--hair);
   background:var(--panel);color:var(--ink-2);cursor:pointer;display:flex;align-items:center;
-  justify-content:center;margin-right:14px;
+  justify-content:center;
   transition:background var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease)}
 .side-toggle:hover{border-color:var(--green);color:var(--green);background:var(--green-tint)}
 
+/* 항목 아이콘 — 접힘 여부와 무관하게 항상 렌더링. 펼친 상태에서는 아이콘+라벨을 가로로 나열 */
+.side a{display:flex;align-items:center;gap:10px}
+.side-ic{flex:none;width:18px;height:18px;display:block}
+.side-ic svg{width:18px;height:18px;stroke:currentColor;fill:none;
+  stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.side-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 /* ---------- PC 사이드바 접힘 모드(.side.collapsed) ---------- */
+/* .main은 접힘 여부와 무관하게 항상 max-width 없이 화면 폭을 그대로 씀(위 .main 규칙) */
 .app.side-collapsed{grid-template-columns:76px 1fr}
 .side.collapsed{width:76px;padding:26px 12px 22px;align-items:center}
-.side.collapsed .brand{display:flex;align-items:center;justify-content:center;
-  width:40px;height:40px;margin:0 auto}
+/* 접힌 상태: brand 안에 로고 아이콘 → 토글 버튼이 세로로 쌓임(.nm-row는 안 씀, 대신 .brand 자체를 column으로) */
+.side.collapsed .brand{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;width:auto;height:auto}
 .side.collapsed nav{align-items:center;width:100%}
-.side.collapsed a{display:flex;align-items:center;justify-content:center;
+.side.collapsed a{justify-content:center;
   width:44px;height:44px;padding:0;border-radius:12px;margin:0 auto}
 .side.collapsed a.on::before{display:none}
-.side-ic{width:20px;height:20px;display:block}
-.side-ic svg{width:20px;height:20px;stroke:currentColor;fill:none;
-  stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.side.collapsed .side-label{display:none}
 
 /* ---------- 사이트 footer 확장(개인정보 링크·PWA 설치·저작권) ---------- */
+/* .app는 grid-template-columns:216px 1fr라, 명시적으로 폭 전체를 지정 안 하면 footer가
+   그리드 자동 배치상 사이드바 칸(왼쪽 좁은 열)에만 깔린다. .deck(상단바)과 같은 방식으로
+   두 칸을 다 차지하게 해서 화면 맨 아래에 가로로 길게 나오게 한다. */
+.app > .site-footer{grid-column:1 / -1}
 .site-footer{flex-wrap:wrap;row-gap:6px}
 .ft-link,.ft-pwa{font:inherit;font-size:11.5px;color:var(--muted);background:none;border:0;
   padding:0;cursor:pointer;text-decoration:none}
@@ -1743,6 +1767,141 @@ a.fn:hover{text-decoration:underline}
 @media (max-width:768px){
   .site-footer{margin-bottom:calc(66px + env(safe-area-inset-bottom) + 12px);
     padding:20px 16px 16px;text-align:center}
+}
+
+/* ---------- 페이지 전환 애니메이션(.page-enter, App.jsx <main>) ----------
+   view가 바뀔 때마다 .main이 다시 마운트되면서 이 애니메이션이 재생된다. 화면이
+   위에서 아래로 서서히 밝아지며 드러나는 느낌(토스 앱 페이지 전환 참고) — clip-path로
+   위→아래 리빌 + brightness로 명도 변화를 같이 준다. */
+@keyframes page-reveal{
+  0%{clip-path:inset(0 0 100% 0);filter:brightness(.86)}
+  55%{filter:brightness(1.04)}
+  100%{clip-path:inset(0 0 0% 0);filter:brightness(1)}
+}
+.page-enter{animation:page-reveal .5s cubic-bezier(.22,.61,.36,1) both}
+
+/* ---------- 대시보드 로딩 스켈레톤(.dash-skeleton) — "불러오는 중…" 텍스트 대신
+   실루엣 블록이 은은한 shimmer와 함께 위에서부터 순서대로 나타난다 ---------- */
+.dash-skeleton{display:flex;flex-direction:column;gap:22px}
+.dash-skeleton .sk-block{border-radius:16px;background:var(--tint);
+  position:relative;overflow:hidden;opacity:0;
+  animation:sk-fade-in .4s var(--ease) forwards, sk-shimmer 1.4s linear infinite;}
+.dash-skeleton .sk-block:nth-child(1){animation-delay:0s}
+.dash-skeleton .sk-block:nth-child(2){animation-delay:.08s}
+.dash-skeleton .sk-block:nth-child(3){animation-delay:.16s}
+.dash-skeleton .sk-row .sk-block:nth-child(2){animation-delay:.1s}
+.dash-skeleton .sk-row .sk-block:nth-child(3){animation-delay:.16s}
+.dash-skeleton .sk-row .sk-block:nth-child(4){animation-delay:.22s}
+.dash-skeleton .sk-block::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--panel) 70%,transparent) 50%,transparent 70%);
+  transform:translateX(-100%);animation:sk-sweep 1.4s ease-in-out infinite}
+.dash-skeleton .sk-hero{height:280px}
+.dash-skeleton .sk-row{display:flex;gap:16px}
+.dash-skeleton .sk-row .sk-block{flex:1;height:96px}
+.dash-skeleton .sk-tall{height:220px}
+@keyframes sk-fade-in{to{opacity:1}}
+@keyframes sk-sweep{to{transform:translateX(100%)}}
+@keyframes sk-shimmer{0%,100%{background-color:var(--tint)}50%{background-color:color-mix(in srgb,var(--tint) 70%,var(--hair))}}
+
+@media (prefers-reduced-motion: reduce){
+  .page-enter{animation:none}
+  .dash-skeleton .sk-block,.dash-skeleton .sk-block::after{animation:none;opacity:1}
+}
+
+/* ---------- 랜딩 페이지 리디자인(마케팅 사이트 스타일, EntryFlow.jsx step==='landing') ----------
+   상단 네비 + 좌측 헤드라인/CTA + 우측 대시보드 목업의 2단 히어로 구성. 다른 진입 단계
+   (사람확인/로그인/선호조사)는 .ob-stage의 기존 가운데 정렬 카드 레이아웃을 그대로 쓰고,
+   이 블록은 .ob-stage-landing/.ob-landing에만 적용된다. */
+/* 참고 이미지처럼 순백색 대신 옅은 크림/베이지 배경 — 라이트 모드 전용 색이라 하드코딩하고,
+   다크 모드는 기존 --panel(어두운 배경)을 그대로 쓴다. */
+.ob-stage-landing{display:block;min-height:100vh;padding:0;background:#faf8f3}
+:root[data-theme="dark"] .ob-stage-landing{background:var(--panel)}
+.ob-screen.ob-landing{display:none;max-width:1180px;margin:0 auto;padding:0 24px 64px}
+.ob-screen.ob-landing.on{display:block}
+
+.landing-nav{display:flex;align-items:center;gap:32px;padding:22px 0}
+.landing-nav-logo{font-size:19px;font-weight:900;letter-spacing:-.02em;color:var(--ink);margin-right:auto}
+.landing-nav-auth{display:flex;align-items:center;gap:18px}
+.landing-nav-login{font:inherit;font-size:13.5px;font-weight:600;color:var(--ink-2);
+  background:none;border:0;cursor:pointer;padding:0}
+.landing-nav-login:hover{color:var(--ink)}
+.landing-nav-signup{font:inherit;font-size:13.5px;font-weight:700;color:#fff;background:var(--ink);
+  border:0;border-radius:9px;padding:9px 18px;cursor:pointer}
+:root[data-theme="dark"] .landing-nav-signup{color:#0d1512}
+.landing-nav-signup:hover{opacity:.88}
+
+.landing-hero{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;
+  padding:56px 0 40px}
+.landing-hero-left h1{font-size:44px;font-weight:900;letter-spacing:-.03em;line-height:1.22;
+  margin-bottom:20px}
+/* "놓치지 않고"만 밝은 강조색, "한눈에"는 나머지 헤드라인과 같은 기본 글자색(색 없음) */
+.landing-hero-left h1 em{font-style:normal;color:var(--green-soft, #4fc491)}
+.landing-hero-left .landing-sub{font-size:15px;color:var(--muted);font-weight:400;
+  line-height:1.6;margin-bottom:32px;max-width:440px}
+.landing-hero-cta{display:flex;align-items:center;gap:18px}
+.landing-hero-cta .landing-cta{padding:14px 26px;font-size:15px;border-radius:11px}
+.landing-cta-skip{font-size:13.5px;font-weight:600}
+
+/* 우측 화면 시안 — 실제 메인 대시보드 레이아웃(사이드바 6메뉴 + KPI 4개 + 지식 축적화
+   그래프)을 그대로 축소 재현. 숫자·라벨은 실제 화면과 같은 자리를 보여주는 예시일 뿐
+   실데이터 스크린샷은 아니다. */
+.landing-hero-right{position:relative}
+.landing-mock{position:relative;border-radius:18px;border:1px solid var(--hair);
+  background:var(--panel);box-shadow:0 30px 60px -30px rgba(21,23,26,.28);overflow:hidden}
+.landing-mock-titlebar{display:flex;align-items:center;gap:7px;padding:12px 16px;
+  border-bottom:1px solid var(--hair)}
+.lm-dot{width:8px;height:8px;border-radius:50%}
+.lm-dot-r{background:#ef5350}
+.lm-dot-y{background:#f2b134}
+.lm-dot-g{background:var(--green)}
+.landing-mock-titlebar-t{margin-left:8px;font-size:11.5px;font-weight:700;color:var(--ink-2)}
+
+.landing-mock-body{display:grid;grid-template-columns:96px 1fr;min-height:300px}
+.landing-mock-side{display:flex;flex-direction:column;gap:2px;padding:14px 9px;
+  border-right:1px solid var(--hair);background:var(--rail, var(--tint))}
+.lm-side-brand{padding:2px 6px 12px}
+.lm-side-brand img{height:16px;width:auto;display:block}
+.lm-side-brand .logo-dark{display:none}
+:root[data-theme="dark"] .lm-side-brand .logo-light{display:none}
+:root[data-theme="dark"] .lm-side-brand .logo-dark{display:block}
+.lm-side-item{font-size:9.5px;font-weight:500;color:var(--muted);padding:7px 8px;border-radius:6px}
+.lm-side-item.on{background:var(--green);color:#fff;font-weight:700}
+:root[data-theme="dark"] .lm-side-item.on{color:#0d1512}
+
+.landing-mock-main{padding:16px}
+.lm-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.lm-kpi{border:1px solid var(--hair);border-radius:10px;padding:8px 9px;display:flex;
+  flex-direction:column;gap:5px}
+.lm-kpi span{font-size:8.5px;font-weight:600;color:var(--faint)}
+.lm-kpi b{font-size:14px;font-weight:800;color:var(--ink)}
+
+.lm-graph{border:1px solid var(--hair);border-radius:10px;padding:10px 12px}
+.lm-graph-label{display:block;font-size:9px;font-weight:700;color:var(--faint);margin-bottom:6px}
+.lm-graph-canvas{position:relative;height:150px}
+.lm-hub{position:absolute;left:50%;top:50%;width:16px;height:16px;border-radius:50%;
+  background:var(--green);opacity:.14;transform:translate(-50%,-50%)}
+.lm-node-wrap{position:absolute;left:50%;top:50%;width:0;height:0}
+.lm-node{position:absolute;left:0;top:0;display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;margin-left:-17px;margin-top:-17px;border-radius:50%;
+  background:var(--green);color:#fff;font-size:8px;font-weight:700;text-align:center;
+  line-height:1.15;padding:2px}
+:root[data-theme="dark"] .lm-node{color:#0d1512}
+
+.landing-mock-chart{position:absolute;right:-16px;bottom:-16px;width:190px;
+  background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:12px 14px;
+  box-shadow:0 18px 36px -18px rgba(21,23,26,.32)}
+.lmc-h{font-size:9.5px;font-weight:700;color:var(--faint);margin-bottom:8px}
+.lmc-svg{width:100%;height:44px;display:block}
+
+@media (max-width:900px){
+  .landing-hero{grid-template-columns:1fr;padding-top:36px}
+  .landing-hero-left h1{font-size:32px}
+  .landing-mock-chart{position:static;width:auto;margin-top:14px}
+}
+@media (max-width:520px){
+  .landing-nav{padding:16px 0}
+  .landing-mock-body{grid-template-columns:76px 1fr}
+  .lm-node{width:28px;height:28px;margin-left:-14px;margin-top:-14px;font-size:7px}
 }
 
 

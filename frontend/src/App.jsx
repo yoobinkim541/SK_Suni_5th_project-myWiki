@@ -95,6 +95,9 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  // 로그인 없이 "건너뛰기"로 들어온 상태 — 대시보드는 실데이터 그대로 보여주고, 다른 메뉴로
+  // 가려고 하면 화면 전환 대신 프로필 드롭다운(로그인 유도)을 연다.
+  const [guestMode, setGuestMode] = useState(false);
   const [entryStep, setEntryStep] = useState(null); // 'landing' | 'survey' | null(=일반 앱 화면)
   const [profile, setProfile] = useState(null);
   const [notiReport, setNotiReport] = useState(true);
@@ -286,6 +289,11 @@ export default function App() {
   // 대시보드·리포트의 "관련 위키" 링크에서 navigateTo('wiki', 'hbm4') 처럼 넘기면
   // 위키 페이지가 해당 문서를 열고 시작합니다.
   function navigateTo(key, payload) {
+    if (guestMode && key !== 'dash') {
+      // 게스트는 대시보드 외 메뉴를 못 본다 — 화면 전환 대신 로그인 유도(프로필 드롭다운 오픈).
+      setProfileOpen(true);
+      return;
+    }
     setView(key);
     if (key === 'wiki' && payload) setWikiDocId(payload);
     setDrawerOpen(false);
@@ -321,6 +329,7 @@ export default function App() {
   }
   function handleLogout() {
     setProfileOpen(false);
+    setGuestMode(false);
     signOut();
   }
 
@@ -352,10 +361,19 @@ export default function App() {
     return <EntryFlow initialStep="survey" onSurveyComplete={handleOnboardingComplete} />;
   }
 
-  // 첫 방문(세션 없음) — 랜딩부터. "건너뛰고 둘러보기"는 EntryFlow 안에서 미리보기 화면만
-  // 보여주고 실제 데이터가 붙은 메인 대시보드로는 보내지 않는다(로그인해야만 진입 가능).
-  if (entryStep === 'landing') {
-    return <EntryFlow initialStep="landing" onSurveyComplete={handleOnboardingComplete} />;
+  // 첫 방문(세션 없음, 게스트도 아님) — 랜딩부터. 로그인/회원가입 화면의 "건너뛰기"를 누르면
+  // guestMode로 전환되어 실데이터가 붙은 진짜 메인 대시보드로 곧장 들어간다.
+  if (entryStep === 'landing' && !guestMode) {
+    return (
+      <EntryFlow
+        initialStep="landing"
+        onSurveyComplete={handleOnboardingComplete}
+        onGuestSkip={() => {
+          setGuestMode(true);
+          setEntryStep(null);
+        }}
+      />
+    );
   }
 
   return (
@@ -371,8 +389,6 @@ export default function App() {
         authed={authed}
         avatarInitial={(profile?.user_metadata?.full_name || profile?.email || '?').charAt(0).toUpperCase()}
         onLogoClick={handleLogoClick}
-        onSideToggle={() => setSideCollapsed((c) => !c)}
-        sideCollapsed={sideCollapsed}
       />
 
       {isMobile ? (
@@ -389,14 +405,18 @@ export default function App() {
           onNavigate={navigateTo}
           onLogoClick={handleLogoClick}
           collapsed={sideCollapsed}
+          onToggleCollapsed={() => setSideCollapsed((c) => !c)}
         />
       )}
 
-      <main className="main" key={refreshKey}>
+      {/* key를 view까지 포함시켜서 페이지를 바꿀 때마다 .main이 다시 마운트되고,
+          globals.css의 .page-enter 애니메이션(위→아래로 서서히 밝아지며 드러나는 효과)이
+          매번 새로 재생되게 한다 — 토스 앱의 페이지 전환과 비슷한 "화면이 움직이는" 느낌. */}
+      <main className="main page-enter" key={`${view}-${refreshKey}`}>
         {view === 'dash' && (
           <DashboardPage
             onNavigate={navigateTo}
-            interests={prefs.keywords}
+            interests={prefs?.keywords ?? []}
             onUpdateInterests={updateInterests}
           />
         )}
