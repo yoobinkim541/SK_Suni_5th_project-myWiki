@@ -7,12 +7,11 @@ import pytest
 
 from src.analysis.importance_models import ImpactDirection, TimeHorizon
 from src.analysis.models import Category
-from src.report.interface import ReportGenerationConfig, generate_daily_report as _generate_daily_report
+from src.report.interface import ReportGenerationConfig, generate_daily_report
 from src.report.models import (
     EnrichedIssueGroup,
     GeneratedReport,
     IssueGroup,
-    ArtifactType,
     ReportCandidate,
     ReportGenerationRequest,
     ReportSectionDraft,
@@ -20,10 +19,6 @@ from src.report.models import (
 )
 from src.report.repository import SavedReportArtifact
 
-
-def generate_daily_report(*args, **kwargs):
-    kwargs.setdefault("config", ReportGenerationConfig(artifacts={"formats": [ArtifactType.MARKDOWN]}))
-    return _generate_daily_report(*args, **kwargs)
 
 def make_request() -> ReportGenerationRequest:
     return ReportGenerationRequest(
@@ -428,7 +423,6 @@ def test_generate_daily_report_passes_config_to_components(monkeypatch: pytest.M
         grouping={"max_time_gap_hours": 12, "min_title_similarity": 0.3, "min_summary_similarity": 0.1, "min_shared_title_tokens": 1},
         wiki={"limit_per_group": 2},
         composer={"model": "test-model", "prompt_version": "report-section-v1"},
-        artifacts={"formats": [ArtifactType.MARKDOWN]},
     )
 
     def fake_create(**kwargs):

@@ -44,7 +44,6 @@ from .schemas import (
 from .category_router import router as category_router
 from .dashboard_router import router as dashboard_router
 from .notifications_router import router as notifications_router
-from .report_router import router as report_router
 from .settings_router import router as settings_router
 from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
@@ -78,7 +77,6 @@ app.add_middleware(
 app.include_router(wiki_router)
 app.include_router(settings_router)
 app.include_router(notifications_router)
-app.include_router(report_router)
 app.include_router(dashboard_router)
 app.include_router(category_router)
 
