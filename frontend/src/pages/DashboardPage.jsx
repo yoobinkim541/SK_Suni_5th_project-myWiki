@@ -66,15 +66,35 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchDashboard().then((data) => {
-      if (!alive) return;
-      setNews(data.news);
-      setIssues(data.issues);
-      setTrend(data.trend);
-      setKeywords(data.keywords);
-      setKpiSummary(data.kpiSummary);
-      setLoading(false);
-    });
+    fetchDashboard()
+      .then((data) => {
+        if (!alive) return;
+        setNews(data.news);
+        setIssues(data.issues);
+        setTrend(data.trend);
+        setKeywords(data.keywords);
+        setKpiSummary(data.kpiSummary);
+        setLoading(false);
+      })
+      .catch((err) => {
+        // ⚠ .catch가 없으면 fetchDashboard()가 실패했을 때 setLoading(false)가 영영
+        //   안 불려서 화면이 "메인 대시보드" 헤더 + 로딩 스켈레톤에 멈춰 있는 것처럼 보인다
+        //   (예: 게스트 모드에서 인증이 필요한 API를 불렀다가 401을 받는 경우).
+        //   콘솔에 원인은 남기고, 최소한 빈 상태로라도 화면은 뜨게 한다.
+        if (!alive) return;
+        console.error('[DashboardPage] fetchDashboard 실패:', err);
+        setNews([]);
+        setIssues([]);
+        setTrend([]);
+        setKeywords([]);
+        setKpiSummary({
+          collectedDocs: { value: '—', desc: '' },
+          generatedReports: { value: '—', desc: '' },
+          wikiDocs: { value: '—', desc: '' },
+          avgConfidence: { value: '—', desc: '' },
+        });
+        setLoading(false);
+      });
     return () => { alive = false; };
   }, []);
 
