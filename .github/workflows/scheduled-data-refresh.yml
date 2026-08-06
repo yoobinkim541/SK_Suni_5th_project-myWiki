@@ -11,10 +11,16 @@ on:
     - cron: "*/30 * * * *" # 30분마다 — 실제 실행 여부는 스크립트 안에서 주기 설정을 보고 판단
   workflow_dispatch: {}
 
+concurrency:
+  group: scheduled-data-refresh
+  cancel-in-progress: false # 겹치면 취소 대신 대기 — 실행 중인 수집/정제를 중간에 끊지 않는다
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 실측 결과 collect()만 소스 11개 순회에 20~24분이 걸려 기존 30분 한도로는
+    # preprocess/analyze가 시작도 못 하고 매번 잘렸다 (2026-08-06 조사, run 31073316891).
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
