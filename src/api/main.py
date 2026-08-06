@@ -454,6 +454,39 @@ def list_members(profile: dict = Depends(get_current_user)):
     ]
 
 
+@app.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(profile: dict = Depends(get_current_user)):
+    """회원 탈퇴 — 본인 계정만 지울 수 있다(user_id를 URL/바디로 받지 않음).
+
+    profiles는 하드 삭제하지 않고 soft_delete_profile로 deleted_at만 남긴다(이유는
+    db.py의 관련 함수 docstring 참고) — 팀 공유 대화 등 다른 사람이 보는 콘텐츠가
+    이 사람의 탈퇴로 함께 사라지지 않게 하기 위함이다. 이후 get_current_user가
+    deleted_at을 확인해 재로그인을 막고, auth 사용자 자체도 지워 완전히 로그인 불가능하게 한다.
+
+    auth 사용자 삭제(delete_auth_user)가 실패해도 요청 자체를 실패로 만들지 않는다 —
+    이미 deleted_at이 찍혀 get_current_user가 이후 요청을 막아주므로, 외부 Admin API
+    호출 한 번의 일시적 실패 때문에 탈퇴 자체가 안 된 것처럼 보이면 안 된다.
+    """
+    user_id = profile["id"]
+
+    db.soft_delete_profile(user_id)
+
+    try:
+        db.remove_all_workspace_memberships(user_id)
+    except Exception:
+        logger.exception("account_deletion_workspace_membership_cleanup_failed", extra={"user_id": user_id})
+
+    try:
+        db.delete_push_subscriptions_for_user(user_id)
+    except Exception:
+        logger.exception("account_deletion_push_subscription_cleanup_failed", extra={"user_id": user_id})
+
+    try:
+        db.delete_auth_user(user_id)
+    except Exception:
+        logger.exception("account_deletion_auth_user_delete_failed", extra={"user_id": user_id})
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

@@ -530,3 +530,40 @@ def copy_message_citations(target_message_id: str, citations: list[dict]) -> Non
         for c in citations
     ]
     get_supabase().table("message_citations").insert(rows).execute()
+
+
+# ---------------------------------------------------------------------------
+# 회원 탈퇴 — profiles를 하드 삭제하지 않고 소프트 삭제한다.
+#
+# profiles를 실제로 DELETE하면 chat_sessions.user_id/chat_session_participants.user_id가
+# ON DELETE CASCADE라 이 사용자가 만든 팀 공유 대화가 다른 참여자 화면에서도 사라지고,
+# chat_messages.user_id는 NO ACTION이라 그 사람이 메시지를 하나라도 남겼으면 FK 위반으로
+# 삭제 자체가 막힌다. deleted_at만 세우는 소프트 삭제로 이 문제를 피한다 — 기존 콘텐츠는
+# 작성자 표시(profiles(display_name) 조인)까지 그대로 남는다.
+# ---------------------------------------------------------------------------
+
+
+def soft_delete_profile(user_id: str) -> None:
+    get_supabase().table("profiles").update(
+        {"deleted_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", user_id).execute()
+
+
+def remove_all_workspace_memberships(user_id: str) -> None:
+    """workspace_members는 하드 삭제한다 — 소속 종료는 팀 목록에서 즉시 안 보여야 하고,
+    다른 테이블처럼 이 행을 참조하며 "보존해야 할 콘텐츠"가 없다."""
+    get_supabase().table("workspace_members").delete().eq("user_id", user_id).execute()
+
+
+def delete_push_subscriptions_for_user(user_id: str) -> None:
+    get_supabase().table("push_subscriptions").delete().eq("user_id", user_id).execute()
+
+
+def delete_auth_user(user_id: str) -> None:
+    """Supabase Auth의 실제 로그인 자격을 없앤다(auth.users 행 삭제) — service_role
+    Admin API로만 가능하다(본인이 자기 계정을 클라이언트에서 지울 수 없음).
+
+    profiles.id는 auth.users.id를 FK로 참조하지 않으므로(DB 레벨 제약 없음) 이 호출이
+    profiles/chat_sessions 등 우리 테이블에 어떤 CASCADE도 일으키지 않는다 — soft_delete_profile로
+    이미 남긴 deleted_at 흔적은 그대로 유지된다."""
+    get_supabase().auth.admin.delete_user(user_id)

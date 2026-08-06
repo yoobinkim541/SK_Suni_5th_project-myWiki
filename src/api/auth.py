@@ -55,4 +55,10 @@ def get_current_user(
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="profile not found")
 
+    # 탈퇴 처리(soft_delete_profile) 이후에도 삭제 요청 당시 발급된 JWT가 만료 전까지는
+    # 계속 유효할 수 있어, profiles.deleted_at을 여기서도 다시 막는다 — 탈퇴 API가 마지막에
+    # auth 사용자 자체를 지우긴 하지만, 그 호출이 실패하거나 지연되는 경우의 방어선이다.
+    if profile.get("deleted_at") is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="탈퇴한 계정입니다")
+
     return profile
