@@ -100,7 +100,6 @@ def to_report_candidate(*, result: AnalysisResultForReport, document_id: str) ->
         importance_score=result.importance_score,
         ranking_score=Decimal(str(result.ranking_score)) if result.ranking_score is not None else None,
         source_name=result.source_name,
-        source_type=result.source_type,
         canonical_url=result.canonical_url,
         published_at=result.published_at,
         impact_direction=result.impact_direction,
@@ -200,7 +199,7 @@ def _build_candidates_from_analysis_rows(
     source_ids = [row.get("source_id") for row in document_rows if row.get("source_id")]
     source_rows = (
         db.table("sources")
-        .select("id, name, source_type")
+        .select("id, name")
         .in_("id", list(set(source_ids)) or [""])
         .execute()
         .data
@@ -241,7 +240,6 @@ def _build_candidates_from_analysis_rows(
         payload["canonical_url"] = document.get("canonical_url")
         payload["published_at"] = document.get("published_at")
         payload["source_name"] = source.get("name")
-        payload["source_type"] = source.get("source_type")
         selected_results.append((AnalysisResultForReport.model_validate(payload), document_id))
 
     candidates = [

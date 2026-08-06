@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
 from io import BytesIO
 from pathlib import Path
@@ -14,6 +14,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4, landscape, portrait
 from reportlab.lib.styles import ParagraphStyle, StyleSheet1, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -28,9 +29,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_FONT_DIR = PROJECT_ROOT / "assets" / "fonts"
 NANUM_REGULAR_FONT_PATH = PROJECT_FONT_DIR / "NanumGothic-Regular.ttf"
 NANUM_BOLD_FONT_PATH = PROJECT_FONT_DIR / "NanumGothic-Bold.ttf"
+REPORT_LOGO_PATH = PROJECT_ROOT / "assets" / "mySUNI.png"
 REPORT_FONT_FAMILY = "MyWikiReportFont"
 REPORT_FONT_REGULAR = f"{REPORT_FONT_FAMILY}-Regular"
 REPORT_FONT_BOLD = f"{REPORT_FONT_FAMILY}-Bold"
+HEADER_BRAND_TEXT = "Mywiki"
+KST = timezone(timedelta(hours=9), name="Asia/Seoul")
 UNSUPPORTED_TEXT_REPLACEMENTS = {
     "✓": "[check]",
     "✔": "[check]",
@@ -138,7 +142,7 @@ def render_daily_report_pdf(document: PdfReportDocument) -> bytes:
         pagesize=_resolve_page_size(layout),
         leftMargin=layout.margin_mm * mm,
         rightMargin=layout.margin_mm * mm,
-        topMargin=(layout.margin_mm + 10) * mm,
+        topMargin=(layout.margin_mm + 18) * mm,
         bottomMargin=(layout.margin_mm + 12) * mm,
         title=normalized_document.title,
         author="myWiki",
@@ -147,8 +151,8 @@ def render_daily_report_pdf(document: PdfReportDocument) -> bytes:
     story = _build_story(normalized_document, styles)
     doc.build(
         story,
-        onFirstPage=lambda canvas, pdf_doc: _draw_page_chrome(canvas, pdf_doc, normalized_document, layout),
-        onLaterPages=lambda canvas, pdf_doc: _draw_page_chrome(canvas, pdf_doc, normalized_document, layout),
+        onFirstPage=lambda canvas, pdf_doc: _draw_header_footer(canvas, pdf_doc, normalized_document, layout),
+        onLaterPages=lambda canvas, pdf_doc: _draw_header_footer(canvas, pdf_doc, normalized_document, layout),
     )
     return buffer.getvalue()
 
@@ -220,7 +224,7 @@ def _confidence_label(score: Optional[float]) -> str:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(KST).replace(microsecond=0).isoformat()
 
 
 
@@ -442,27 +446,98 @@ def _build_evidence_table(evidences: tuple[PdfEvidenceLine, ...], styles: StyleS
 
 
 
-def _draw_page_chrome(canvas, pdf_doc, document: PdfReportDocument, layout: PdfLayout) -> None:
+def _draw_header_footer(canvas, pdf_doc, document: PdfReportDocument, layout: PdfLayout) -> None:
     canvas.saveState()
-    canvas.setFont(REPORT_FONT_BOLD, max(layout.body_font_size - 0.5, 9))
+    _draw_header(canvas, pdf_doc, document, layout)
+    _draw_footer(canvas, pdf_doc, document, layout)
+    canvas.restoreState()
+
+
+
+def _draw_header(canvas, pdf_doc, document: PdfReportDocument, layout: PdfLayout) -> None:
+    page_top_y = pdf_doc.height + pdf_doc.topMargin
+    header_center_y = page_top_y + 7 * mm
+    header_rule_y = page_top_y + 1.5 * mm
+    left_x = pdf_doc.leftMargin
+    right_x = pdf_doc.pagesize[0] - pdf_doc.rightMargin
+    brand_text = normalize_pdf_text(HEADER_BRAND_TEXT)
+    date_text = _header_date_text(document)
+
+    canvas.setFont(REPORT_FONT_REGULAR, max(layout.body_font_size, 9))
+    canvas.setFillColor(colors.HexColor("#334155"))
+    canvas.drawRightString(right_x, header_center_y - 1, date_text)
+
+    brand_x = left_x
+    logo = _load_logo_reader()
+    if logo is not None:
+        logo_width, logo_height = _scaled_logo_size(logo, max_height=11 * mm, max_width=24 * mm)
+        logo_y = header_center_y - (logo_height / 2)
+        canvas.drawImage(
+            logo,
+            left_x,
+            logo_y,
+            width=logo_width,
+            height=logo_height,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+        brand_x = left_x + logo_width + (3 * mm)
+
+    canvas.setFont(REPORT_FONT_BOLD, max(layout.body_font_size + 1.5, 11))
     canvas.setFillColor(colors.HexColor("#0F172A"))
-    canvas.drawString(pdf_doc.leftMargin, pdf_doc.height + pdf_doc.topMargin + 4 * mm, normalize_pdf_text(document.title))
+    canvas.drawString(brand_x, header_center_y - 1, brand_text)
+
     canvas.setStrokeColor(colors.HexColor("#CBD5E1"))
     canvas.setLineWidth(0.5)
     canvas.line(
         pdf_doc.leftMargin,
-        pdf_doc.height + pdf_doc.topMargin + 2 * mm,
+        header_rule_y,
         pdf_doc.pagesize[0] - pdf_doc.rightMargin,
-        pdf_doc.height + pdf_doc.topMargin + 2 * mm,
+        header_rule_y,
     )
+
+
+
+def _draw_footer(canvas, pdf_doc, document: PdfReportDocument, layout: PdfLayout) -> None:
     canvas.setFont(REPORT_FONT_REGULAR, max(layout.body_font_size - 1, 8))
     canvas.setFillColor(colors.HexColor("#475569"))
     footer_y = pdf_doc.bottomMargin - 6 * mm
     footer_text = normalize_pdf_text(f"Generated at {document.generated_at} | {REPORT_RENDERER_VERSION}")
     canvas.drawString(pdf_doc.leftMargin, footer_y, footer_text)
     canvas.drawRightString(pdf_doc.pagesize[0] - pdf_doc.rightMargin, footer_y, normalize_pdf_text(f"Page {canvas.getPageNumber()}"))
-    canvas.restoreState()
 
+
+
+def _load_logo_reader() -> ImageReader | None:
+    if not REPORT_LOGO_PATH.exists():
+        return None
+    try:
+        return ImageReader(str(REPORT_LOGO_PATH))
+    except Exception:
+        logger.exception("failed_to_load_report_logo", extra={"path": str(REPORT_LOGO_PATH)})
+        return None
+
+
+
+def _scaled_logo_size(logo: ImageReader, *, max_height: float, max_width: float) -> tuple[float, float]:
+    width_px, height_px = logo.getSize()
+    if not width_px or not height_px:
+        return max_width, max_height
+    scale = min(max_width / width_px, max_height / height_px)
+    return width_px * scale, height_px * scale
+
+
+
+def _header_date_text(document: PdfReportDocument) -> str:
+    raw = (document.generated_at or "").strip()
+    if not raw:
+        return normalize_pdf_text(_utc_now_iso().split("T", 1)[0])
+    for candidate in (raw, raw.replace("Z", "+00:00")):
+        try:
+            return normalize_pdf_text(datetime.fromisoformat(candidate).date().isoformat())
+        except ValueError:
+            continue
+    return normalize_pdf_text(raw.split("T", 1)[0])
 
 
 def _split_paragraphs(text: str) -> list[str]:

@@ -73,7 +73,6 @@ class ReportCandidate(BaseModel):
     importance_score: int | None = None
     ranking_score: Decimal | None = None
     source_name: str | None = None
-    source_type: str | None = None  # 'disclosure'면 selector.py가 근거 개수 요건을 면제한다.
     canonical_url: str | None = None
     published_at: datetime | None = None
     impact_direction: ImpactDirection | None = None
@@ -86,7 +85,7 @@ class ReportCandidate(BaseModel):
             raise ValueError("required identifier fields must not be empty.")
         return value.strip()
 
-    @field_validator("summary", "source_name", "source_type", "canonical_url", mode="before")
+    @field_validator("summary", "source_name", "canonical_url", mode="before")
     @classmethod
     def normalize_optional_text(cls, value: object) -> str | None:
         if value is None:

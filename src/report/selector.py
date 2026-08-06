@@ -11,18 +11,6 @@ from .models import ReportCandidate
 MIN_SCORE = 0
 MAX_SCORE = 100
 
-# DART 공시(disclosure)는 1차 공식 기록이라 다른 매체와의 교차검증이 필요 없다
-# (analysis/README.md "위키 페이지 후보 선정 기준의 예외" 참조). 그래서 reliability_score
-# 기준만 면제한다 — independent_evidence(교차검증) 세부 항목 때문에 "단일 출처"라는
-# 이유로 낮게 나오는 게 reliability 점수라서다.
-#
-# importance_score는 면제하지 않는다. importance는 "이 내용이 사업적으로 중요한가"를
-# 재는 완전히 다른 축이라, 공시라고 자동으로 높아지지 않는다(실측: 임원의 3,620주
-# 소액 매수 공시는 importance_score=2 — 단일 출처 여부와 무관하게 그냥 사소한 내용이라
-# 낮다). importance까지 면제하면 사소한 행정 공시가 전부 위키 후보가 되어버린다.
-# min_ranking_score(설정 시)와 category_limits·max_candidates도 공시에 동일하게 적용된다.
-DISCLOSURE_SOURCE_TYPE = "disclosure"
-
 
 def select_report_candidates(
     candidates: Sequence[ReportCandidate],
@@ -92,10 +80,8 @@ def _is_eligible_candidate(
     min_importance_score: int,
     min_ranking_score: Decimal | None,
 ) -> bool:
-    is_disclosure = candidate.source_type == DISCLOSURE_SOURCE_TYPE
-    if not is_disclosure:
-        if candidate.reliability_score is None or candidate.reliability_score < min_reliability_score:
-            return False
+    if candidate.reliability_score is None or candidate.reliability_score < min_reliability_score:
+        return False
     if candidate.importance_score is None or candidate.importance_score < min_importance_score:
         return False
     if min_ranking_score is not None:
