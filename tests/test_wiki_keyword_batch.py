@@ -83,3 +83,133 @@ def test_extract_keywords_raises_on_invalid_schema(monkeypatch):
         assert False, "ValidationError가 그대로 올라와야 한다"
     except ValidationError:
         pass
+
+
+from src.wiki.interface import WikiPageContent
+
+
+class FakeResult:
+    def __init__(self, data):
+        self.data = data
+
+
+class FakeTable:
+    def __init__(self, rows):
+        self.rows = rows
+        self.filters = []
+        self.in_filters = []
+
+    def select(self, _fields):
+        return self
+
+    def eq(self, field, value):
+        self.filters.append((field, value))
+        return self
+
+    def in_(self, field, values):
+        self.in_filters.append((field, set(values)))
+        return self
+
+    def execute(self):
+        rows = self.rows
+        for field, value in self.filters:
+            rows = [r for r in rows if r.get(field) == value]
+        for field, values in self.in_filters:
+            rows = [r for r in rows if r.get(field) in values]
+        return FakeResult([dict(r) for r in rows])
+
+
+class FakeSupabase:
+    def __init__(self, tables):
+        self.tables = tables
+
+    def table(self, name):
+        return FakeTable(self.tables.get(name, []))
+
+
+def _content(page_id, slug, markdown):
+    return WikiPageContent(
+        page_id=page_id, slug=slug, title=f"제목-{slug}", page_type="issue",
+        published_at=None, version_id=f"v-{slug}", version_no=1, markdown=markdown,
+        change_summary=None, confidence_score=None, validation_status="passed",
+        review_status="approved", generated_by="llm", generator_model=None,
+        created_at="2026-08-06T00:00:00Z", sources=(), versions=(),
+    )
+
+
+def test_find_pages_missing_keywords_excludes_pages_with_existing_keywords():
+    db = FakeSupabase({
+        "wiki_pages": [
+            {"id": "page-1", "slug": "hbm4", "status": "published", "workspace_id": "ws-1"},
+            {"id": "page-2", "slug": "supply", "status": "published", "workspace_id": "ws-1"},
+        ],
+        "wiki_page_keywords": [{"page_id": "page-1", "keyword": "HBM"}],
+    })
+
+    candidates = keyword_batch.find_pages_missing_keywords("ws-1", supabase=db)
+
+    assert candidates == [{"id": "page-2", "slug": "supply"}]
+
+
+def test_run_wiki_keyword_batch_tags_page_and_inserts_keywords(monkeypatch):
+    db = FakeSupabase({
+        "wiki_pages": [{"id": "page-1", "slug": "hbm4", "status": "published", "workspace_id": "ws-1"}],
+        "wiki_page_keywords": [],
+    })
+    monkeypatch.setattr(keyword_batch, "get_published_wiki_page", lambda ws, slug: _content("page-1", "hbm4", "HBM4 본문"))
+
+    inserted = []
+    monkeypatch.setattr(keyword_batch, "_insert_page_keywords", lambda page_id, keywords, *, supabase: inserted.append((page_id, keywords)))
+    monkeypatch.setattr(keyword_batch, "extract_keywords_for_page", lambda markdown: ["HBM"])
+
+    results = keyword_batch.run_wiki_keyword_batch("ws-1", supabase=db)
+
+    assert len(results) == 1
+    assert results[0].status == "tagged"
+    assert results[0].keywords == ["HBM"]
+    assert inserted == [("page-1", ["HBM"])]
+
+
+def test_run_wiki_keyword_batch_marks_no_match_without_insert(monkeypatch):
+    db = FakeSupabase({
+        "wiki_pages": [{"id": "page-1", "slug": "hbm4", "status": "published", "workspace_id": "ws-1"}],
+        "wiki_page_keywords": [],
+    })
+    monkeypatch.setattr(keyword_batch, "get_published_wiki_page", lambda ws, slug: _content("page-1", "hbm4", "무관한 본문"))
+    monkeypatch.setattr(keyword_batch, "extract_keywords_for_page", lambda markdown: [])
+
+    inserted = []
+    monkeypatch.setattr(keyword_batch, "_insert_page_keywords", lambda *a, **k: inserted.append(a))
+
+    results = keyword_batch.run_wiki_keyword_batch("ws-1", supabase=db)
+
+    assert results[0].status == "no_match"
+    assert inserted == []
+
+
+def test_run_wiki_keyword_batch_continues_after_one_page_fails(monkeypatch):
+    db = FakeSupabase({
+        "wiki_pages": [
+            {"id": "page-1", "slug": "fails", "status": "published", "workspace_id": "ws-1"},
+            {"id": "page-2", "slug": "ok", "status": "published", "workspace_id": "ws-1"},
+        ],
+        "wiki_page_keywords": [],
+    })
+    contents = {"fails": _content("page-1", "fails", "본문1"), "ok": _content("page-2", "ok", "본문2")}
+    monkeypatch.setattr(keyword_batch, "get_published_wiki_page", lambda ws, slug: contents[slug])
+
+    def fake_extract(markdown):
+        if markdown == "본문1":
+            raise OpenRouterTimeoutError("timeout")
+        return ["HBM"]
+
+    monkeypatch.setattr(keyword_batch, "extract_keywords_for_page", fake_extract)
+    monkeypatch.setattr(keyword_batch, "_insert_page_keywords", lambda *a, **k: None)
+
+    results = keyword_batch.run_wiki_keyword_batch("ws-1", supabase=db)
+
+    assert len(results) == 2
+    by_slug = {r.slug: r for r in results}
+    assert by_slug["fails"].status == "failed"
+    assert "timeout" in by_slug["fails"].error_message
+    assert by_slug["ok"].status == "tagged"
