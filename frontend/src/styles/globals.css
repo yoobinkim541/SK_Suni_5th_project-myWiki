@@ -2015,6 +2015,13 @@ a.fn:hover{text-decoration:underline}
   color: var(--muted, #6b7280);
 }
 
+.da-note {
+  margin: -8px 0 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted, #6b7280);
+}
+
 .da-input {
   width: 100%;
   margin-top: 6px;
@@ -2075,6 +2082,13 @@ a.fn:hover{text-decoration:underline}
   padding-left: 18px;
   font-size: 13px;
   line-height: 1.8;
+  color: var(--muted, #6b7280);
+}
+
+.da-note {
+  margin: -8px 0 18px;
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--muted, #6b7280);
 }
 

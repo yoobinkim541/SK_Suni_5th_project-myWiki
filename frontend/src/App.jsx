@@ -30,7 +30,8 @@
 //      ⚠ 백엔드가 role을 안 내려주면 null이 되고, 그 경우 소속 팀 영역이 숨겨집니다
 //        (없는 값을 "소속 없음"처럼 단정해 보여주지 않습니다).
 //    - 회원 탈퇴: 되돌릴 수 없는 동작이라 DeleteAccountModal로 한 번 더 확인받습니다.
-//      실제 삭제 API는 아직 백엔드에 없습니다(service_role이 필요해 프론트에서 못 합니다).
+//      [2026-08-06] DELETE /account 실제 연결 완료 — 백엔드가 profiles를 소프트 삭제(deleted_at)하고
+//      auth 사용자를 지우면, 여기서 signOut()까지 호출해 브라우저 세션도 정리합니다.
 // ────────────────────────────────────────────────────────────────────
 //
 // 다크모드 :root 처리 / localStorage 저장은 기존 그대로입니다.
@@ -45,7 +46,7 @@ import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
 import Footer from './components/common/Footer';
 import DeleteAccountModal from './components/common/DeleteAccountModal';
-import { signInWithProvider, signOut, getCurrentSession, isNewAccount } from './api/auth';
+import { signInWithProvider, signOut, getCurrentSession, isNewAccount, deleteAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
 import { listWorkspaceMembers } from './services/agentApi';
 import {
@@ -374,17 +375,18 @@ export default function App() {
     setDeleteOpen(true);
   }
 
-  // 실제 탈퇴 실행.
-  // ⚠ Supabase는 클라이언트에서 본인 계정 삭제를 허용하지 않는다(service_role 필요).
-  //   백엔드에 삭제 엔드포인트가 생기면 아래 throw를 그 호출로 바꾸면 된다.
-  //   또한 chat_sessions.user_id가 profiles ON DELETE CASCADE라, 삭제 시 이 사용자가
-  //   만든 팀 공유 대화가 다른 참여자에게도 사라진다 — 백엔드 정책 확인이 필요하다.
+  // 실제 탈퇴 실행 — DELETE /account.
+  // ⚠ 백엔드는 profiles를 하드 삭제하지 않고 deleted_at만 남긴다(소프트 삭제) — 이 사람이
+  //   만든 팀 공유 대화 등 다른 참여자가 보는 콘텐츠는 그대로 유지된다. 성공 응답을 받으면
+  //   여기서 signOut()까지 호출해야 브라우저 쪽 세션도 정리되고 랜딩 화면으로 돌아간다
+  //   (onAuthStateChange가 이어서 authed/profile을 초기화한다).
   async function handleDeleteAccount() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      // TODO: await deleteAccount();  (백엔드 엔드포인트 대기)
-      throw new Error('계정 삭제는 백엔드 연동 후 동작합니다. 관리자에게 문의해 주세요.');
+      await deleteAccount();
+      setDeleteOpen(false);
+      await signOut();
     } catch (e) {
       setDeleteError(e.message || '탈퇴 처리에 실패했습니다.');
     } finally {
