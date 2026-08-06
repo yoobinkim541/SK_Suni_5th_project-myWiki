@@ -136,3 +136,30 @@ def test_compose_chat_wiki_draft_truncates_long_question_for_fallback_title(monk
     draft = chat_wiki.compose_chat_wiki_draft(question=long_question, answer="답변", citations=[SAMPLE_CITATION])
 
     assert draft.title == long_question[:80]
+
+
+def test_compose_chat_wiki_draft_handles_missing_document_version_id_in_fallback(monkeypatch):
+    """Regression test: fallback should handle citations missing document_version_id without raising KeyError."""
+    def raise_timeout(**kwargs):
+        raise OpenRouterTimeoutError("timeout")
+
+    monkeypatch.setattr(chat_wiki, "create_json_completion", raise_timeout)
+
+    # Citation missing document_version_id
+    incomplete_citation = {
+        "id": "c1",
+        "quoted_text": "HBM4는 차세대 메모리다.",
+        "citation_order": 1,
+        # document_version_id intentionally omitted
+    }
+
+    # Should not raise KeyError; should return fallback draft
+    draft = chat_wiki.compose_chat_wiki_draft(
+        question="HBM4가 뭐야?",
+        answer="HBM4는 차세대 메모리다.",
+        citations=[incomplete_citation],
+    )
+
+    assert draft.title == "HBM4가 뭐야?"
+    assert "## 답변 요약" in draft.markdown
+    assert "HBM4는 차세대 메모리다." in draft.markdown

@@ -46,7 +46,8 @@ def _build_chat_wiki_user_prompt(question: str, answer: str, citations: list[dic
     if citations:
         for citation in citations:
             quoted = citation.get("quoted_text") or ""
-            lines.append(f"- document_version_id={citation['document_version_id']}: {quoted}")
+            doc_id = citation.get("document_version_id") or ""
+            lines.append(f"- document_version_id={doc_id}: {quoted}")
     else:
         lines.append("없음")
     return "\n".join(lines)
@@ -61,7 +62,8 @@ def _build_sources_lines(citations: list[dict]) -> list[str]:
     lines = ["## 출처"]
     for citation in citations:
         quoted = citation.get("quoted_text") or ""
-        lines.append(f"- {quoted} (document_version_id={citation['document_version_id']})")
+        doc_id = citation.get("document_version_id") or ""
+        lines.append(f"- {quoted} (document_version_id={doc_id})")
     return lines
 
 
