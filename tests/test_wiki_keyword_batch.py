@@ -151,6 +151,20 @@ def test_find_pages_missing_keywords_excludes_pages_with_existing_keywords():
     assert candidates == [{"id": "page-2", "slug": "supply"}]
 
 
+def test_find_pages_missing_keywords_excludes_other_workspace_pages():
+    db = FakeSupabase({
+        "wiki_pages": [
+            {"id": "page-1", "slug": "hbm4", "status": "published", "workspace_id": "ws-1"},
+            {"id": "page-2", "slug": "other-ws-page", "status": "published", "workspace_id": "ws-2"},
+        ],
+        "wiki_page_keywords": [],
+    })
+
+    candidates = keyword_batch.find_pages_missing_keywords("ws-1", supabase=db)
+
+    assert candidates == [{"id": "page-1", "slug": "hbm4"}]
+
+
 def test_run_wiki_keyword_batch_tags_page_and_inserts_keywords(monkeypatch):
     db = FakeSupabase({
         "wiki_pages": [{"id": "page-1", "slug": "hbm4", "status": "published", "workspace_id": "ws-1"}],
