@@ -4,9 +4,9 @@
 //  1) 무엇이 사라지는지 명시
 //  2) "탈퇴"를 직접 입력해야 버튼이 활성화
 //
-// ⚠ 스키마상 chat_sessions.user_id가 profiles ON DELETE CASCADE라,
-//   계정을 지우면 이 사람이 만든 팀 공유 대화가 다른 참여자들 화면에서도 사라진다.
-//   백엔드에서 SET NULL이나 소프트 삭제로 바뀌면 아래 안내 문구도 같이 고쳐야 한다.
+// [2026-08-06] 백엔드가 profiles를 하드 삭제하지 않고 소프트 삭제(deleted_at)로 바뀌어서,
+// 내가 만든 팀 공유 대화는 탈퇴 후에도 다른 참여자 화면에 그대로 남는다 — 아래 안내 문구는
+// 그래서 "삭제되는 항목"에서 팀 공유 대화를 빼고 "개인 대화/계정 자체"만 남겼다.
 //
 // 모달 틀은 ParticipantsModal / ReportDetailModal과 같은 시안 클래스를 재사용한다.
 
@@ -52,11 +52,13 @@ export default function DeleteAccountModal({ open, busy, error, onConfirm, onClo
           </div>
 
           <ul className="da-list">
-            <li>계정 정보와 프로필</li>
-            <li>내 에이전트 대화 전체</li>
-            <li>내가 만든 팀 공유 대화 — 다른 참여자에게도 보이지 않게 됩니다</li>
+            <li>계정 로그인 — 이 계정으로 다시 로그인할 수 없게 됩니다</li>
+            <li>내 개인 에이전트 대화 전체 — 더 이상 접근할 수 없습니다</li>
             <li>소속 팀에서의 멤버 자격</li>
           </ul>
+          <div className="da-note">
+            내가 만든 팀 공유 대화는 지워지지 않고, 다른 참여자에게 그대로 남습니다.
+          </div>
 
           <div className="mw-lb">계속하려면 "{CONFIRM_WORD}"를 입력하세요</div>
           <input

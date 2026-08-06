@@ -1,5 +1,6 @@
 // [LIVE] Supabase Auth 자체는 바로 연결 가능 — src/api/auth.py가 이 세션의 JWT를 검증한다.
 // LoginScreen.jsx의 handleLogin 주석("실제 연동 시: supabase.auth.signInWithOAuth")을 그대로 구현.
+import { apiFetch } from './client';
 import { supabase } from './supabaseClient';
 
 /**
@@ -21,6 +22,15 @@ export function signInWithProvider(provider) {
 
 export function signOut() {
   return supabase.auth.signOut();
+}
+
+// [LIVE] src/api/main.py의 DELETE /account 실제 연결.
+// 본인 계정만 지울 수 있다(user_id를 넘기지 않음 — 서버가 토큰의 sub로 판단).
+// 성공해도 서버는 profiles를 하드 삭제하지 않고 deleted_at만 남긴다(팀 공유 대화 등
+// 다른 사람이 보는 콘텐츠가 함께 사라지지 않게 하기 위함) — 호출부(App.jsx)가 이어서
+// signOut()까지 해야 브라우저 세션도 정리된다.
+export function deleteAccount() {
+  return apiFetch('/account', { method: 'DELETE' });
 }
 
 export async function getCurrentSession() {
