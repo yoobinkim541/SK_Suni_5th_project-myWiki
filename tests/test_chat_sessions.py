@@ -22,6 +22,7 @@ from src.api import db
 from src.api import main as main_module
 from src.api.auth import get_current_user
 from src.api.main import app
+from src.wiki import chat_wiki
 
 WORKSPACE_ID = "11111111-1111-1111-1111-111111111111"
 OWNER_ID = "22222222-2222-2222-2222-222222222222"
@@ -721,6 +722,14 @@ def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypat
     monkeypatch.setattr(db, "list_message_citations", lambda mid: [SAMPLE_CITATION])
     monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
 
+    compose_calls = []
+
+    def fake_compose_chat_wiki_draft(question, answer, citations):
+        compose_calls.append((question, answer, citations))
+        return chat_wiki.ChatWikiDraft(title="HBM4 개요", markdown="# HBM4 개요\n\n본문")
+
+    monkeypatch.setattr(main_module, "compose_chat_wiki_draft", fake_compose_chat_wiki_draft)
+
     captured = {}
 
     def fake_upsert_wiki_page(workspace_id, slug, title, page_type):
@@ -745,13 +754,15 @@ def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypat
     expected_slug = f"chat-{ASSISTANT_MESSAGE['id'][:8]}"
     assert res.json() == {"page_id": "page-1", "version_id": "version-1", "slug": expected_slug}
 
-    assert captured["upsert_args"] == (WORKSPACE_ID, expected_slug, USER_QUESTION["content"][:80], "issue")
+    assert compose_calls == [(USER_QUESTION["content"], ASSISTANT_MESSAGE["content"], [SAMPLE_CITATION])]
+
+    assert captured["upsert_args"] == (WORKSPACE_ID, expected_slug, "HBM4 개요", "issue")
 
     draft = captured["draft"]
     assert draft.workspace_id == WORKSPACE_ID
     assert draft.slug == expected_slug
     assert draft.page_type == "issue"
-    assert draft.markdown == ASSISTANT_MESSAGE["content"]
+    assert draft.markdown == "# HBM4 개요\n\n본문"
     assert len(draft.sources) == 1
     assert draft.sources[0].document_version_id == SAMPLE_CITATION["document_version_id"]
     assert draft.sources[0].claim_text == SAMPLE_CITATION["quoted_text"]
@@ -769,6 +780,10 @@ def test_save_to_wiki_auto_publishes_version(make_client, monkeypatch):
     monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
     monkeypatch.setattr(db, "list_message_citations", lambda mid: [SAMPLE_CITATION])
     monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+    monkeypatch.setattr(
+        main_module, "compose_chat_wiki_draft",
+        lambda question, answer, citations: chat_wiki.ChatWikiDraft(title="t", markdown="m"),
+    )
     monkeypatch.setattr(main_module, "upsert_wiki_page", lambda workspace_id, slug, title, page_type: "page-1")
     monkeypatch.setattr(main_module, "create_wiki_version", lambda draft: "version-1")
 

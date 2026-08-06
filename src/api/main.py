@@ -49,6 +49,7 @@ from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
 from ..agent.titling import generate_session_title
 from ..agent.wiki_tools import WikiTools
+from ..wiki.chat_wiki import compose_chat_wiki_draft
 from ..wiki.interface import (
     WikiDraftInput,
     WikiSourceInput,
@@ -294,7 +295,9 @@ def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depen
         )
 
     user_message = db.get_preceding_user_message(session_id, message["created_at"])
-    title = user_message["content"][:80] if user_message else "채팅에서 저장된 답변"
+    question = user_message["content"] if user_message else "채팅에서 저장된 답변"
+    chat_draft = compose_chat_wiki_draft(question, message["content"], citations)
+    title = chat_draft.title
     slug = f"chat-{message_id[:8]}"
 
     page_id = upsert_wiki_page(workspace_id, slug, title, "issue")
@@ -303,7 +306,7 @@ def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depen
         slug=slug,
         title=title,
         page_type="issue",
-        markdown=message["content"],
+        markdown=chat_draft.markdown,
         sources=[
             WikiSourceInput(
                 document_version_id=c["document_version_id"],
