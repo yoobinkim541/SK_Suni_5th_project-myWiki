@@ -211,7 +211,39 @@ def test_issue_page_markdown_uses_evidence_text_map():
     markdown = generation._build_issue_page_markdown(
         _section(), {"doc-1": "HBM4 수요가 급증했다"},
     )
-    assert "- HBM4 수요가 급증했다 (document_version_id=doc-1)" in markdown
+    assert "- HBM4 수요가 급증했다" in markdown
+    assert "document_version_id" not in markdown  # 원문 ID를 그대로 노출하지 않는다
+
+
+def test_issue_page_markdown_attributes_source_name_and_date_instead_of_raw_id():
+    from datetime import datetime, timezone
+
+    candidate = ReportCandidate(
+        analysis_result_id="analysis-1",
+        workspace_id="ws-1",
+        document_id="doc-1",
+        document_version_id="doc-1",
+        category=Category.PRODUCT_TECHNOLOGY,
+        title="중국 턱밑 추격에…삼성·SK하이닉스, HBM·차세대 기술 개발 '전력투구' - 뉴시스",
+        source_name="Google RSS - SK하이닉스",
+        published_at=datetime(2026, 8, 2, 7, 23, 1, tzinfo=timezone.utc),
+    )
+    markdown = generation._build_issue_page_markdown(
+        _section(),
+        {"doc-1": candidate.title},
+        {"doc-1": candidate},
+    )
+    assert (
+        "- 중국 턱밑 추격에…삼성·SK하이닉스, HBM·차세대 기술 개발 '전력투구' - 뉴시스"
+        " · Google RSS - SK하이닉스 · 2026.08.02" in markdown
+    )
+    assert "document_version_id" not in markdown
+
+
+def test_build_citation_attribution_map_keys_by_issue_key_and_document_version_id():
+    groups = [_enriched_group("issue-1", candidate_summary="HBM4 수요가 급증했다")]
+    mapping = generation.build_citation_attribution_map(groups)
+    assert mapping["issue-1"]["doc-1"].title == "HBM4 공급 부족 심화"
 
 
 def test_issue_page_sources_use_evidence_text_map():
@@ -254,6 +286,31 @@ def test_generate_wiki_drafts_threads_evidence_texts_into_both_pages(monkeypatch
 
     assert seen["topic"] == {"doc-1": "HBM4 수요가 급증했다"}
     assert seen["issue"] == {"doc-1": "HBM4 수요가 급증했다"}
+
+
+def test_generate_wiki_drafts_threads_citation_attribution_into_both_pages(monkeypatch):
+    seen: dict[str, object] = {}
+
+    def fake_generate_topic_page(section, wiki_contexts, **kwargs):
+        seen["topic"] = kwargs["citation_attribution"]
+        return "skip", None, None
+
+    def fake_generate_issue_page(section, **kwargs):
+        seen["issue"] = kwargs["citation_attribution"]
+        return "page-1", "version-1"
+
+    monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
+
+    generation.generate_wiki_drafts_for_sections(
+        [_section("issue-ok")],
+        [_enriched_group("issue-ok", candidate_summary="HBM4 수요가 급증했다")],
+        workspace_id="ws-1",
+    )
+
+    assert seen["topic"]["doc-1"].title == "HBM4 공급 부족 심화"
+    assert seen["issue"]["doc-1"].title == "HBM4 공급 부족 심화"
 
 
 def test_generate_topic_page_prompt_includes_mapped_evidence_text(monkeypatch):

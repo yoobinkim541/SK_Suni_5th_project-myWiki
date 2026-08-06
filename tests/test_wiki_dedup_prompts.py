@@ -45,3 +45,29 @@ def test_user_prompt_handles_page_with_no_sources():
     content_b = _content("page-b", "제목 B", "# 본문", [])
     prompt = build_wiki_dedup_user_prompt(content_a, content_b)
     assert "없음" in prompt
+
+
+def test_system_prompt_instructs_source_section_to_use_title_source_date_not_raw_id():
+    assert "매체명" in WIKI_DEDUP_SYSTEM_PROMPT
+    assert "document_version_id 문자열을" in WIKI_DEDUP_SYSTEM_PROMPT
+    assert "그대로 노출하지 마십시오" in WIKI_DEDUP_SYSTEM_PROMPT
+
+
+def test_user_prompt_surfaces_document_title_source_name_and_date_for_llm():
+    content_a = _content("page-a", "제목 A", "# 본문 A", [
+        WikiSource(
+            document_version_id="93f0ebe5-7373-43ea-ba84-c60533b7f033", citation_order=1,
+            claim_text="근거 A", support_type="supports", source_start_line=None, source_end_line=None,
+            document_title="중국 턱밑 추격에…삼성·SK하이닉스, HBM·차세대 기술 개발 '전력투구' - 뉴시스",
+            source_name="Google RSS - SK하이닉스",
+            published_at="2026-08-02T07:23:01+00:00",
+        ),
+    ])
+    content_b = _content("page-b", "제목 B", "# 본문 B", [])
+
+    prompt = build_wiki_dedup_user_prompt(content_a, content_b)
+
+    assert (
+        "중국 턱밑 추격에…삼성·SK하이닉스, HBM·차세대 기술 개발 '전력투구' - 뉴시스"
+        " · Google RSS - SK하이닉스 · 2026.08.02" in prompt
+    )

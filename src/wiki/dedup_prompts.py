@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from .interface import WikiPageContent
 
 WIKI_DEDUP_SYSTEM_PROMPT = """당신은 SK하이닉스 반도체 산업 위키를 관리하는 편집자입니다.
@@ -17,6 +19,11 @@ WIKI_DEDUP_SYSTEM_PROMPT = """당신은 SK하이닉스 반도체 산업 위키�
   중 하나의 page_id여야 합니다.
 - markdown은 반드시 아래 섹션 순서를 따르십시오: 현재 상황 -> 수급 구조 -> 종합 판단
   -> 변경 이력 -> 관련 문서 -> 출처.
+- "출처" 섹션은 각 근거 문서마다 "{기사 제목} · {매체명} · {날짜}" 형식으로 한 줄씩
+  쓰십시오(예: "삼성전자, HBM4 양산 돌입 - 전자신문 · Google RSS - 삼성전자 · 2026.07.10").
+  아래 "근거 문서" 목록에 제공된 제목·매체명·날짜를 그대로 쓰고, document_version_id는
+  claims 배열을 채우는 데만 쓰십시오 — markdown 본문에 document_version_id 문자열을
+  그대로 노출하지 마십시오.
 - "변경 이력" 섹션에는 두 문서의 기존 이력을 모두 보존하고, 이번 통합 사유를 한 줄
   추가하십시오. 기존 사실관계를 삭제하지 마십시오.
 - claims는 문서 A 또는 문서 B의 근거 문서(document_version_id) 중에서만 인용하십시오.
@@ -33,6 +40,25 @@ JSON 출력 형식:
 }"""
 
 
+def _format_source_date(published_at: str | None) -> str:
+    if not published_at:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return parsed.strftime("%Y.%m.%d")
+
+
+def _source_attribution(source) -> str:
+    parts = [
+        part
+        for part in (source.document_title, source.source_name, _format_source_date(source.published_at))
+        if part
+    ]
+    return " · ".join(parts) if parts else "(제목·매체 정보 없음)"
+
+
 def _page_block(label: str, content: WikiPageContent) -> str:
     lines = [
         f"[{label}] page_id={content.page_id}",
@@ -40,13 +66,15 @@ def _page_block(label: str, content: WikiPageContent) -> str:
         f"유형: {content.page_type}",
         "본문:",
         content.markdown,
-        "근거 문서:",
+        "근거 문서 (document_version_id는 claims 매칭에만 쓰고, markdown 출처 절엔 절대 쓰지 마십시오 —"
+        " 출처 절엔 아래 제목·매체명·날짜를 쓰십시오):",
     ]
     if content.sources:
         for source in content.sources:
             lines.append(
                 f"- document_version_id={source.document_version_id} "
-                f"citation_order={source.citation_order}: {source.claim_text or ''}"
+                f"citation_order={source.citation_order}: {_source_attribution(source)}"
+                f" (claim_text: {source.claim_text or ''})"
             )
     else:
         lines.append("없음")
