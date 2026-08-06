@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import date, datetime, timezone
+from io import BytesIO
 
 import pytest
+from pypdf import PdfReader
 
 from src.analysis.importance_models import ImpactDirection, TimeHorizon
 from src.analysis.models import Category
@@ -17,6 +19,7 @@ from src.report.artifact_service import (
     compute_markdown_content_hash,
     create_and_save_markdown_artifact,
     encode_markdown_payload,
+    _render_generated_report_pdf,
     save_markdown_report_artifact,
 )
 from src.report.models import (
@@ -199,6 +202,32 @@ def make_report() -> GeneratedReport:
         created_at=datetime(2026, 8, 2, 8, 15, tzinfo=timezone.utc),
         generated_at=datetime(2026, 8, 2, 8, 15, tzinfo=timezone.utc),
     )
+
+
+def _from_codepoints(*values: int) -> str:
+    return "".join(chr(value) for value in values)
+
+
+def test_daily_pdf_uses_requested_industry_report_structure() -> None:
+    report = make_report()
+    report.sections[0].status = "completed"
+
+    pdf_bytes = _render_generated_report_pdf(report)
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+    expected_headings = (
+        _from_codepoints(0xC624, 0xB298, 0xC758, 0x20, 0xD575, 0xC2EC, 0x20, 0xC694, 0xC57D),
+        _from_codepoints(0xC774, 0xC288, 0xBCC4, 0x20, 0xBD84, 0xC11D),
+        _from_codepoints(0xCE74, 0xD14C, 0xACE0, 0xB9AC, 0xBCC4, 0x20, 0xC815, 0xB9AC),
+        _from_codepoints(0xC885, 0xD569, 0x20, 0xC2DC, 0xC0AC, 0xC810),
+        _from_codepoints(0xC804, 0xCCB4, 0x20, 0xCD9C, 0xCC98, 0x20, 0xBAA9, 0xB85D),
+    )
+    assert all(heading in extracted for heading in expected_headings)
+    assert "1. title-issue-1" in extracted
+    assert _from_codepoints(0xC0AC, 0xC2E4) in extracted
+    assert _from_codepoints(0xC758, 0xBBF8) in extracted
+    assert _from_codepoints(0x53, 0x4B, 0xD558, 0xC774, 0xB2C9, 0xC2A4, 0x20, 0xC601, 0xD5A5) in extracted
+    assert _from_codepoints(0xB2E4, 0xC74C, 0x20, 0xD655, 0xC778, 0x20, 0xC0AC, 0xD56D) in extracted
 
 
 def test_build_report_artifact_object_key_uses_project_path_rule() -> None:

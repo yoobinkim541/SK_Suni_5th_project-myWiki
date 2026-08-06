@@ -368,10 +368,9 @@ def _build_story(document: PdfReportDocument, styles: StyleSheet1) -> list[objec
 
 def _build_metadata_table(document: PdfReportDocument, styles: StyleSheet1) -> Table:
     rows = [
-        [Paragraph("Report key", styles["MetaLabel"]), Paragraph(_xml_text(document.subtitle), styles["MetaValue"])],
-        [Paragraph("Version", styles["MetaLabel"]), Paragraph(str(document.version), styles["MetaValue"])],
-        [Paragraph("Generated at", styles["MetaLabel"]), Paragraph(_xml_text(document.generated_at), styles["MetaValue"])],
-        [Paragraph("Renderer", styles["MetaLabel"]), Paragraph(REPORT_RENDERER_VERSION, styles["MetaValue"])],
+        [Paragraph("기준일", styles["MetaLabel"]), Paragraph(_xml_text(document.subtitle), styles["MetaValue"])],
+        [Paragraph("버전", styles["MetaLabel"]), Paragraph(str(document.version), styles["MetaValue"])],
+        [Paragraph("생성 시각", styles["MetaLabel"]), Paragraph(_xml_text(document.generated_at), styles["MetaValue"])],
     ]
     table = Table(rows, colWidths=[30 * mm, 140 * mm], hAlign="LEFT")
     table.setStyle(
@@ -400,13 +399,23 @@ def _build_metadata_table(document: PdfReportDocument, styles: StyleSheet1) -> T
 
 def _build_section_flowables(index: int, section: PdfSection, styles: StyleSheet1) -> list[object]:
     flowables: list[object] = [
-        Paragraph(_xml_text(f"{index}. {section.title}"), styles["SectionTitle"]),
-        Paragraph(_xml_text(f"Category: {section.category} | Confidence: {section.confidence_label}"), styles["BodyMuted"]),
+        Paragraph(_xml_text(section.title), styles["SectionTitle"]),
     ]
-    for paragraph in _split_paragraphs(section.body):
-        flowables.append(Paragraph(_xml_text(paragraph), styles["Body"]))
+    metadata = " | ".join(
+        part
+        for part in (
+            f"카테고리: {section.category}" if section.category else "",
+            f"신뢰도: {section.confidence_label}" if section.confidence_label else "",
+        )
+        if part
+    )
+    if metadata:
+        flowables.append(Paragraph(_xml_text(metadata), styles["BodyMuted"]))
+    if section.body.strip():
+        for paragraph in _split_paragraphs(section.body):
+            flowables.append(Paragraph(_xml_text(paragraph), styles["Body"]))
     if section.evidences:
-        flowables.append(Paragraph("Evidence", styles["EvidenceHeading"]))
+        flowables.append(Paragraph("출처", styles["EvidenceHeading"]))
         flowables.append(_build_evidence_table(section.evidences, styles))
     flowables.append(Spacer(1, 4 * mm))
     return flowables
@@ -414,7 +423,7 @@ def _build_section_flowables(index: int, section: PdfSection, styles: StyleSheet
 
 
 def _build_evidence_table(evidences: tuple[PdfEvidenceLine, ...], styles: StyleSheet1) -> Table:
-    rows = [[Paragraph("Document", styles["MetaLabel"]), Paragraph("Evidence", styles["MetaLabel"])]]
+    rows = [[Paragraph("출처", styles["MetaLabel"]), Paragraph("근거", styles["MetaLabel"])]]
     for evidence in evidences:
         rows.append([
             Paragraph(_xml_text(evidence.document_version_id), styles["MetaValue"]),
@@ -458,7 +467,7 @@ def _draw_page_chrome(canvas, pdf_doc, document: PdfReportDocument, layout: PdfL
     canvas.setFont(REPORT_FONT_REGULAR, max(layout.body_font_size - 1, 8))
     canvas.setFillColor(colors.HexColor("#475569"))
     footer_y = pdf_doc.bottomMargin - 6 * mm
-    footer_text = normalize_pdf_text(f"Generated at {document.generated_at} | {REPORT_RENDERER_VERSION}")
+    footer_text = normalize_pdf_text(f"생성 시각 {document.generated_at} | {REPORT_RENDERER_VERSION}")
     canvas.drawString(pdf_doc.leftMargin, footer_y, footer_text)
     canvas.drawRightString(pdf_doc.pagesize[0] - pdf_doc.rightMargin, footer_y, normalize_pdf_text(f"Page {canvas.getPageNumber()}"))
     canvas.restoreState()

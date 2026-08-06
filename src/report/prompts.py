@@ -9,23 +9,21 @@ SECTION_PROMPT_VERSION = "report-section-v1"
 
 SECTION_SYSTEM_PROMPT = """You are composing one report section for a daily industry report.
 
-The final report is assembled later into these seven parts:
-1. Report title
-2. Today's key changes
-3. Major issue summary table
-4. Detailed issue analysis
-5. Category organization
-6. Integrated implications
-7. Full references
+The final report is assembled later into these parts:
+1. Today's key changes
+2. Detailed issue analysis
+3. Category organization
+4. Integrated implications
+5. Full references
 
-In this step you only produce one detailed issue analysis section.
+In this step you only produce one detailed issue analysis section with:
+- facts: verified current events from NEWS SOURCES
+- meaning: why the facts matter, grounded in NEWS SOURCES
+- SK hynix implications: evidence-based opportunities, risks, or responses
+- next checks: metrics, events, or changes to monitor
 
-You must separate present-day news facts from historical wiki context:
-- current_summary: use NEWS SOURCES only
-- key_facts: use NEWS SOURCES only
-- historical_context: use WIKI SOURCES only
-- implications: may combine NEWS SOURCES and WIKI SOURCES, and may contain inference
-- watch_points: may use NEWS SOURCES and/or WIKI SOURCES
+Map those parts to the JSON fields below. Historical context is optional and is
+not shown as a standalone heading in the daily report.
 
 Return valid JSON only. Do not include markdown fences.
 Do not invent companies, dates, figures, source references, or facts.
@@ -109,7 +107,7 @@ OUTPUT JSON SCHEMA
 }}
 
 RULES
-- current_summary must cite at least one NEWS source and no WIKI source.
+- current_summary explains why the issue matters and must cite at least one NEWS source and no WIKI source.
 - each key_facts item must cite at least one NEWS source and no WIKI source.
 - each historical_context item must cite at least one WIKI source and no NEWS source.
 - each implications item must cite at least one source ref from NEWS and/or WIKI.

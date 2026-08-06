@@ -494,34 +494,105 @@ def _normalize_path_segment(value: str, *, field_name: str) -> str:
 def _render_generated_report_pdf(report: GeneratedReport) -> bytes:
     generated_at = report.generated_at.isoformat() if report.generated_at is not None else report.report_date.isoformat()
     title = normalize_pdf_text(report.title or "일일 산업 동향 보고서")
-    subtitle = normalize_pdf_text(f"{report.report_type.value}:{report.workspace_id}:{report.report_date.isoformat()}")
-    sections = tuple(
+    sections = [
+        PdfSection(category="", title="오늘의 핵심 요약", body=_build_pdf_executive_summary(report), confidence_label=""),
+        PdfSection(category="", title="이슈별 분석", body="", confidence_label=""),
+    ]
+    sections.extend(
         PdfSection(
-            category=normalize_pdf_text(section.category.value),
-            title=normalize_pdf_text(section.title),
-            body=normalize_pdf_text(section.current_summary or "No content"),
-            confidence_label=normalize_pdf_text(_build_pdf_confidence_label(section)),
-            evidences=tuple(
-                PdfEvidenceLine(
-                    document_version_id=normalize_pdf_text(citation.document_version_id),
-                    quoted_text=normalize_pdf_text((citation.evidence_text or "Citation reference").strip() or "Citation reference"),
-                    relevance_score=citation.relevance_score,
-                )
-                for citation in section.news_citations[:3]
-            ),
+            category="",
+            title=f"{index}. {section.title}",
+            body=_build_pdf_issue_body(section),
+            confidence_label="",
+            evidences=_build_pdf_evidences(section),
         )
-        for section in report.sections
+        for index, section in enumerate(report.sections, start=1)
         if getattr(section.status, "value", section.status) == "completed"
+    )
+    sections.extend(
+        [
+            PdfSection(category="", title="카테고리별 정리", body=_build_pdf_category_summary(report), confidence_label=""),
+            PdfSection(category="", title="종합 시사점", body=_build_pdf_overall_implications(report), confidence_label=""),
+            PdfSection(category="", title="전체 출처 목록", body=_build_pdf_source_list(report), confidence_label=""),
+        ]
     )
     document = PdfReportDocument(
         title=title,
-        subtitle=subtitle,
+        subtitle=normalize_pdf_text(f"기준일: {report.report_date.isoformat()}"),
         generated_at=generated_at,
         version=report.version,
-        sections=sections,
+        sections=tuple(sections),
     )
     return render_daily_report_pdf(document)
 
+
+def _build_pdf_executive_summary(report: GeneratedReport) -> str:
+    summaries = [item.summary for item in report.executive_summaries if item.summary]
+    if not summaries:
+        return "- 해당 기간에 요약할 주요 이슈가 없습니다."
+    return "\n".join(f"{index}. {summary}" for index, summary in enumerate(summaries, start=1))
+
+
+def _build_pdf_issue_body(section) -> str:
+    lines = ["사실"]
+    lines.extend(f"- {item}" for item in section.key_facts if item)
+    lines.extend(["", "의미", section.current_summary or "- 분석된 의미가 없습니다.", "", "SK하이닉스 영향"])
+    lines.extend(f"- {item}" for item in section.implications if item)
+    lines.extend(["", "다음 확인 사항"])
+    lines.extend(f"- {item}" for item in section.watch_points if item)
+    return "\n".join(lines)
+
+
+def _build_pdf_evidences(section) -> tuple[PdfEvidenceLine, ...]:
+    return tuple(
+        PdfEvidenceLine(
+            document_version_id=normalize_pdf_text(_format_pdf_citation_label(citation)),
+            quoted_text=normalize_pdf_text((citation.evidence_text or citation.document_title or "기사 출처").strip()),
+            relevance_score=citation.relevance_score,
+        )
+        for citation in section.news_citations
+    )
+
+
+def _format_pdf_citation_label(citation) -> str:
+    parts = [part for part in (citation.source_name, citation.published_at) if part]
+    return " | ".join(parts) or "뉴스 출처"
+
+
+def _build_pdf_category_summary(report: GeneratedReport) -> str:
+    lines: list[str] = []
+    for group in report.category_groups:
+        if not group.sections:
+            continue
+        lines.append(group.category.value)
+        lines.extend(f"- {section.title}: {section.current_summary or ''}" for section in group.sections)
+    return "\n".join(lines) or "- 분류된 주요 이슈가 없습니다."
+
+
+def _build_pdf_overall_implications(report: GeneratedReport) -> str:
+    overall = report.overall_implications
+    if overall is None:
+        return "- 종합 시사점이 없습니다."
+    parts = [
+        "기회 요인",
+        *[f"- {item}" for item in overall.opportunities],
+        "",
+        "위험 요인",
+        *[f"- {item}" for item in overall.risks],
+        "",
+        "지속 관찰 항목",
+        *[f"- {item}" for item in overall.monitoring_points],
+    ]
+    return "\n".join(parts)
+
+
+def _build_pdf_source_list(report: GeneratedReport) -> str:
+    lines = [
+        f"- {source.document_title or '제목 미상'} | {source.source_name or '출처 미상'} | {source.published_at or ''}"
+        for source in report.news_sources
+    ]
+    lines.extend(f"- Wiki: {source.wiki_title or '제목 미상'}" for source in report.wiki_sources)
+    return "\n".join(lines) or "- 사용된 출처가 없습니다."
 
 def _build_pdf_confidence_label(section) -> str:
     if section.importance_score is not None:

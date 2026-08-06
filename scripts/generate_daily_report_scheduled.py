@@ -68,6 +68,7 @@ def run_scheduled_daily_report(*, now: datetime | None = None) -> dict[str, obje
         workspace_id=workspace_id,
         report_date=report_date,
         requested_by=None,
+        formats=["pdf"],
         analysis_document_version_ids=analysis_document_version_ids,
     )
     log(
