@@ -43,6 +43,7 @@ import SideNav from './components/common/SideNav';
 import { BottomNav, Drawer, MoreSheet } from './components/common/MobileNav';
 import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
+import Footer from './components/common/Footer';
 import DeleteAccountModal from './components/common/DeleteAccountModal';
 import { signInWithProvider, signOut, getCurrentSession, isNewAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
@@ -60,6 +61,7 @@ import CategoryPage from './pages/CategoryPage';
 import WikiPage from './pages/WikiPage';
 import AgentPage from './pages/AgentPage';
 import SettingsPage from './pages/SettingsPage';
+import PrivacyPage from './pages/PrivacyPage';
 
 const INTERESTS_KEY = 'mywiki-interests';
 
@@ -99,11 +101,19 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  // 로그인 없이 "건너뛰기"로 들어온 상태 — 대시보드는 실데이터 그대로 보여주고, 다른 메뉴로
+  // 가려고 하면 화면 전환 대신 프로필 드롭다운(로그인 유도)을 연다.
+  const [guestMode, setGuestMode] = useState(false);
   const [entryStep, setEntryStep] = useState(null); // 'landing' | 'survey' | null(=일반 앱 화면)
   const [profile, setProfile] = useState(null);
   const [notiReport, setNotiReport] = useState(true);
   const [notiWiki, setNotiWiki] = useState(true);
   const [dark, setDark] = useState(() => getInitial('mywiki-theme', 'light') === 'dark');
+  const [fontSize, setFontSize] = useState(() => getInitial('mywiki-fontsize', 'm'));
+  // PC 사이드바 접기 상태. 페이지를 옮겨다녀도(새로고침해도) 유지되게 localStorage에 저장.
+  const [sideCollapsed, setSideCollapsed] = useState(
+    () => getInitial('mywiki-side-collapsed', 'false') === 'true'
+  );
 
   // 소속 팀 — 워크스페이스 이름과 로그인 사용자의 역할.
   // ⚠ 워크스페이스 이름을 주는 엔드포인트가 아직 없어 null로 둡니다(백엔드 요청 중).
@@ -247,6 +257,25 @@ export default function App() {
     }
   }, [dark]);
 
+  // 폰트 크기 저장/복원. 실제 배율 적용 로직은 TODO(아래 참고).
+  useEffect(() => {
+    document.documentElement.setAttribute('data-font-size', fontSize);
+    try {
+      localStorage.setItem('mywiki-fontsize', fontSize);
+    } catch {
+      // 저장 실패해도 화면 동작에는 지장 없음
+    }
+  }, [fontSize]);
+
+  // PC 사이드바 접기 상태 저장. 모바일은 이 상태와 무관(Drawer/BottomNav를 따로 씀).
+  useEffect(() => {
+    try {
+      localStorage.setItem('mywiki-side-collapsed', sideCollapsed ? 'true' : 'false');
+    } catch {
+      // 저장 실패해도 화면 동작에는 지장 없음
+    }
+  }, [sideCollapsed]);
+
   // 온보딩 완료 — 선호 조사 결과를 저장하고 대시보드로 들어갑니다.
   // 관심 키워드는 대시보드 "최신 뉴스" 기본 필터로, 직무는 추후 랭킹 가중치로 씁니다.
   function handleOnboardingComplete(result) {
@@ -276,10 +305,29 @@ export default function App() {
     setEntryStep('survey');
   }
 
+  // 대시보드 InterestsBar에서 씀 — 온보딩 전체를 다시 거치지 않고 관심 키워드만 즉시
+  // 추가·삭제한다. role은 건드리지 않고 그대로 유지, keywords만 교체해서 저장.
+  function updateInterests(nextKeywords) {
+    setPrefs((prev) => {
+      const value = { keywords: nextKeywords, role: prev?.role ?? null };
+      try {
+        localStorage.setItem(INTERESTS_KEY, JSON.stringify(value));
+      } catch {
+        // 저장 실패해도 이번 세션 동안은 상태로 유지됩니다.
+      }
+      return value;
+    });
+  }
+
   // 두 번째 인자(payload)는 위키 문서 지정용입니다.
   // 대시보드·리포트의 "관련 위키" 링크에서 navigateTo('wiki', 'hbm4') 처럼 넘기면
   // 위키 페이지가 해당 문서를 열고 시작합니다.
   function navigateTo(key, payload) {
+    if (guestMode && key !== 'dash') {
+      // 게스트는 대시보드 외 메뉴를 못 본다 — 화면 전환 대신 로그인 유도(프로필 드롭다운 오픈).
+      setProfileOpen(true);
+      return;
+    }
     setView(key);
     if (key === 'wiki' && payload) setWikiDocId(payload);
     setDrawerOpen(false);
@@ -315,6 +363,7 @@ export default function App() {
   }
   function handleLogout() {
     setProfileOpen(false);
+    setGuestMode(false);
     signOut();
   }
 
@@ -371,14 +420,23 @@ export default function App() {
     return <EntryFlow initialStep="survey" onSurveyComplete={handleOnboardingComplete} />;
   }
 
-  // 첫 방문(세션 없음) — 랜딩부터. "건너뛰고 둘러보기"는 EntryFlow 안에서 미리보기 화면만
-  // 보여주고 실제 데이터가 붙은 메인 대시보드로는 보내지 않는다(로그인해야만 진입 가능).
-  if (entryStep === 'landing') {
-    return <EntryFlow initialStep="landing" onSurveyComplete={handleOnboardingComplete} />;
+  // 첫 방문(세션 없음, 게스트도 아님) — 랜딩부터. 로그인/회원가입 화면의 "건너뛰기"를 누르면
+  // guestMode로 전환되어 실데이터가 붙은 진짜 메인 대시보드로 곧장 들어간다.
+  if (entryStep === 'landing' && !guestMode) {
+    return (
+      <EntryFlow
+        initialStep="landing"
+        onSurveyComplete={handleOnboardingComplete}
+        onGuestSkip={() => {
+          setGuestMode(true);
+          setEntryStep(null);
+        }}
+      />
+    );
   }
 
   return (
-    <div className="app">
+    <div className={`app${!isMobile && sideCollapsed ? ' side-collapsed' : ''}`}>
       <TopBar
         variant={isMobile ? 'mobile' : 'pc'}
         onMenuClick={() => setDrawerOpen(true)}
@@ -401,11 +459,26 @@ export default function App() {
           onLogoClick={handleLogoClick}
         />
       ) : (
-        <SideNav activeKey={view} onNavigate={navigateTo} onLogoClick={handleLogoClick} />
+        <SideNav
+          activeKey={view}
+          onNavigate={navigateTo}
+          onLogoClick={handleLogoClick}
+          collapsed={sideCollapsed}
+          onToggleCollapsed={() => setSideCollapsed((c) => !c)}
+        />
       )}
 
-      <main className="main" key={refreshKey}>
-        {view === 'dash' && <DashboardPage onNavigate={navigateTo} interests={prefs.keywords} />}
+      {/* key를 view까지 포함시켜서 페이지를 바꿀 때마다 .main이 다시 마운트되고,
+          globals.css의 .page-enter 애니메이션(위→아래로 서서히 밝아지며 드러나는 효과)이
+          매번 새로 재생되게 한다 — 토스 앱의 페이지 전환과 비슷한 "화면이 움직이는" 느낌. */}
+      <main className="main page-enter" key={`${view}-${refreshKey}`}>
+        {view === 'dash' && (
+          <DashboardPage
+            onNavigate={navigateTo}
+            interests={prefs?.keywords ?? []}
+            onUpdateInterests={updateInterests}
+          />
+        )}
         {view === 'report' && <ReportPage onNavigate={navigateTo} />}
         {view === 'cat' && <CategoryPage />}
         {view === 'wiki' && <WikiPage docId={wikiDocId} />}
@@ -426,7 +499,14 @@ export default function App() {
             onResetInterests={resetOnboarding}
           />
         )}
+        {view === 'privacy' && <PrivacyPage onBack={() => navigateTo('dash')} />}
       </main>
+
+      <Footer
+        onNavigate={navigateTo}
+        onPwaInstallClick={handlePwaInstallClick}
+        pwaStateLabel={pwaStateLabel}
+      />
 
       {isMobile && (
         <>

@@ -19,6 +19,30 @@
 
 import LogoMark from './LogoMark';
 
+// 항목 아이콘 — SideNav.jsx(PC)와 같은 path를 씁니다. globals.css의 `.m-drawer a .ic svg`가
+// 이미 이 마크업(`<span className="ic">`)을 전제로 스타일을 준비해뒀는데 지금까지 안 쓰이고
+// 있었습니다 — PC 사이드바처럼 모바일 드로어도 글자 옆에 아이콘이 보이도록 채워 넣습니다.
+const DRAWER_ICONS = {
+  dash: (
+    <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.7V20h14V9.7" /></svg>
+  ),
+  report: (
+    <svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+  ),
+  cat: (
+    <svg viewBox="0 0 24 24"><path d="M4 19V10M10 19V4M16 19V13" /><path d="M4 19h16" /></svg>
+  ),
+  wiki: (
+    <svg viewBox="0 0 24 24"><path d="M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z" /><path d="M17 6.5h2V20" /></svg>
+  ),
+  agent: (
+    <svg viewBox="0 0 24 24"><path d="M4 5h16v10H9l-4 3v-3H4z" /></svg>
+  ),
+  settings: (
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" /></svg>
+  ),
+};
+
 const DRAWER_ITEMS = [
   { group: 'MONITOR', items: [
     { key: 'dash', label: '대시보드' },
@@ -57,6 +81,7 @@ export function Drawer({ isOpen, activeKey, onNavigate, onClose, onLogoClick, la
                 className={activeKey === item.key ? 'on' : ''}
                 onClick={() => { onNavigate(item.key); onClose?.(); }}
               >
+                <span className="ic">{DRAWER_ICONS[item.key]}</span>
                 {item.label}
               </a>
             ))}
