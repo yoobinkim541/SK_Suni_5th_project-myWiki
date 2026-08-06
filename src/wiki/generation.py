@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 from collections.abc import Callable
 
+from pydantic import ValidationError
 from supabase import Client
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
@@ -33,10 +34,10 @@ from .interface import (
     search_wiki_contexts,
     upsert_wiki_page,
 )
+from .text_similarity import is_duplicate_title
+from ..notifications.service import send_wiki_notification
 
 logger = logging.getLogger(__name__)
-
-AUTO_PUBLISH_CONFIDENCE_THRESHOLD = 0.6
 
 # (system_prompt, user_prompt, model) -> raw JSON 문자열.
 # src/report/composer.py의 llm_client 주입 패턴과 같은 형태의 호출 가능 객체다.
@@ -234,7 +235,19 @@ def _generate_topic_page(
             model=settings.model,
         )
     payload = parse_json_response(response_text)
-    result = WikiTopicLLMResult.model_validate(payload)
+    try:
+        result = WikiTopicLLMResult.model_validate(payload)
+    except ValidationError as exc:
+        # page_type만 스키마 밖 값이면(예: LLM이 지어낸 카테고리명) industry로 대체해
+        # 페이지 생성 자체가 막히지 않게 한다. 다른 필드 문제면 그대로 올린다.
+        if {e["loc"] for e in exc.errors()} != {("page_type",)}:
+            raise
+        logger.warning(
+            "wiki_topic_page_type_fallback",
+            extra={"issue_key": section.issue_key, "invalid_page_type": payload.get("page_type")},
+        )
+        payload = {**payload, "page_type": "industry"}
+        result = WikiTopicLLMResult.model_validate(payload)
 
     # LLM이 돌려준 식별자는 프롬프트에 보여준 값에서만 골라야 한다.
     allowed_document_version_ids = {
@@ -280,6 +293,12 @@ def _generate_topic_page(
     else:
         if not (result.slug and result.title and result.page_type):
             return "skip", None, None
+        if is_duplicate_title(result.title, section.title):
+            logger.info(
+                "wiki_topic_page_skipped_duplicate_title",
+                extra={"issue_key": section.issue_key, "topic_title": result.title},
+            )
+            return "skip", None, None
         allowed_parent_page_ids = {page.wiki_page_id for page in top_level_pages}
         parent_page_id = (
             result.parent_page_id
@@ -309,14 +328,13 @@ def _generate_topic_page(
     )
     version_id = create_wiki_version(draft, supabase=supabase)
 
-    # 설계 §5: 검증 결과는 신뢰도와 무관하게 항상 'passed'로 기록하고,
-    # 승인·게시만 신뢰도 게이트를 건다. (그래야 나중에 사람이 review_wiki_version만
-    # 호출해도 게시가 가능하다.)
+    # 설계 §5(2026-08-04 개정): LLM 위키이므로 검증 통과 시 신뢰도와 무관하게 항상
+    # 자동 승인·발행한다. confidence_score는 계속 기록해서(표시·분석용) 남기되,
+    # 더 이상 발행 여부를 가르는 게이트로는 쓰지 않는다 — 이슈 페이지와 동일한 정책.
     confidence = result.confidence_score
     record_wiki_validation(version_id, "passed", confidence, supabase=supabase)
-    if confidence is not None and confidence >= AUTO_PUBLISH_CONFIDENCE_THRESHOLD:
-        review_wiki_version(version_id, None, "approved", supabase=supabase)
-        publish_wiki_version(page_id, version_id, supabase=supabase)
+    review_wiki_version(version_id, None, "approved", supabase=supabase)
+    publish_wiki_version(page_id, version_id, supabase=supabase)
 
     return result.action, page_id, version_id
 
@@ -403,6 +421,16 @@ def generate_wiki_drafts_for_sections(
                 error_message=topic_error,
             )
         )
+
+    published_count = sum(
+        (1 if result.issue_page_id else 0) + (1 if result.topic_page_id is not None else 0)
+        for result in results
+    )
+    if published_count > 0:
+        try:
+            send_wiki_notification(workspace_id, published_count, supabase=supabase)
+        except Exception:  # noqa: BLE001
+            logger.exception("wiki_notification_failed", extra={"workspace_id": workspace_id})
 
     return results
 

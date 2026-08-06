@@ -1,4 +1,4 @@
-﻿"""
+"""
 Agent·API 담당 FastAPI 서버.
 엔드포인트: 채팅 세션 생성/조회, 메시지 전송(Agent 호출 포함), 메시지 이력 조회.
 
@@ -44,7 +44,6 @@ from .schemas import (
 from .category_router import router as category_router
 from .dashboard_router import router as dashboard_router
 from .notifications_router import router as notifications_router
-from .report_router import router as report_router
 from .settings_router import router as settings_router
 from .wiki_router import router as wiki_router
 from ..agent.core import WikiAgent
@@ -80,7 +79,6 @@ app.include_router(settings_router)
 app.include_router(notifications_router)
 app.include_router(dashboard_router)
 app.include_router(category_router)
-app.include_router(report_router)
 
 
 TITLE_MAX_LEN = 40
@@ -454,4 +452,3 @@ def list_members(profile: dict = Depends(get_current_user)):
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
