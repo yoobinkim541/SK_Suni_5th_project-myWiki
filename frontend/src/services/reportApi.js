@@ -72,11 +72,11 @@ function normalizeIssue(section) {
   return {
     id: section.id,
     level,
-    category: content.category || '미분류',
+    category: content.category || '???',
     title: section.title,
     summary: content.current_summary || section.title,
     sourceIsDoc: Boolean(firstCitation?.source_url),
-    sourceLabel: firstCitation?.source_name || firstCitation?.document_title || '출처 없음',
+    sourceLabel: firstCitation?.source_name || firstCitation?.document_title || '?? ??',
     sourceUrl: firstCitation?.source_url || '#',
     sourceTitle:
       firstCitation?.document_title ||
@@ -94,7 +94,7 @@ function normalizeArchiveItem(report, issues, todayDate) {
   return {
     date: report.date,
     label: formatDateLabel(report.date),
-    day: report.date === todayDate ? '오늘' : '',
+    day: report.date === todayDate ? '??' : '',
     title: report.title,
     summary: overview,
     issues: issues.length,
@@ -106,7 +106,7 @@ function normalizeArchiveItem(report, issues, todayDate) {
 
 function buildOverview(issues) {
   if (!issues.length) {
-    return '아직 생성된 리포트 본문이 없습니다.';
+    return '?? ??? ??? ??? ????.';
   }
 
   return issues
@@ -118,12 +118,12 @@ function buildOverview(issues) {
 
 function buildPendingReportView(date = getTodayKSTDate()) {
   const label = formatDateLabel(date);
-  const title = '일일 동향 보고서 생성 대기';
-  const summary = '아직 생성된 리포트가 없습니다. Word/PDF/PPT 버튼을 누르면 리포트를 생성한 뒤 다운로드합니다.';
+  const title = '?? ?? ??? ?? ??';
+  const summary = '?? ??? ???? ????. Word/PDF/PPT ??? ??? ???? ??? ? ???????.';
   const archiveItem = {
     date,
     label,
-    day: date === getTodayKSTDate() ? '오늘' : '',
+    day: date === getTodayKSTDate() ? '??' : '',
     title,
     summary,
     issues: 0,
@@ -137,15 +137,15 @@ function buildPendingReportView(date = getTodayKSTDate()) {
     issues: [],
     summary: {
       date: label,
-      statusLabel: '생성 대기',
+      statusLabel: '?? ??',
       kpis: [],
-      totalLabel: '전체 0건',
-      categories: [{ name: '전체', count: 0 }],
-      keywords: ['리포트 생성 대기'],
+      totalLabel: '?? 0?',
+      categories: [{ name: '??', count: 0 }],
+      keywords: ['??? ?? ??'],
     },
     archive: [archiveItem],
     today: {
-      label: `${label} - 리포트 생성 대기`,
+      label: `${label} - ??? ?? ??`,
       date,
     },
     detail: {
@@ -163,12 +163,27 @@ function buildPendingReportView(date = getTodayKSTDate()) {
   };
 }
 
+async function fetchDailyReportOrGenerate(date, generateOnMissing = false) {
+  try {
+    return await fetchDailyReportApi(date);
+  } catch (error) {
+    if (error?.status === 404) {
+      if (generateOnMissing) {
+        await ensureDailyReportGenerated(date);
+        return fetchDailyReportApi(date);
+      }
+      return null;
+    }
 
-async function loadDailyReport(date = getTodayKSTDate()) {
+    throw error;
+  }
+}
+
+async function loadDailyReport(date = getTodayKSTDate(), { generateOnMissing = false } = {}) {
   if (!reportCache.has(date)) {
     reportCache.set(
       date,
-      fetchDailyReportApi(date).catch((error) => {
+      fetchDailyReportOrGenerate(date, generateOnMissing).catch((error) => {
         reportCache.delete(date);
         throw error;
       }),
@@ -178,13 +193,10 @@ async function loadDailyReport(date = getTodayKSTDate()) {
   return reportCache.get(date);
 }
 
-async function buildReportView(date = getTodayKSTDate()) {
-  let report;
-  try {
-    report = await loadDailyReport(date);
-  } catch (error) {
-    if (error?.status === 404) return buildPendingReportView(date);
-    throw error;
+async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = false } = {}) {
+  const report = await loadDailyReport(date, { generateOnMissing });
+  if (!report) {
+    return buildPendingReportView(date);
   }
 
   const issues = (report.sections || []).map(normalizeIssue);
@@ -195,11 +207,11 @@ async function buildReportView(date = getTodayKSTDate()) {
     issues,
     summary: {
       date: formatDateLabel(report.date),
-      statusLabel: report.status === 'completed' ? '생성 완료' : report.status,
+      statusLabel: report.status === 'completed' ? '?? ??' : report.status,
       kpis: [],
-      totalLabel: `전체 ${issues.length}건`,
+      totalLabel: `?? ${issues.length}?`,
       categories: [
-        { name: '전체', count: issues.length },
+        { name: '??', count: issues.length },
         ...Array.from(
           issues.reduce((map, issue) => {
             map.set(issue.category, (map.get(issue.category) || 0) + 1);
@@ -211,7 +223,7 @@ async function buildReportView(date = getTodayKSTDate()) {
     },
     archive: [archiveItem],
     today: {
-      label: `${formatDateLabel(report.date)} - 일일 동향 보고서 - 이슈 ${issues.length}건`,
+      label: `${formatDateLabel(report.date)} - ?? ?? ??? - ?? ${issues.length}?`,
       date: report.date,
     },
     detail: {
@@ -230,29 +242,29 @@ async function buildReportView(date = getTodayKSTDate()) {
 }
 
 export async function fetchReportSummary(date) {
-  const view = await buildReportView(date);
+  const view = await buildReportView(date, { generateOnMissing: true });
   return view.summary;
 }
 
 export async function fetchReportIssues(date) {
-  const view = await buildReportView(date);
+  const view = await buildReportView(date, { generateOnMissing: true });
   return view.issues;
 }
 
 export async function fetchReportArchive(date) {
-  const view = await buildReportView(date);
+  const view = await buildReportView(date, { generateOnMissing: true });
   return view.archive;
 }
 
 export async function fetchTodayReport(date) {
-  const view = await buildReportView(date);
+  const view = await buildReportView(date, { generateOnMissing: true });
   return view.today;
 }
 
 export async function fetchReportDetail(date) {
   if (!date) return null;
   try {
-    const view = await buildReportView(date);
+    const view = await buildReportView(date, { generateOnMissing: false });
     return view.detail;
   } catch (error) {
     if (error?.status === 404) return null;
