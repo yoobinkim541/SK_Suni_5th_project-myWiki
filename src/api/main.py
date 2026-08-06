@@ -79,9 +79,9 @@ app.add_middleware(
 app.include_router(wiki_router)
 app.include_router(settings_router)
 app.include_router(notifications_router)
+app.include_router(report_router)
 app.include_router(dashboard_router)
 app.include_router(category_router)
-app.include_router(report_router)
 
 
 TITLE_MAX_LEN = 40

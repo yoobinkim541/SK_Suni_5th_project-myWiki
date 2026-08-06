@@ -54,7 +54,7 @@ def list_published_wiki_pages(
         q = q.eq("page_type", page_type)
     if query:
         q = q.ilike("title", f"%{query}%")
-    res = q.order("published_at", desc=True).limit(limit).offset(offset).execute()
+    res = q.limit(limit).offset(offset).execute()
     return [WikiPageSummary(**row) for row in res.data]
 
 
