@@ -2119,3 +2119,50 @@ a.fn:hover{text-decoration:underline}
 :root[data-theme="dark"] .tree .g {
   color: #5fd4b0;
 }
+
+
+
+
+
+
+* ===== SUNI Logo (기존 "===== SUNI Logo =====" 블록이 있으면 통째로 교체) ===== */
+ 
+/* 펼친 상태: 아이콘+워드마크 전체 로고 */
+.suni-logo {
+  display: block;
+  width: 118px;      /* 사이드바 폭에 맞춰 조정 가능 */
+  height: auto;
+  object-fit: contain;
+}
+ 
+/* 접힌 상태: 삼각형 "my" 마크만 잘라낸 별도 파일 (suni-mark.png) */
+.suni-mark {
+  display: block;
+  height: 26px;      /* 접힌 레일 폭에 맞춰 조정 — 마크가 가로로 넓어서 height 기준으로 잡음 */
+  width: auto;
+  object-fit: contain;
+}
+ 
+/* 펼친 상태 로고 정렬 */
+.nm {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+.nm-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+ 
+/* 접힌 상태: 마크 + 토글 세로 정렬 (마크가 가운데 오게) */
+.side.collapsed .brand {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+ 
+.suni-logo { display:block; height:88px; width:auto; }
+.suni-mark { display:block; height:20px; width:auto; }

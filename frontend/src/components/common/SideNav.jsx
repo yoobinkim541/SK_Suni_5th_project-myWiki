@@ -2,25 +2,27 @@
 // PC 시안의 <aside class="side"> 구조를 그대로 이식.
 // 모바일에서는 이 컴포넌트 대신 MobileNav.jsx를 씁니다.
 //
-// ⚠ 수정사항 2) 사이드바 상단 브랜드(myWiki)도 눌러서 새로고침할 수 있게 했습니다.
+// ⚠ 수정사항 2) 사이드바 상단 브랜드도 눌러서 새로고침할 수 있게 했습니다.
 //   PC에서는 상단바보다 이쪽 로고가 더 눈에 띄어서, 둘 다 같은 동작(App.jsx handleLogoClick)에 걸었습니다.
 //
-// ⚠ 로고 아이콘 추가: "myWiki" 텍스트 앞에 LogoMark(SVG)를 붙였습니다.
+// ⚠ [로고 교체] 기존 LogoMark(SVG) + "myWiki" 텍스트 → mySUNI 로고 이미지로 교체.
+//   - 펼친 상태: suni-logo.png (아이콘+워드마크 전체)
+//   - 접힌 상태: suni-mark.png (왼쪽 삼각형 "my" 마크만 잘라낸 별도 파일)
+//   두 파일 모두 assets/ 에 있습니다. 크기·정렬은 globals.css의 .suni-logo / .suni-mark 에서 조정.
 //
 // ⚠ 접기(collapsed) 모드 + 항목별 아이콘 + 접기 토글 위치:
-//   - "반도체 동향 시스템" 글자는 그대로 위 줄에 두고, 그 아래 줄에 접기 토글을 "myWiki"
-//     글자 왼쪽에 나란히 둡니다(.nm-row). 토글이 brand(로고 클릭=새로고침) 블록 안에
+//   - "반도체 동향 시스템" 글자는 그대로 위 줄에 두고, 그 아래 줄에 접기 토글을 로고
+//     왼쪽에 나란히 둡니다(.nm-row). 토글이 brand(로고 클릭=새로고침) 블록 안에
 //     있으므로, 클릭이 로고 새로고침으로 번지지 않도록 stopPropagation을 건다.
-//   - 접힌 상태에서도 토글이 보여야 다시 펼 수 있어서, 접힌 모드에서는 아이콘 아래에
+//   - 접힌 상태에서도 토글이 보여야 다시 펼 수 있어서, 접힌 모드에서는 마크 아래에
 //     세로로 토글을 둔다.
 //   - 항목 아이콘은 접힌 상태뿐 아니라 펼친 상태에서도 글자 옆에 항상 보입니다
 //     (`.side-label`을 접힌 모드에서만 CSS로 숨김 — globals.css `.side.collapsed a .side-label`).
-//   - 아이콘은 MobileNav.jsx의 하단 탭바(BOTTOM_TABS)와 같은 선 굵기·스타일을 씁니다
-//     (완전히 같은 정의를 재사용하진 않습니다 — 두 파일이 서로의 존재를 모르는 채 독립적으로
-//     유지되는 게 기존 코드베이스 관례라, 아이콘만 대응되게 새로 그렸습니다).
+//   - 아이콘은 MobileNav.jsx의 하단 탭바(BOTTOM_TABS)와 같은 선 굵기·스타일을 씁니다.
 //   - "설정" 아이콘은 원래 쓰던 원+스포크 SVG로(TopBar.jsx .gear 버튼과 동일한 path).
 
-import LogoMark from './LogoMark';
+import SuniLogo from '../../assets/suni-logo.png';
+import SuniMark from '../../assets/suni-mark.png';
 
 const ICONS = {
   dash: (
@@ -84,13 +86,13 @@ export default function SideNav({ activeKey, onNavigate, onLogoClick, collapsed 
   return (
     <aside className={`side${collapsed ? ' collapsed' : ''}`}>
       <div className="brand brand-btn" role="button" tabIndex={0}
-        title="myWiki — 처음 화면으로 새로고침"
+        title="mySUNI — 처음 화면으로 새로고침"
         onClick={onLogoClick}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onLogoClick?.(); } }}
       >
         {collapsed ? (
           <>
-            <LogoMark className="nm-ic" />
+            <img src={SuniMark} alt="mySUNI" className="suni-mark" />
             <ToggleButton collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
           </>
         ) : (
@@ -98,7 +100,9 @@ export default function SideNav({ activeKey, onNavigate, onLogoClick, collapsed 
             <div className="eb">반도체 동향 시스템</div>
             <div className="nm-row">
               <ToggleButton collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
-              <div className="nm"><LogoMark className="nm-ic" />myWiki</div>
+              <div className="nm">
+                <img src={SuniLogo} alt="mySUNI" className="suni-logo" />
+              </div>
             </div>
           </>
         )}
