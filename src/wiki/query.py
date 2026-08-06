@@ -40,6 +40,7 @@ def list_published_wiki_pages(
     workspace_id: str,
     page_type: Optional[PageType] = None,
     query: Optional[str] = None,
+    keyword: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[WikiPageSummary]:
@@ -54,6 +55,12 @@ def list_published_wiki_pages(
         q = q.eq("page_type", page_type)
     if query:
         q = q.ilike("title", f"%{query}%")
+    if keyword:
+        keyword_res = db.table("wiki_page_keywords").select("page_id").eq("keyword", keyword).execute()
+        matching_page_ids = [row["page_id"] for row in keyword_res.data]
+        if not matching_page_ids:
+            return []
+        q = q.in_("id", matching_page_ids)
     res = q.order("published_at", desc=True).limit(limit).offset(offset).execute()
     return [WikiPageSummary(**row) for row in res.data]
 
