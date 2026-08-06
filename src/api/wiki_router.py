@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from . import db
 from .auth import get_current_user
-from .schemas import WikiPageContentOut, WikiPageSummaryOut, WikiVersionSummaryOut
+from .schemas import WikiKeywordCountOut, WikiPageContentOut, WikiPageSummaryOut, WikiVersionSummaryOut
 from ..wiki import query as wiki_query
 from ..wiki.interface import PageType
 
@@ -30,6 +30,7 @@ def _require_workspace(profile: dict) -> str:
 def list_pages(
     page_type: Optional[PageType] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    keyword: Optional[str] = Query(default=None),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
     profile: dict = Depends(get_current_user),
@@ -37,7 +38,7 @@ def list_pages(
     """WikiPage 좌측 트리용 목록. page_type으로 그룹핑해서 렌더링한다."""
     workspace_id = _require_workspace(profile)
     return wiki_query.list_published_wiki_pages(
-        workspace_id, page_type=page_type, query=q, limit=limit, offset=offset
+        workspace_id, page_type=page_type, query=q, keyword=keyword, limit=limit, offset=offset
     )
 
 
@@ -58,3 +59,10 @@ def get_versions(page_id: str, profile: dict = Depends(get_current_user)):
     """WikiPage "변경 이력" 타임라인용."""
     workspace_id = _require_workspace(profile)
     return wiki_query.list_wiki_versions(workspace_id, page_id)
+
+
+@router.get("/keywords", response_model=list[WikiKeywordCountOut])
+def list_keywords(profile: dict = Depends(get_current_user)):
+    """위키 목록 화면의 키워드 필터 칩 바용 — 실제 사용 중인 키워드+건수."""
+    workspace_id = _require_workspace(profile)
+    return wiki_query.list_workspace_keyword_counts(workspace_id)

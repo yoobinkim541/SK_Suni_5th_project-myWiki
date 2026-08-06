@@ -65,6 +65,36 @@ def list_published_wiki_pages(
     return [WikiPageSummary(**row) for row in res.data]
 
 
+def list_workspace_keyword_counts(workspace_id: str) -> list[dict]:
+    """워크스페이스 안에서 published 페이지에 걸린 키워드별 건수. 건수 내림차순."""
+    db = _get_client()
+    published_res = (
+        db.table("wiki_pages")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .eq("status", "published")
+        .execute()
+    )
+    published_ids = {row["id"] for row in published_res.data}
+    if not published_ids:
+        return []
+
+    keywords_res = (
+        db.table("wiki_page_keywords")
+        .select("page_id, keyword")
+        .in_("page_id", list(published_ids))
+        .execute()
+    )
+    counts: dict[str, int] = {}
+    for row in keywords_res.data:
+        counts[row["keyword"]] = counts.get(row["keyword"], 0) + 1
+
+    return [
+        {"keyword": keyword, "count": count}
+        for keyword, count in sorted(counts.items(), key=lambda pair: -pair[1])
+    ]
+
+
 def _enrich_sources(db: Client, workspace_id: str, rows: list[dict]) -> tuple[WikiSource, ...]:
     """
     wiki_page_sources 원본 행에 문서 제목·매체명·게시일·개별 신뢰도를 붙인다.

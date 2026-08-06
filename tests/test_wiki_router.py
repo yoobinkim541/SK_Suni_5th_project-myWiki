@@ -122,3 +122,36 @@ def test_no_workspace_returns_403(client, monkeypatch):
     monkeypatch.setattr(db, "get_default_workspace_id", lambda user_id: None)
     res = client.get("/wiki/pages")
     assert res.status_code == 403
+
+
+def test_list_pages_with_keyword_filter(client, monkeypatch):
+    captured = {}
+
+    def fake_list_pages(workspace_id, **kw):
+        captured.update(kw)
+        return [
+            WikiPageSummary(
+                id=PAGE_ID, slug="hbm4", title="HBM4", page_type="technology",
+                status="published", parent_page_id=None, published_at="2026-07-24T00:00:00Z",
+            )
+        ]
+
+    monkeypatch.setattr(wiki_query, "list_published_wiki_pages", fake_list_pages)
+
+    res = client.get("/wiki/pages?keyword=HBM")
+
+    assert res.status_code == 200
+    assert captured["keyword"] == "HBM"
+    assert res.json()[0]["slug"] == "hbm4"
+
+
+def test_list_keywords(client, monkeypatch):
+    monkeypatch.setattr(
+        wiki_query, "list_workspace_keyword_counts",
+        lambda workspace_id: [{"keyword": "HBM", "count": 12}, {"keyword": "수출통제", "count": 5}],
+    )
+
+    res = client.get("/wiki/keywords")
+
+    assert res.status_code == 200
+    assert res.json() == [{"keyword": "HBM", "count": 12}, {"keyword": "수출통제", "count": 5}]
