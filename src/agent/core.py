@@ -28,7 +28,10 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MODEL_NAME = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
 # 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
 FALLBACK_MODEL_NAME = os.getenv("OPENROUTER_FALLBACK_MODEL", "").strip() or "deepseek/deepseek-v4-pro"
-MAX_TOOL_ROUNDS = 6  # 무한루프 방지
+MAX_TOOL_ROUNDS = 10  # 무한루프 방지 — 실사용 로그에서 6일 때 답변의 17%가 라운드 초과로
+# 근거 없음 처리됐다(2026-08-05, chat_messages 66건 중 11건). search_wiki_pages 도입으로
+# 첫 라운드부터 관련도 순 후보를 받게 됐지만, 복합 질문의 교차검증(여러 페이지 읽기)엔
+# 여전히 여유가 필요해 상한을 올린다.
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +39,10 @@ SYSTEM_PROMPT = """\
 너는 myWiki의 답변 Agent다. 규칙:
 1. 반드시 read_wiki_page로 실제 읽은 위키 문서 내용만 근거로 답변해라.
    너의 사전 지식이나 추측으로 빈틈을 채우지 마라.
-2. list_wiki_topics로 먼저 관련 있어 보이는 문서를 찾고, read_wiki_page로 내용을 확인해라.
-   필요하면 여러 문서를 읽어도 된다.
+2. 관련 문서를 찾을 때는 search_wiki_pages를 먼저 써라 — 질문의 핵심 키워드로 제목뿐
+   아니라 본문까지 훑어 관련도 순으로 찾아준다. list_wiki_topics(전체 목록)는 검색어로
+   뭘 넣어야 할지 모를 때 훑어보는 용도로만 보조적으로 써라. 찾은 slug는 read_wiki_page로
+   내용을 확인해라. 필요하면 여러 문서를 읽어도 된다.
 3. 답을 뒷받침할 근거를 찾았으면 submit_answer를 호출해라. 문장마다 어떤 근거(citations)를
    썼는지 반드시 포함하고, citations의 document_version_id는 read_wiki_page 결과에서
    본 sources 중에서만 골라라 (지어내지 마라). 답변 본문에 쓰는 근거 번호 [N]은 반드시
@@ -67,6 +72,24 @@ TOOLS = [
             "name": "list_wiki_topics",
             "description": "현재 workspace에 축적된 위키 문서 목록(슬러그·제목·유형)을 반환한다.",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_wiki_pages",
+            "description": (
+                "질문 키워드로 위키 문서를 제목+본문 관련도 순으로 찾는다. "
+                "list_wiki_topics보다 이 도구를 먼저 써라 — 제목 문자열이 질문과 "
+                "겹치지 않아도 본문 내용으로 찾아준다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "질문에서 뽑은 검색 키워드"},
+                },
+                "required": ["query"],
+            },
         },
     },
     {
@@ -211,6 +234,11 @@ class WikiAgent:
                 if name == "list_wiki_topics":
                     topics = self.wiki_tools.list_wiki_topics()
                     output = [t.__dict__ for t in topics]
+                    messages.append(self._tool_result(tool_call.id, output))
+
+                elif name == "search_wiki_pages":
+                    hits = self.wiki_tools.search_wiki_pages(args["query"])
+                    output = [h.__dict__ for h in hits]
                     messages.append(self._tool_result(tool_call.id, output))
 
                 elif name == "read_wiki_page":

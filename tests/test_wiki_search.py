@@ -124,6 +124,7 @@ def test_search_wiki_contexts_returns_only_latest_current_version_per_page() -> 
                 {
                     "id": "page-1",
                     "workspace_id": "ws-1",
+                    "slug": "hbm-roadmap",
                     "title": "HBM roadmap",
                     "status": "published",
                     "current_version_id": "ver-1b",
@@ -169,6 +170,7 @@ def test_search_wiki_contexts_returns_only_latest_current_version_per_page() -> 
     assert len(results) == 1
     assert results[0].wiki_page_id == "page-1"
     assert results[0].wiki_version_id == "ver-1b"
+    assert results[0].slug == "hbm-roadmap"
     assert results[0].content == "HBM3E and SK hynix roadmap details"
     assert results[0].source_document_version_ids == ["doc-ver-1"]
 
@@ -180,6 +182,7 @@ def test_search_wiki_contexts_is_workspace_scoped() -> None:
                 {
                     "id": "page-1",
                     "workspace_id": "ws-1",
+                    "slug": "hbm-update-ws1",
                     "title": "HBM update",
                     "status": "published",
                     "current_version_id": "ver-1",
@@ -188,6 +191,7 @@ def test_search_wiki_contexts_is_workspace_scoped() -> None:
                 {
                     "id": "page-2",
                     "workspace_id": "ws-2",
+                    "slug": "hbm-update-ws2",
                     "title": "HBM update",
                     "status": "published",
                     "current_version_id": "ver-2",
@@ -233,6 +237,7 @@ def test_search_wiki_contexts_orders_by_relevance_then_recency_then_id() -> None
                 {
                     "id": "page-a",
                     "workspace_id": "ws-1",
+                    "slug": "hbm3e-demand-outlook",
                     "title": "HBM3E demand outlook",
                     "status": "published",
                     "current_version_id": "ver-a",
@@ -241,6 +246,7 @@ def test_search_wiki_contexts_orders_by_relevance_then_recency_then_id() -> None
                 {
                     "id": "page-b",
                     "workspace_id": "ws-1",
+                    "slug": "hbm3e",
                     "title": "HBM3E",
                     "status": "published",
                     "current_version_id": "ver-b",
@@ -249,6 +255,7 @@ def test_search_wiki_contexts_orders_by_relevance_then_recency_then_id() -> None
                 {
                     "id": "page-c",
                     "workspace_id": "ws-1",
+                    "slug": "unrelated-memory",
                     "title": "Unrelated memory",
                     "status": "published",
                     "current_version_id": "ver-c",
@@ -319,6 +326,7 @@ def test_search_wiki_contexts_applies_limit() -> None:
                 {
                     "id": f"page-{index}",
                     "workspace_id": "ws-1",
+                    "slug": f"hbm-page-{index}",
                     "title": f"HBM page {index}",
                     "status": "published",
                     "current_version_id": f"ver-{index}",
@@ -356,6 +364,7 @@ def test_search_wiki_contexts_keeps_result_order_deterministic_when_scores_tie()
                 {
                     "id": "page-b",
                     "workspace_id": "ws-1",
+                    "slug": "hbm-overview-b",
                     "title": "HBM overview",
                     "status": "published",
                     "current_version_id": "ver-b",
@@ -364,6 +373,7 @@ def test_search_wiki_contexts_keeps_result_order_deterministic_when_scores_tie()
                 {
                     "id": "page-a",
                     "workspace_id": "ws-1",
+                    "slug": "hbm-overview-a",
                     "title": "HBM overview",
                     "status": "published",
                     "current_version_id": "ver-a",
@@ -397,6 +407,7 @@ def test_search_wiki_contexts_avoids_n_plus_one_db_queries() -> None:
                 {
                     "id": "page-1",
                     "workspace_id": "ws-1",
+                    "slug": "hbm",
                     "title": "HBM",
                     "status": "published",
                     "current_version_id": "ver-1",
@@ -405,6 +416,7 @@ def test_search_wiki_contexts_avoids_n_plus_one_db_queries() -> None:
                 {
                     "id": "page-2",
                     "workspace_id": "ws-1",
+                    "slug": "hbm-roadmap-2",
                     "title": "HBM roadmap",
                     "status": "published",
                     "current_version_id": "ver-2",

@@ -64,6 +64,7 @@ class WikiSearchResult(BaseModel):
     wiki_page_id: str
     wiki_version_id: str
     workspace_id: str
+    slug: str
     title: str
     content: str
     score: float = Field(ge=0.0, le=1.0)
@@ -74,6 +75,7 @@ class WikiSearchResult(BaseModel):
         "wiki_page_id",
         "wiki_version_id",
         "workspace_id",
+        "slug",
         "title",
         "content",
         mode="before",
