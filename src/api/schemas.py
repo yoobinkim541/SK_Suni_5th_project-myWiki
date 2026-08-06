@@ -4,7 +4,7 @@ from datetime import date as dt_date
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class CreateSessionRequest(BaseModel):
@@ -283,83 +283,3 @@ class PushSubscriptionKeys(BaseModel):
 class SubscribeRequest(BaseModel):
     endpoint: str
     keys: PushSubscriptionKeys
-
-# ---------------------------------------------------------------------------
-# Daily report - GET/POST /reports/daily
-# ---------------------------------------------------------------------------
-
-class DailyReportCitationOut(BaseModel):
-    id: str
-    section_id: str
-    document_version_id: str
-    source_start_line: Optional[int] = None
-    source_end_line: Optional[int] = None
-    quoted_text: Optional[str] = None
-    relevance_score: Optional[float] = None
-    citation_order: Optional[int] = None
-    document_title: Optional[str] = None
-    source_url: Optional[str] = None
-    source_name: Optional[str] = None
-    published_at: Optional[str] = None
-
-
-class DailyReportSectionOut(BaseModel):
-    id: str
-    report_id: str
-    issue_key: str
-    section_order: int
-    title: str
-    content: dict | str | None = None
-    status: str
-    model_name: Optional[str] = None
-    prompt_version: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    citations: list[DailyReportCitationOut] = []
-
-
-class DailyReportOut(BaseModel):
-    report_id: str
-    workspace_id: str
-    report_key: str
-    version: int
-    title: str
-    report_type: str
-    status: str
-    date: str
-    created_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    sections: list[DailyReportSectionOut] = []
-
-
-class DailyReportGenerateRequest(BaseModel):
-    date: dt_date
-    max_sections: int = Field(default=15, ge=1)
-    language: str = "ko"
-    formats: Optional[list[str]] = None
-
-
-class DailyReportArtifactOut(BaseModel):
-    artifact_id: str
-    report_id: str
-    artifact_type: str
-    object_key: str
-    version: int
-    mime_type: Optional[str] = None
-    file_size: Optional[int] = None
-    created_at: Optional[str] = None
-
-
-class DailyReportGenerateResponse(BaseModel):
-    report_id: str
-    workspace_id: str
-    report_key: str
-    version: int
-    title: Optional[str] = None
-    report_type: str
-    status: str
-    date: str
-    artifact_id: str
-    artifact_type: str
-    artifact_object_key: str
-    artifacts: list[DailyReportArtifactOut]
