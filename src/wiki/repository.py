@@ -40,7 +40,7 @@ def search_wiki_contexts(
     try:
         page_rows = (
             db.table("wiki_pages")
-            .select("id, workspace_id, title, status, current_version_id, updated_at")
+            .select("id, workspace_id, slug, title, status, current_version_id, updated_at")
             .eq("workspace_id", request.workspace_id)
             .eq("status", "published")
             .order("updated_at", desc=True)
@@ -113,6 +113,7 @@ def search_wiki_contexts(
                 wiki_page_id=page_id,
                 wiki_version_id=str(version["id"]),
                 workspace_id=str(page_row["workspace_id"]),
+                slug=str(page_row["slug"]),
                 title=str(page_row["title"]),
                 content=content,
                 score=score_card["score"],
