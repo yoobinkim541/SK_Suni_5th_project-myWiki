@@ -247,6 +247,16 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
           detail={detail ?? null}
           loading={detail === undefined}
           highlightId={open.highlightId}
+          formats={FORMATS}
+          onDownload={(issue, format) =>
+            handleDownload(
+              open.date,
+              format.key,
+              issue
+                ? `${detail?.label ?? open.date} ${format.label}${format.ext}`
+                : `전체 ${format.label}${format.ext}`,
+            )
+          }
           onSelectWiki={onSelectWiki}
           onClose={() => setOpen(null)}
         />

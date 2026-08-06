@@ -164,11 +164,28 @@ function buildPendingReportView(date = getTodayKSTDate()) {
 }
 
 
-async function loadDailyReport(date = getTodayKSTDate()) {
+async function fetchDailyReportOrGenerate(date, generateOnMissing = false) {
+  try {
+    return await fetchDailyReportApi(date);
+  } catch (error) {
+    if (error?.status !== 404) {
+      throw error;
+    }
+
+    if (!generateOnMissing) {
+      return null;
+    }
+
+    await ensureDailyReportGenerated(date);
+    return fetchDailyReportApi(date);
+  }
+}
+
+async function loadDailyReport(date = getTodayKSTDate(), { generateOnMissing = false } = {}) {
   if (!reportCache.has(date)) {
     reportCache.set(
       date,
-      fetchDailyReportApi(date).catch((error) => {
+      fetchDailyReportOrGenerate(date, generateOnMissing).catch((error) => {
         reportCache.delete(date);
         throw error;
       }),
@@ -178,13 +195,10 @@ async function loadDailyReport(date = getTodayKSTDate()) {
   return reportCache.get(date);
 }
 
-async function buildReportView(date = getTodayKSTDate()) {
-  let report;
-  try {
-    report = await loadDailyReport(date);
-  } catch (error) {
-    if (error?.status === 404) return buildPendingReportView(date);
-    throw error;
+async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = false } = {}) {
+  const report = await loadDailyReport(date, { generateOnMissing });
+  if (!report) {
+    return buildPendingReportView(date);
   }
 
   const issues = (report.sections || []).map(normalizeIssue);
@@ -230,29 +244,29 @@ async function buildReportView(date = getTodayKSTDate()) {
 }
 
 export async function fetchReportSummary(date) {
-  const view = await buildReportView(date);
+  const view = await buildReportView(date, { generateOnMissing: true });
   return view.summary;
 }
 
 export async function fetchReportIssues(date) {
-  const view = await buildReportView(date);
+  const view = await buildReportView(date, { generateOnMissing: true });
   return view.issues;
 }
 
 export async function fetchReportArchive(date) {
-  const view = await buildReportView(date);
+  const view = await buildReportView(date, { generateOnMissing: true });
   return view.archive;
 }
 
 export async function fetchTodayReport(date) {
-  const view = await buildReportView(date);
+  const view = await buildReportView(date, { generateOnMissing: true });
   return view.today;
 }
 
 export async function fetchReportDetail(date) {
   if (!date) return null;
   try {
-    const view = await buildReportView(date);
+    const view = await buildReportView(date, { generateOnMissing: false });
     return view.detail;
   } catch (error) {
     if (error?.status === 404) return null;
