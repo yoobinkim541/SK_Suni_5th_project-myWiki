@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.analysis.models import Category
-from src.report.models import ReportCitationDraft, ReportSectionDraft
+from src.report.models import ReportCandidate, ReportCitationDraft, ReportSectionDraft
 from src.wiki.generation_models import TopicPageCandidate, TopLevelTopicPage
 from src.wiki.generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_prompt
 
@@ -66,3 +68,30 @@ def test_user_prompt_leaves_evidence_blank_when_unmapped():
     )
     assert "document_version_id=doc-1 citation_order=1: " in prompt
     assert "관련 없음" not in prompt
+
+
+def test_system_prompt_instructs_source_section_to_use_title_source_date_not_raw_id():
+    assert "매체명" in WIKI_TOPIC_SYSTEM_PROMPT
+    assert "document_version_id 문자열을" in WIKI_TOPIC_SYSTEM_PROMPT
+    assert "그대로 노출하지 마십시오" in WIKI_TOPIC_SYSTEM_PROMPT
+
+
+def test_user_prompt_surfaces_citation_attribution_for_llm():
+    candidate = ReportCandidate(
+        analysis_result_id="analysis-1", workspace_id="ws-1", document_id="doc-1",
+        document_version_id="doc-1", category=Category.PRODUCT_TECHNOLOGY,
+        title="중국 턱밑 추격에…삼성·SK하이닉스, HBM·차세대 기술 개발 '전력투구' - 뉴시스",
+        source_name="Google RSS - SK하이닉스",
+        published_at=datetime(2026, 8, 2, 7, 23, 1, tzinfo=timezone.utc),
+    )
+    prompt = build_wiki_topic_user_prompt(
+        section=_section(evidence_text=None),
+        candidates=[],
+        top_level_pages=[],
+        evidence_texts={"doc-1": "HBM4 수요가 급증했다"},
+        citation_attribution={"doc-1": candidate},
+    )
+    assert (
+        "중국 턱밑 추격에…삼성·SK하이닉스, HBM·차세대 기술 개발 '전력투구' - 뉴시스"
+        " · Google RSS - SK하이닉스 · 2026.08.02" in prompt
+    )

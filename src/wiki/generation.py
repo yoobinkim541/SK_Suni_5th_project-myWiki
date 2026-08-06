@@ -11,7 +11,7 @@ from ..analysis.classifier import create_json_completion, get_openrouter_setting
 from ..report.candidate_provider import get_recently_analyzed_candidates
 from ..report.composer import compose_report_sections
 from ..report.grouper import group_report_candidates
-from ..report.models import EnrichedIssueGroup, ReportSectionDraft, WikiContext
+from ..report.models import EnrichedIssueGroup, ReportCandidate, ReportSectionDraft, WikiContext
 from ..report.selector import select_report_candidates
 from ..report.wiki_context import enrich_issue_groups
 from .generation_models import TopicPageCandidate, TopLevelTopicPage, WikiDraftGenerationResult, WikiPageIdentity, WikiTopicLLMResult
@@ -75,9 +75,41 @@ def _resolve_evidence_text(
     return fallback or ""
 
 
+def build_citation_attribution_map(
+    enriched_groups: list[EnrichedIssueGroup],
+) -> dict[str, dict[str, ReportCandidate]]:
+    """issue_key -> {document_version_id: 원문 후보} 맵을 만든다.
+
+    `_build_issue_page_markdown`의 "## 출처" 절에서 document_version_id를 그대로
+    노출하는 대신 매체명·게시일로 사람이 읽을 수 있게 표시하는 데 쓴다.
+    """
+    mapping: dict[str, dict[str, ReportCandidate]] = {}
+    for group in enriched_groups:
+        by_version: dict[str, ReportCandidate] = {}
+        for candidate in group.issue_group.candidates:
+            by_version.setdefault(candidate.document_version_id, candidate)
+        mapping[group.issue_group.issue_key] = by_version
+    return mapping
+
+
+def _format_citation_date(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return value.strftime("%Y.%m.%d")
+
+
+def _format_citation_attribution(candidate: ReportCandidate | None) -> str:
+    """WikiPage.jsx 사이드바 "근거 출처"와 같은 표기(매체명 · 날짜)로 맞춘다."""
+    if candidate is None:
+        return ""
+    parts = [part for part in (candidate.source_name, _format_citation_date(candidate.published_at)) if part]
+    return f" · {' · '.join(parts)}" if parts else ""
+
+
 def _build_issue_page_markdown(
     section: ReportSectionDraft,
     evidence_texts: dict[str, str] | None = None,
+    citation_attribution: dict[str, ReportCandidate] | None = None,
 ) -> str:
     lines = [f"# {section.title}", "", "## 현재 상황", section.current_summary or "", ""]
     lines.append("## 핵심 사실")
@@ -94,7 +126,8 @@ def _build_issue_page_markdown(
         evidence = _resolve_evidence_text(
             evidence_texts, citation.document_version_id, citation.evidence_text,
         )
-        lines.append(f"- {evidence} (document_version_id={citation.document_version_id})")
+        candidate = (citation_attribution or {}).get(citation.document_version_id)
+        lines.append(f"- {evidence}{_format_citation_attribution(candidate)}")
     return "\n".join(lines)
 
 
@@ -123,6 +156,7 @@ def _generate_issue_page(
     requested_by: str | None,
     parent_page_id: str | None = None,
     evidence_texts: dict[str, str] | None = None,
+    citation_attribution: dict[str, ReportCandidate] | None = None,
     supabase: Client | None = None,
 ) -> tuple[str, str]:
     matched = find_matching_issue_page(
@@ -158,7 +192,7 @@ def _generate_issue_page(
         title=draft_title,
         page_type=draft_page_type,
         parent_page_id=draft_parent_page_id,
-        markdown=_build_issue_page_markdown(section, evidence_texts),
+        markdown=_build_issue_page_markdown(section, evidence_texts, citation_attribution),
         sources=_build_issue_page_sources(section, evidence_texts),
         change_summary=(
             "리포트 파이프라인에서 기존 이슈 페이지 갱신" if matched is not None else "리포트 파이프라인에서 자동 생성"
@@ -211,6 +245,7 @@ def _generate_topic_page(
     workspace_id: str,
     requested_by: str | None,
     evidence_texts: dict[str, str] | None = None,
+    citation_attribution: dict[str, ReportCandidate] | None = None,
     supabase: Client | None = None,
     llm_client: WikiTopicLLMClient | None = None,
 ) -> tuple[str, str | None, str | None]:
@@ -225,6 +260,7 @@ def _generate_topic_page(
         candidates=candidates,
         top_level_pages=top_level_pages,
         evidence_texts=evidence_texts,
+        citation_attribution=citation_attribution,
     )
     if llm_client is not None:
         response_text = llm_client(WIKI_TOPIC_SYSTEM_PROMPT, user_prompt, settings.model)
@@ -358,6 +394,7 @@ def generate_wiki_drafts_for_sections(
         group.issue_group.issue_key: group.wiki_contexts for group in enriched_groups
     }
     evidence_texts_by_issue_key = build_evidence_text_map(enriched_groups)
+    citation_attribution_by_issue_key = build_citation_attribution_map(enriched_groups)
 
     # 주제 페이지를 먼저 정해야 이슈 페이지의 parent_page_id로 연결할 수 있다.
     # (upsert_wiki_page는 ignore_duplicates=True라 기존 페이지의 parent_page_id를
@@ -366,6 +403,7 @@ def generate_wiki_drafts_for_sections(
     for section in sections:
         wiki_contexts = wiki_contexts_by_issue_key.get(section.issue_key, [])
         evidence_texts = evidence_texts_by_issue_key.get(section.issue_key, {})
+        citation_attribution = citation_attribution_by_issue_key.get(section.issue_key, {})
 
         topic_action: str = "skip"
         topic_page_id: str | None = None
@@ -378,6 +416,7 @@ def generate_wiki_drafts_for_sections(
                 workspace_id=workspace_id,
                 requested_by=requested_by,
                 evidence_texts=evidence_texts,
+                citation_attribution=citation_attribution,
                 supabase=supabase,
                 llm_client=llm_client,
             )
@@ -393,6 +432,7 @@ def generate_wiki_drafts_for_sections(
                 requested_by=requested_by,
                 parent_page_id=topic_page_id,
                 evidence_texts=evidence_texts,
+                citation_attribution=citation_attribution,
                 supabase=supabase,
             )
         except Exception as exc:  # noqa: BLE001

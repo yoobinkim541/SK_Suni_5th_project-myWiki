@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from ..report.models import ReportSectionDraft
+from datetime import datetime
+
+from ..report.models import ReportCandidate, ReportSectionDraft
 from .generation_models import TopicPageCandidate, TopLevelTopicPage
 
 WIKI_TOPIC_SYSTEM_PROMPT = """당신은 SK하이닉스 반도체 산업 위키를 관리하는 편집자입니다.
@@ -19,6 +21,11 @@ WIKI_TOPIC_SYSTEM_PROMPT = """당신은 SK하이닉스 반도체 산업 위키�
 - 뒷받침할 근거가 부족하면 action을 "skip"으로 반환하고 markdown/claims를 비우십시오.
 - 기존 본문의 문단을 삭제하지 말고, 새 근거를 통합해 재작성하되 기존 사실관계는 보존하십시오.
 - markdown은 반드시 아래 섹션 순서를 따르십시오: 현재 상황 -> 수급 구조 -> 종합 판단 -> 변경 이력 -> 관련 문서 -> 출처.
+- "출처" 섹션은 각 근거 문서마다 "{기사 제목} · {매체명} · {날짜}" 형식으로 한 줄씩
+  쓰십시오(예: "삼성전자, HBM4 양산 돌입 - 전자신문 · Google RSS - 삼성전자 · 2026.07.10").
+  아래 [근거 문서] 목록에 제공된 제목·매체명·날짜를 그대로 쓰고, document_version_id는
+  claims 배열을 채우는 데만 쓰십시오 — markdown 본문에 document_version_id 문자열을
+  그대로 노출하지 마십시오.
 - "변경 이력" 섹션에는 기존 이력을 지우지 말고 이번 갱신 사유를 한 줄 추가하십시오.
 - 새 주제를 만들 때는 [기존 최상위 주제 목록] 중 하나를 parent_page_id로 고르거나,
   어디에도 속하지 않으면 parent_page_id를 null로 반환해 최상위 주제로 만드십시오.
@@ -43,17 +50,38 @@ JSON 출력 형식:
 }"""
 
 
+def _format_source_date(published_at) -> str:
+    if published_at is None:
+        return ""
+    return published_at.strftime("%Y.%m.%d")
+
+
+def _source_attribution(candidate: ReportCandidate | None) -> str:
+    if candidate is None:
+        return "(제목·매체 정보 없음)"
+    parts = [
+        part
+        for part in (candidate.title, candidate.source_name, _format_source_date(candidate.published_at))
+        if part
+    ]
+    return " · ".join(parts) if parts else "(제목·매체 정보 없음)"
+
+
 def build_wiki_topic_user_prompt(
     *,
     section: ReportSectionDraft,
     candidates: list[TopicPageCandidate],
     top_level_pages: list[TopLevelTopicPage],
     evidence_texts: dict[str, str] | None = None,
+    citation_attribution: dict[str, ReportCandidate] | None = None,
 ) -> str:
     """evidence_texts: {document_version_id: 근거 본문} — 원문 후보(ReportCandidate)에서 만든 맵.
 
     ReportCitationDraft.evidence_text는 현재 composer가 채우지 않으므로, 이 맵이
     [근거 문서] 블록의 실제 근거 텍스트 출처가 된다.
+
+    citation_attribution: {document_version_id: ReportCandidate} — "출처" 섹션을
+    사람이 읽을 수 있게(제목·매체명·날짜) 쓸 수 있도록 LLM에 보여주는 맵.
     """
     lines: list[str] = [
         "[이슈 정보]",
@@ -69,13 +97,15 @@ def build_wiki_topic_user_prompt(
     lines.extend(f"- {watch_point}" for watch_point in section.watch_points)
 
     lines.append("")
-    lines.append("[근거 문서]")
+    lines.append("[근거 문서] (document_version_id는 claims 매칭에만 쓰고, markdown 출처 절엔 절대"
+                 " 쓰지 마십시오 — 출처 절엔 제목·매체명·날짜를 쓰십시오)")
     if section.news_citations:
         for citation in section.news_citations:
             evidence = (evidence_texts or {}).get(citation.document_version_id) or citation.evidence_text or ""
+            candidate = (citation_attribution or {}).get(citation.document_version_id)
             lines.append(
                 f"- document_version_id={citation.document_version_id} citation_order={citation.citation_order}: "
-                f"{evidence}"
+                f"{evidence} [제목·매체명·날짜: {_source_attribution(candidate)}]"
             )
     else:
         lines.append("없음")
