@@ -184,7 +184,9 @@ def _render_section_sources(lines: list[str], section: ReportSectionDraft) -> No
         lines.append("")
         for citation in sorted(section.news_citations, key=lambda item: item.citation_order):
             label = f"N{citation.citation_order}"
-            body = _escape_inline_text(citation.document_version_id)
+            body = _escape_inline_text(_format_news_attribution(
+                title=citation.document_title, source_name=citation.source_name, published_at=citation.published_at,
+            ))
             lines.append(f"- [{label}] {body}")
         lines.append("")
 
@@ -193,7 +195,7 @@ def _render_section_sources(lines: list[str], section: ReportSectionDraft) -> No
         lines.append("")
         for reference in sorted(section.wiki_references, key=lambda item: item.reference_order):
             label = f"W{reference.reference_order}"
-            body = _escape_inline_text(reference.wiki_page_id)
+            body = _escape_inline_text(reference.wiki_title or "출처 정보 확인 안 됨")
             lines.append(f"- [{label}] {body}")
         lines.append("")
 
@@ -260,7 +262,10 @@ def _render_all_sources(lines: list[str], report: GeneratedReport) -> None:
         lines.append("")
     else:
         for index, source in enumerate(report.news_sources, start=1):
-            lines.append(f"{index}. {_escape_inline_text(source.document_version_id)}")
+            body = _format_news_attribution(
+                title=source.document_title, source_name=source.source_name, published_at=source.published_at,
+            )
+            lines.append(f"{index}. {_escape_inline_text(body)}")
         lines.append("")
 
     lines.append("### 참고 Wiki")
@@ -270,8 +275,24 @@ def _render_all_sources(lines: list[str], report: GeneratedReport) -> None:
         lines.append("")
         return
     for index, source in enumerate(report.wiki_sources, start=1):
-        lines.append(f"{index}. {_escape_inline_text(source.wiki_page_id)}")
+        body = source.wiki_title or "출처 정보 확인 안 됨"
+        lines.append(f"{index}. {_escape_inline_text(body)}")
     lines.append("")
+
+
+def _format_source_date(published_at: str | None) -> str:
+    if not published_at:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return parsed.strftime("%Y.%m.%d")
+
+
+def _format_news_attribution(*, title: str | None, source_name: str | None, published_at: str | None) -> str:
+    parts = [part for part in (title, source_name, _format_source_date(published_at)) if part]
+    return " · ".join(parts) if parts else "출처 정보 확인 안 됨"
 
 
 def _render_bullet_list(values: Sequence[str]) -> list[str]:

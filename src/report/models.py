@@ -189,6 +189,12 @@ class ReportCitationDraft(BaseModel):
     source_start_line: int | None = None
     source_end_line: int | None = None
     relevance_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    # 표시용 메타데이터 — composer.py가 ComposerNewsSource(ReportCandidate 유래)에서
+    # 채워 넣는다. 렌더러(markdown_renderer.py/pdf_renderer.py)가 document_version_id
+    # 원문을 그대로 노출하지 않고 이 필드로 "제목 · 매체명 · 날짜"를 표시하는 데 쓴다.
+    document_title: str | None = None
+    source_name: str | None = None
+    published_at: str | None = None
 
     @field_validator("analysis_result_id", "document_version_id")
     @classmethod
@@ -197,7 +203,7 @@ class ReportCitationDraft(BaseModel):
             raise ValueError("citation identifiers must not be empty.")
         return value.strip()
 
-    @field_validator("citation_role", "evidence_text", mode="before")
+    @field_validator("citation_role", "evidence_text", "document_title", "source_name", "published_at", mode="before")
     @classmethod
     def normalize_optional_text(cls, value: object) -> str | None:
         if value is None:
@@ -213,6 +219,9 @@ class ReportWikiReferenceDraft(BaseModel):
     reference_role: str | None = None
     similarity_score: float | None = Field(default=None, ge=0.0, le=1.0)
     wiki_chunk_id: str | None = None
+    # 표시용 — composer.py가 ComposerWikiSource(WikiContext 유래)에서 채워 넣는다.
+    # 렌더러가 wiki_page_id 원문 대신 이 제목을 표시하는 데 쓴다.
+    wiki_title: str | None = None
 
     @field_validator("wiki_page_id")
     @classmethod
@@ -221,7 +230,7 @@ class ReportWikiReferenceDraft(BaseModel):
             raise ValueError("wiki_page_id must not be empty.")
         return value.strip()
 
-    @field_validator("wiki_version_id", "reference_role", "wiki_chunk_id", mode="before")
+    @field_validator("wiki_version_id", "reference_role", "wiki_chunk_id", "wiki_title", mode="before")
     @classmethod
     def normalize_optional_text(cls, value: object) -> str | None:
         if value is None:
@@ -336,6 +345,9 @@ class ReportOverallImplications(BaseModel):
 
 class ReportNewsSource(BaseModel):
     document_version_id: str
+    document_title: str | None = None
+    source_name: str | None = None
+    published_at: str | None = None
 
     @field_validator("document_version_id")
     @classmethod
@@ -344,10 +356,19 @@ class ReportNewsSource(BaseModel):
             raise ValueError("document_version_id must not be empty.")
         return value.strip()
 
+    @field_validator("document_title", "source_name", "published_at", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
 
 class ReportWikiSource(BaseModel):
     wiki_page_id: str
     wiki_version_id: str
+    wiki_title: str | None = None
 
     @field_validator("wiki_page_id", "wiki_version_id")
     @classmethod
@@ -355,6 +376,14 @@ class ReportWikiSource(BaseModel):
         if not value.strip():
             raise ValueError("wiki source identifiers must not be empty.")
         return value.strip()
+
+    @field_validator("wiki_title", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
 
 
 class GeneratedReport(BaseModel):

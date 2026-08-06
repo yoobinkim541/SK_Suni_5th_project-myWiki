@@ -144,6 +144,32 @@ def test_compose_report_section_maps_valid_output_to_section_draft() -> None:
     assert section.time_horizon == TimeHorizon.MID_TERM
     assert section.news_citations[0].document_version_id == "doc-ver-a"
     assert section.wiki_references[0].wiki_version_id == "wiki-ver-1"
+    # 렌더러가 document_version_id/wiki_page_id 원문을 그대로 노출하지 않도록,
+    # 표시용 메타데이터(제목·매체명·게시일)가 여기서부터 채워져 있어야 한다.
+    assert section.news_citations[0].document_title == "HBM3E roadmap"
+    assert section.news_citations[0].source_name == "source"
+    assert section.news_citations[0].published_at == "2026-08-02T01:00:00+00:00"
+    assert section.wiki_references[0].wiki_title == "HBM history"
+
+
+def test_build_report_citation_drafts_carries_display_attribution_from_candidate() -> None:
+    composer_input = build_composer_input(make_group(), config=ReportComposerConfig())
+    payload = GeneratedReportSectionPayload.model_validate(json.loads(valid_response()))
+
+    drafts = build_report_citation_drafts(composer_input=composer_input, payload=payload)
+
+    assert drafts[0].document_title == "HBM3E roadmap"
+    assert drafts[0].source_name == "source"
+    assert drafts[0].published_at == "2026-08-02T01:00:00+00:00"
+
+
+def test_build_report_wiki_reference_drafts_carries_wiki_title() -> None:
+    composer_input = build_composer_input(make_group(), config=ReportComposerConfig())
+    payload = GeneratedReportSectionPayload.model_validate(json.loads(valid_response()))
+
+    drafts = build_report_wiki_reference_drafts(composer_input=composer_input, payload=payload)
+
+    assert drafts[0].wiki_title == "HBM history"
 
 
 def test_compose_report_section_allows_empty_historical_context_when_no_wiki() -> None:

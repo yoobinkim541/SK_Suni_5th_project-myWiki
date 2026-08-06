@@ -114,6 +114,46 @@ def test_assemble_generated_report_builds_expected_structure() -> None:
     assert report.wiki_sources[0].wiki_version_id == "wiki-issue-1"
 
 
+def test_assemble_generated_report_carries_display_attribution_into_aggregate_sources() -> None:
+    """report.news_sources/wiki_sources는 렌더러가 document_version_id/wiki_page_id 원문을
+    노출하지 않고 제목·매체명·날짜를 쓸 수 있도록 section의 표시용 메타데이터를 그대로 옮겨야 한다."""
+    section = ReportSectionDraft(
+        issue_key="issue-1",
+        representative_analysis_result_id="analysis-issue-1",
+        category=Category.PRODUCT_TECHNOLOGY,
+        importance_score=90,
+        impact_direction=ImpactDirection.OPPORTUNITY,
+        time_horizon=TimeHorizon.MID_TERM,
+        title="title-issue-1",
+        current_summary="summary-issue-1",
+        news_citations=[
+            ReportCitationDraft(
+                analysis_result_id="analysis-issue-1",
+                document_version_id="doc-issue-1",
+                citation_order=1,
+                document_title="기사 제목 - 뉴시스",
+                source_name="Google RSS - SK하이닉스",
+                published_at="2026-08-02T07:23:01+00:00",
+            )
+        ],
+        wiki_references=[
+            ReportWikiReferenceDraft(
+                wiki_page_id="page-issue-1",
+                wiki_version_id="wiki-issue-1",
+                reference_order=1,
+                wiki_title="위키 문서 제목",
+            )
+        ],
+    )
+
+    report = assemble_generated_report(request=make_request(), sections=[section])
+
+    assert report.news_sources[0].document_title == "기사 제목 - 뉴시스"
+    assert report.news_sources[0].source_name == "Google RSS - SK하이닉스"
+    assert report.news_sources[0].published_at == "2026-08-02T07:23:01+00:00"
+    assert report.wiki_sources[0].wiki_title == "위키 문서 제목"
+
+
 def test_assemble_generated_report_limits_executive_summaries_to_top_five() -> None:
     sections = [
         make_section(
