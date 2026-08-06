@@ -35,12 +35,19 @@
 //   workspace_settings.data_refresh_cycle_minutes에 실제로 연결됩니다.
 //   설정 저장 성공 시 우측 하단 토스트(.settings-toast)로 피드백을 줍니다 — Wiki 업데이트
 //   주기·대화 보관 기간 저장도 동일하게 토스트가 뜨도록 통일했습니다.
+//
+// ⚠ 수정(2026-08-05): 계정 섹션에 "소속 팀", 세션 섹션에 "회원 탈퇴"를 추가했습니다.
+//   · 소속 팀 — 워크스페이스 이름 + 내 역할(관리자/팀장/팀원/게스트).
+//     둘 다 없으면 행 자체를 숨깁니다(없는 값을 "소속 없음"처럼 단정하지 않습니다).
+//   · 회원 탈퇴 — 되돌릴 수 없는 동작이라 여기서 바로 실행하지 않고, App.jsx가 들고 있는
+//     DeleteAccountModal을 열어 한 번 더 확인받습니다.
 
 import { useState, useEffect } from 'react';
 import SettingsGroup from '../components/settings/SettingsGroup';
 import SettingsRow from '../components/settings/SettingsRow';
 import ToggleSwitch from '../components/common/ToggleSwitch';
 import SegmentedControl from '../components/common/SegmentedControl';
+import { roleLabel, roleClass } from '../constants/roles';
 import {
   fetchCollectSources,
   formatSourceSummary,
@@ -67,7 +74,10 @@ export default function SettingsPage({
   notiWiki = true,
   onToggleNotiWiki = () => {},
   profile = null,
+  workspaceName = null,
+  myRole = null,
   onLogout,
+  onDeleteAccount,
   onResetInterests,
 }) {
   const [agentScope, setAgentScope] = useState('all');
@@ -90,6 +100,7 @@ export default function SettingsPage({
 
   const accountName = profile?.user_metadata?.full_name || profile?.user_metadata?.name || profile?.email || '';
   const accountEmail = profile?.email || '';
+  const hasTeam = Boolean(workspaceName || myRole);
 
   useEffect(() => {
     let alive = true;
@@ -155,7 +166,7 @@ export default function SettingsPage({
   return (
     <section className="view on" id="v-settings"
       data-pri="—"
-      data-cap="계정·화면·데이터 설정. 다크 모드와 글자 크기는 이 브라우저에 저장되고, 나머지는 파이프라인·에이전트 동작에 연결된다."
+      data-cap="계정·화면·데이터 설정. 다크 모드는 이 브라우저에 저장되고, 나머지는 파이프라인·에이전트 동작에 연결된다."
     >
       <div className="ph">
         <h2>설정</h2>
@@ -177,6 +188,17 @@ export default function SettingsPage({
         <SettingsRow label="이메일" desc="로그인 계정 · 알림 수신 주소">
           <div className="vl">{accountEmail}</div>
         </SettingsRow>
+        {/* 워크스페이스 이름·역할이 내려올 때만 보여줍니다. */}
+        {hasTeam && (
+          <SettingsRow label="소속 팀" desc="현재 참여 중인 워크스페이스와 역할">
+            <div className="vl">
+              {workspaceName || '이름 없음'}
+              {myRole && (
+                <span className={`pt-role ${roleClass(myRole)}`}>{roleLabel(myRole)}</span>
+              )}
+            </div>
+          </SettingsRow>
+        )}
       </SettingsGroup>
 
       <SettingsGroup title="알림">
@@ -191,6 +213,9 @@ export default function SettingsPage({
       <SettingsGroup title="세션">
         <SettingsRow label="로그아웃" desc="이 기기에서 myWiki 세션을 종료합니다">
           <button className="dlbtn danger" onClick={() => onLogout?.()}>로그아웃</button>
+        </SettingsRow>
+        <SettingsRow label="회원 탈퇴" desc="계정과 모든 데이터가 삭제됩니다. 되돌릴 수 없습니다.">
+          <button className="dlbtn danger" onClick={() => onDeleteAccount?.()}>회원 탈퇴</button>
         </SettingsRow>
       </SettingsGroup>
 

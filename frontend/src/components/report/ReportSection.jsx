@@ -83,14 +83,13 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
     setOpen({ date, highlightId });
   }
 
-  // 실제 파일 생성은 백엔드 몫이라, 지금은 요청이 나갔다는 것만 화면에 알려줍니다.
-  // API 클라이언트가 붙으면 services/reportApi.js의 downloadReport만 교체하면 됩니다.
+  // 다운로드 API가 없던 시절의 목업 버튼에서 실제 백엔드 다운로드 호출로 전환했습니다.
   async function handleDownload(date, format, label) {
     const res = await downloadReport(date, format);
     setNotice(
       res?.ok
         ? `${label} 다운로드를 시작했습니다.`
-        : `${date} · ${label} 요청됨 — 파일 생성은 백엔드 연동 후 동작합니다.`
+        : `${date} · ${label} 다운로드에 실패했습니다. 잠시 후 다시 시도해주세요.`
     );
     window.clearTimeout(handleDownload._t);
     handleDownload._t = window.setTimeout(() => setNotice(''), 3200);
@@ -248,6 +247,16 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
           detail={detail ?? null}
           loading={detail === undefined}
           highlightId={open.highlightId}
+          formats={FORMATS}
+          onDownload={(issue, format) =>
+            handleDownload(
+              open.date,
+              format.key,
+              issue
+                ? `${detail?.label ?? open.date} ${format.label}${format.ext}`
+                : `전체 ${format.label}${format.ext}`,
+            )
+          }
           onSelectWiki={onSelectWiki}
           onClose={() => setOpen(null)}
         />

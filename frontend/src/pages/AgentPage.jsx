@@ -107,6 +107,11 @@ export default function AgentPage({ profile }) {
   const authorName = profile?.user_metadata?.full_name || profile?.email || '나';
   const authorInitial = authorName.charAt(0).toUpperCase();
 
+  const myRole =
+    profile?.workspace_role ??
+    workspaceMembers?.find((m) => m.user_id === profile?.id)?.role ??
+    null;
+
   // 최초 진입 시 대화 목록을 불러옵니다.
   useEffect(() => {
     let alive = true;
@@ -712,6 +717,8 @@ export default function AgentPage({ profile }) {
         loading={participantsLoading}
         error={participantsError}
         busyUserId={participantsBusyUserId}
+        myRole={myRole}
+        myUserId={profile?.id}
         onAdd={handleAddParticipant}
         onRemove={handleRemoveParticipant}
         onClose={closeParticipantsModal}
