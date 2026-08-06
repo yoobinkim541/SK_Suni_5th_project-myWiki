@@ -62,7 +62,48 @@ function toEvidence(citations = []) {
     url: c.source_url ?? null,
     excerpt: c.quoted_text ?? '',
     foot: evidenceFoot(c),
+    documentVersionId: c.document_version_id,
   }));
+}
+
+// askAgent/regenerateMessage 직후 사이드바 갱신 — 새 답변의 근거를 기존 목록에 이어붙인다
+// (fetchConversation의 mergeConversationCitations와 같은 "대화 전체 누적" 원칙).
+// documentVersionId로 중복을 제거하고 no는 합친 순서로 다시 매긴다 — 원래 no는 그
+// 답변 하나 안에서만 유효한 번호라 그대로 이어붙이면 겹친다.
+//
+// 다시 생성(regenerate)으로 인용이 바뀐 경우, 그 메시지가 이전에 인용했던 문서를 이
+// 목록에서 정확히 빼지는 못한다(어떤 근거가 어느 메시지 것인지까지는 추적하지 않음) —
+// 근거가 사라지진 않으니 실사용에 문제는 없지만, 완벽히 맞추려면 대화 새로고침
+// (fetchConversation)이 정본이다.
+export function mergeEvidenceLists(existing = [], incoming = []) {
+  const byDocumentVersionId = new Map();
+  for (const e of existing) byDocumentVersionId.set(e.documentVersionId, e);
+  for (const e of incoming) {
+    if (!byDocumentVersionId.has(e.documentVersionId)) byDocumentVersionId.set(e.documentVersionId, e);
+  }
+  return Array.from(byDocumentVersionId.values()).map((e, i) => ({ ...e, no: i + 1 }));
+}
+
+// 근거 원문 컬럼 — 대화 전체에서 위키 근거로 답한 모든 assistant 메시지의 citations를
+// document_version_id 기준으로 합쳐서 보여준다(먼저 나온 인용을 우선하고, 같은 문서를
+// 여러 답변이 인용해도 한 번만 보인다). 이전에는 마지막 AI 응답의 citations만 써서,
+// 대화가 길어지면 중간의 위키 근거 답변들이 사이드바에서 전부 빠지는 문제가 있었다.
+//
+// citation_order는 지운다 — 메시지별로 1부터 매겨진 번호라 그대로 합치면 서로 다른
+// 답변의 citation_order가 겹친다(예: 두 답변 모두 citation_order=1). undefined로 두면
+// toEvidence()의 `c.citation_order ?? i + 1`가 병합된 배열의 위치로 새로 번호를 매긴다.
+// LLM 폴백 답변(is_llm_fallback)은 citations가 항상 빈 배열이라 자연히 제외된다.
+function mergeConversationCitations(rawMessages = []) {
+  const byDocumentVersionId = new Map();
+  for (const msg of rawMessages) {
+    if (msg.role !== 'assistant') continue;
+    for (const c of msg.citations || []) {
+      if (!byDocumentVersionId.has(c.document_version_id)) {
+        byDocumentVersionId.set(c.document_version_id, { ...c, citation_order: undefined });
+      }
+    }
+  }
+  return Array.from(byDocumentVersionId.values());
 }
 
 // author_name → 화면 author{initial, name}. 백엔드가 이름을 안 주면(과거 메시지 등) 생략합니다.
@@ -79,6 +120,24 @@ function toViewMessage(msg, scope) {
 
   if (role === 'me') {
     return { role: 'me', text: msg.content, author: toAuthor(msg.author_name), _id: msg.id };
+  }
+
+  // LLM 폴백 응답 — 위키 근거를 못 찾아 일반 지식으로 답한 것(core.py의 is_llm_fallback).
+  // has_answer=true라 NO_ANSWER_PREFIX 체크에는 안 걸리지만, 위키 citations가 있는
+  // 정상 응답과는 절대 헷갈리면 안 되므로 이 분기를 그보다 먼저 둔다 — citations
+  // 파싱 자체를 안 하고 llmFallback 플래그만 세워서, ChatMessage.jsx가 근거 태그
+  // 대신 "LLM 답변" 배지를 그리게 한다.
+  if (msg.is_llm_fallback) {
+    return {
+      role: 'ai',
+      llmFallback: true,
+      paragraphs: [[msg.content]],
+      acts:
+        scope === 'mine'
+          ? ['팀에 공유', '관련 문서 찾아보기', '복사', '다시 생성', '삭제']
+          : ['관련 문서 찾아보기', '복사', '다시 생성', '삭제'],
+      _id: msg.id,
+    };
   }
 
   // 근거 부족 응답
@@ -99,8 +158,8 @@ function toViewMessage(msg, scope) {
     cites: toCites(msg.citations),
     acts:
       scope === 'mine'
-        ? ['팀에 공유', '위키에 저장', '복사', '다시 생성', '삭제']
-        : ['위키에 저장', '복사', '다시 생성', '삭제'],
+        ? ['팀에 공유', '위키에 저장', '관련 문서 찾아보기', '복사', '다시 생성', '삭제']
+        : ['위키에 저장', '관련 문서 찾아보기', '복사', '다시 생성', '삭제'],
     _id: msg.id,
   };
 }
@@ -168,9 +227,8 @@ export async function fetchConversation(sessionId, scope) {
   const raw = await agentApi.fetchChatMessages(sessionId);
   const messages = raw.map((m) => toViewMessage(m, scope));
 
-  // 근거 원문 컬럼은 마지막 AI 응답의 citations를 씁니다.
-  const lastAi = [...raw].reverse().find((m) => m.role === 'assistant');
-  const evidence = toEvidence(lastAi?.citations);
+  // 근거 원문 컬럼 — 대화 전체의 위키 근거 답변들을 합쳐서 보여줍니다(mergeConversationCitations 참고).
+  const evidence = toEvidence(mergeConversationCitations(raw));
 
   return { messages, evidence };
 }

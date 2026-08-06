@@ -8,7 +8,7 @@
 //       두 번째 실행부터는 이 화면이 다시 뜨지 않습니다.)
 //    - 여기서 고른 관심 키워드는 DashboardPage로 내려가 "최신 뉴스" 기본 필터가 됩니다.
 //      직무·연령대는 지금은 저장만 하고, 추후 이슈 랭킹 가중치로 쓸 자리입니다.
-//    - 설정 화면에서 다시 고르고 싶을 때를 대비해 resetOnboarding도 만들어 뒀습니다(TODO 연결).
+//    - 설정 화면에서 다시 고르고 싶을 때를 대비해 resetOnboarding도 만들어 뒀습니다.
 //
 // 2) "myWiki" 로고를 누르면 화면이 새로고침됩니다.
 //    - 브라우저 통째로 새로고침(location.reload)이 아니라 앱 상태 초기화 방식입니다.
@@ -19,14 +19,18 @@
 //      네 군데 전부 같은 동작에 걸려 있습니다.
 //
 // 3) PC 상단바 우측 — 환경설정(톱니바퀴) 옆에 프로필 버튼을 추가했습니다.
-//    - 톱니바퀴 → SettingsPanel(다크모드 · 글자크기 · 알림) 드롭다운.
-//    - 프로필 → ProfilePanel(계정 정보 + 로그인/로그아웃) 드롭다운.
-//    - 두 드롭다운은 시안 CSS(.settings-panel/.profile-panel)에 이미 있었는데
-//      프로필 쪽은 실제로 연결된 컴포넌트가 없었어서 이번에 처음 붙였습니다.
+//    - 톱니바퀴 → SettingsPanel(다크모드 · 알림) 드롭다운.
+//    - 프로필 → ProfilePanel(계정 정보 + 소속 팀 + 로그인/로그아웃 + 회원 탈퇴) 드롭다운.
 //    - 알림 상태(notiReport/notiWiki)는 다크모드처럼 여기서 들고 SettingsPage에도 그대로
 //      내려줘서, 상단 드롭다운과 설정 페이지가 항상 같은 값을 보게 했습니다.
 //    - authed/profile은 실제 Supabase 세션(api/auth.js, api/supabaseClient.js)을 따라갑니다.
-//      로그인 버튼은 signInWithOAuth로 리다이렉트하고, onAuthStateChange가 돌아온 세션을 반영합니다.
+//
+// 4) [2026-08-05] 소속 팀 표시 + 회원 탈퇴
+//    - myRole: 워크스페이스 멤버 목록에서 로그인 사용자의 role을 찾아 씁니다.
+//      ⚠ 백엔드가 role을 안 내려주면 null이 되고, 그 경우 소속 팀 영역이 숨겨집니다
+//        (없는 값을 "소속 없음"처럼 단정해 보여주지 않습니다).
+//    - 회원 탈퇴: 되돌릴 수 없는 동작이라 DeleteAccountModal로 한 번 더 확인받습니다.
+//      실제 삭제 API는 아직 백엔드에 없습니다(service_role이 필요해 프론트에서 못 합니다).
 // ────────────────────────────────────────────────────────────────────
 //
 // 다크모드 :root 처리 / localStorage 저장은 기존 그대로입니다.
@@ -39,8 +43,10 @@ import SideNav from './components/common/SideNav';
 import { BottomNav, Drawer, MoreSheet } from './components/common/MobileNav';
 import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
+import DeleteAccountModal from './components/common/DeleteAccountModal';
 import { signInWithProvider, signOut, getCurrentSession, isNewAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
+import { listWorkspaceMembers } from './services/agentApi';
 import {
   enableWikiPushNotifications,
   disableWikiPushNotifications,
@@ -98,7 +104,16 @@ export default function App() {
   const [notiReport, setNotiReport] = useState(true);
   const [notiWiki, setNotiWiki] = useState(true);
   const [dark, setDark] = useState(() => getInitial('mywiki-theme', 'light') === 'dark');
-  const [fontSize, setFontSize] = useState(() => getInitial('mywiki-fontsize', 'm'));
+
+  // 소속 팀 — 워크스페이스 이름과 로그인 사용자의 역할.
+  // ⚠ 워크스페이스 이름을 주는 엔드포인트가 아직 없어 null로 둡니다(백엔드 요청 중).
+  const [workspaceName, setWorkspaceName] = useState(null);
+  const [myRole, setMyRole] = useState(null);
+
+  // 회원 탈퇴 확인 모달
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   // 선호 조사 결과: null이면 아직 온보딩을 안 거친 상태입니다.
   const [prefs, setPrefs] = useState(readPrefs);
@@ -141,6 +156,24 @@ export default function App() {
       alive = false;
     };
   }, []);
+
+  // 로그인 후 워크스페이스 멤버 목록에서 내 역할을 찾습니다.
+  // ⚠ 응답에 role이 없으면 null로 남고, 프로필 패널의 소속 팀 영역이 숨겨집니다.
+  useEffect(() => {
+    if (!authed || !profile?.id) {
+      setMyRole(null);
+      return;
+    }
+    let alive = true;
+    listWorkspaceMembers()
+      .then((members) => {
+        if (!alive) return;
+        const me = (members ?? []).find((m) => m.user_id === profile.id);
+        setMyRole(me?.role ?? null);
+      })
+      .catch(() => alive && setMyRole(null));
+    return () => { alive = false; };
+  }, [authed, profile?.id]);
 
   // 실제 Supabase 세션 동기화 + 어느 화면(entryStep)부터 시작할지 결정.
   // determineEntryStep은 매 세션 변화(최초 로드·OAuth 콜백 복귀·로그아웃)마다 다시 계산한다 —
@@ -214,16 +247,6 @@ export default function App() {
     }
   }, [dark]);
 
-  // 폰트 크기 저장/복원. 실제 배율 적용 로직은 TODO(아래 참고).
-  useEffect(() => {
-    document.documentElement.setAttribute('data-font-size', fontSize);
-    try {
-      localStorage.setItem('mywiki-fontsize', fontSize);
-    } catch {
-      // 저장 실패해도 화면 동작에는 지장 없음
-    }
-  }, [fontSize]);
-
   // 온보딩 완료 — 선호 조사 결과를 저장하고 대시보드로 들어갑니다.
   // 관심 키워드는 대시보드 "최신 뉴스" 기본 필터로, 직무는 추후 랭킹 가중치로 씁니다.
   function handleOnboardingComplete(result) {
@@ -293,6 +316,31 @@ export default function App() {
   function handleLogout() {
     setProfileOpen(false);
     signOut();
+  }
+
+  // 회원 탈퇴 — 프로필 드롭다운/설정 페이지에서 누르면 확인 모달만 연다.
+  function handleOpenDeleteAccount() {
+    setProfileOpen(false);
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }
+
+  // 실제 탈퇴 실행.
+  // ⚠ Supabase는 클라이언트에서 본인 계정 삭제를 허용하지 않는다(service_role 필요).
+  //   백엔드에 삭제 엔드포인트가 생기면 아래 throw를 그 호출로 바꾸면 된다.
+  //   또한 chat_sessions.user_id가 profiles ON DELETE CASCADE라, 삭제 시 이 사용자가
+  //   만든 팀 공유 대화가 다른 참여자에게도 사라진다 — 백엔드 정책 확인이 필요하다.
+  async function handleDeleteAccount() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      // TODO: await deleteAccount();  (백엔드 엔드포인트 대기)
+      throw new Error('계정 삭제는 백엔드 연동 후 동작합니다. 관리자에게 문의해 주세요.');
+    } catch (e) {
+      setDeleteError(e.message || '탈퇴 처리에 실패했습니다.');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   // Wiki 업데이트 알림 토글 — 켤 때 실패하면(권한 거부·브라우저 미지원 등) 토글을 다시
@@ -371,7 +419,10 @@ export default function App() {
             notiWiki={notiWiki}
             onToggleNotiWiki={handleToggleNotiWiki}
             profile={profile}
+            workspaceName={workspaceName}
+            myRole={myRole}
             onLogout={handleLogout}
+            onDeleteAccount={handleOpenDeleteAccount}
             onResetInterests={resetOnboarding}
           />
         )}
@@ -399,8 +450,6 @@ export default function App() {
         isOpen={settingsOpen}
         dark={dark}
         onToggleDark={setDark}
-        fontSize={fontSize}
-        onFontSizeChange={setFontSize}
         notiReport={notiReport}
         onToggleNotiReport={setNotiReport}
         notiWiki={notiWiki}
@@ -411,8 +460,19 @@ export default function App() {
         isOpen={profileOpen}
         authed={authed}
         profile={profile}
+        workspaceName={workspaceName}
+        myRole={myRole}
         onLogin={handleLogin}
         onLogout={handleLogout}
+        onDeleteAccount={handleOpenDeleteAccount}
+      />
+
+      <DeleteAccountModal
+        open={deleteOpen}
+        busy={deleting}
+        error={deleteError}
+        onConfirm={handleDeleteAccount}
+        onClose={() => setDeleteOpen(false)}
       />
     </div>
   );

@@ -30,14 +30,27 @@ import {
   addParticipant,
   removeParticipant,
   listWorkspaceMembers,
+  mergeEvidenceLists,
 } from '../services/agentApi';
 import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
 import ShareToTeamModal from '../components/agent/ShareToTeamModal';
 import ParticipantsModal from '../components/agent/ParticipantsModal';
+import mascotImg from '../assets/mascot.png';
 
 const PANE_KEYS = ['team', 'mine'];
 const PANE_VISIBILITY = { team: 'team', mine: 'private' };
+
+// 근거 원문 컬럼(.col)에 두는 마스코트 — 근거가 0개면 목록이 비어있는 자리에,
+// 1개 이상이면 .ev 카드 목록 아래에 온다(JSX 흐름상 배치라 근거가 늘어나면
+// 같이 밀려 내려간다 — position: absolute로 겹치게 띄우지 않음).
+function MascotFloat() {
+  return (
+    <div className="mascot-float">
+      <img src={mascotImg} alt="마이위키 마스코트" />
+    </div>
+  );
+}
 
 export default function AgentPage({ profile }) {
   const [panes, setPanes] = useState(null);
@@ -93,6 +106,11 @@ export default function AgentPage({ profile }) {
 
   const authorName = profile?.user_metadata?.full_name || profile?.email || '나';
   const authorInitial = authorName.charAt(0).toUpperCase();
+
+  const myRole =
+    profile?.workspace_role ??
+    workspaceMembers?.find((m) => m.user_id === profile?.id)?.role ??
+    null;
 
   // 최초 진입 시 대화 목록을 불러옵니다.
   useEffect(() => {
@@ -188,7 +206,7 @@ export default function AgentPage({ profile }) {
       updateConversation(activePane, current.id, (c) => ({
         ...c,
         messages: [...c.messages, aiMessage],
-        evidence: evidence.length ? evidence : c.evidence,
+        evidence: mergeEvidenceLists(c.evidence, evidence),
       }));
     } catch (e) {
       setError(e.message || '답변을 가져오지 못했습니다.');
@@ -403,7 +421,7 @@ export default function AgentPage({ profile }) {
       updateConversation(activePane, current.id, (c) => ({
         ...c,
         messages: c.messages.map((m) => (m._id === messageId ? updated : m)),
-        evidence: evidence.length ? evidence : c.evidence,
+        evidence: mergeEvidenceLists(c.evidence, evidence),
       }));
       setMessageAction(messageId, 'regen', { status: 'done' });
       setTimeout(() => setMessageAction(messageId, 'regen', { status: 'idle' }), 1500);
@@ -440,7 +458,8 @@ export default function AgentPage({ profile }) {
   }
 
   // "관련 문서 찾아보기" — 백엔드 API 없이, 이 답변 바로 앞 질문 텍스트로 구글
-  // 검색 결과를 새 탭으로 연다(근거 부족 카드에서만 노출되는 액션).
+  // 검색 결과를 새 탭으로 연다. 근거 부족/LLM 답변/위키 근거 답변 모두에서 노출된다 —
+  // 어떤 답변이든 사용자가 직접 원문을 더 찾아볼 수 있게 하기 위함.
   function handleSearchRelatedDocs(message) {
     const messageId = message._id;
     if (!messageId || !current) return;
@@ -654,6 +673,9 @@ export default function AgentPage({ profile }) {
         {/* 근거 원문 */}
         <div className="col">
           <h5>근거 원문<span className="c">{current?.evidence.length ?? 0}</span></h5>
+
+          {(current?.evidence ?? []).length === 0 && <MascotFloat />}
+
           {(current?.evidence ?? []).map((e) => {
             // e.sourceName이 null일 수 있습니다(문서에 매체 정보가 연결 안 된 경우).
             const sourceName = e.sourceName || '출처 확인 중';
@@ -675,6 +697,8 @@ export default function AgentPage({ profile }) {
               </div>
             );
           })}
+
+          {(current?.evidence ?? []).length > 0 && <MascotFloat />}
         </div>
       </div>
 
@@ -693,6 +717,8 @@ export default function AgentPage({ profile }) {
         loading={participantsLoading}
         error={participantsError}
         busyUserId={participantsBusyUserId}
+        myRole={myRole}
+        myUserId={profile?.id}
         onAdd={handleAddParticipant}
         onRemove={handleRemoveParticipant}
         onClose={closeParticipantsModal}

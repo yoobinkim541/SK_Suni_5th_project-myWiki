@@ -72,7 +72,7 @@ function normalizeIssue(section) {
   return {
     id: section.id,
     level,
-    category: content.category || '??',
+    category: content.category || '???',
     title: section.title,
     summary: content.current_summary || section.title,
     sourceIsDoc: Boolean(firstCitation?.source_url),
@@ -106,7 +106,7 @@ function normalizeArchiveItem(report, issues, todayDate) {
 
 function buildOverview(issues) {
   if (!issues.length) {
-    return '?? ??? ?? ???? ?????? ?? ?? ??? ?? ?? ????.';
+    return '?? ??? ??? ??? ????.';
   }
 
   return issues
@@ -116,16 +116,66 @@ function buildOverview(issues) {
     .trim();
 }
 
+function buildPendingReportView(date = getTodayKSTDate()) {
+  const label = formatDateLabel(date);
+  const title = '?? ?? ??? ?? ??';
+  const summary = '?? ??? ???? ????. Word/PDF/PPT ??? ??? ???? ??? ? ???????.';
+  const archiveItem = {
+    date,
+    label,
+    day: date === getTodayKSTDate() ? '??' : '',
+    title,
+    summary,
+    issues: 0,
+    wiki: 0,
+    level: 'mid',
+    old: false,
+  };
+
+  return {
+    raw: null,
+    issues: [],
+    summary: {
+      date: label,
+      statusLabel: '?? ??',
+      kpis: [],
+      totalLabel: '?? 0?',
+      categories: [{ name: '??', count: 0 }],
+      keywords: ['??? ?? ??'],
+    },
+    archive: [archiveItem],
+    today: {
+      label: `${label} - ??? ?? ??`,
+      date,
+    },
+    detail: {
+      date,
+      label,
+      day: archiveItem.day,
+      title,
+      summary,
+      level: archiveItem.level,
+      issueCount: 0,
+      wikiCount: 0,
+      overview: summary,
+      issues: [],
+    },
+  };
+}
+
 async function fetchDailyReportOrGenerate(date, generateOnMissing = false) {
   try {
     return await fetchDailyReportApi(date);
   } catch (error) {
-    if (!generateOnMissing || error?.status !== 404) {
-      throw error;
+    if (error?.status === 404) {
+      if (generateOnMissing) {
+        await ensureDailyReportGenerated(date);
+        return fetchDailyReportApi(date);
+      }
+      return null;
     }
 
-    await ensureDailyReportGenerated(date);
-    return fetchDailyReportApi(date);
+    throw error;
   }
 }
 
@@ -145,6 +195,10 @@ async function loadDailyReport(date = getTodayKSTDate(), { generateOnMissing = f
 
 async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = false } = {}) {
   const report = await loadDailyReport(date, { generateOnMissing });
+  if (!report) {
+    return buildPendingReportView(date);
+  }
+
   const issues = (report.sections || []).map(normalizeIssue);
   const archiveItem = normalizeArchiveItem(report, issues, getTodayKSTDate());
 
@@ -153,7 +207,7 @@ async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = f
     issues,
     summary: {
       date: formatDateLabel(report.date),
-      statusLabel: report.status === 'completed' ? '??? ?? ??' : report.status,
+      statusLabel: report.status === 'completed' ? '?? ??' : report.status,
       kpis: [],
       totalLabel: `?? ${issues.length}?`,
       categories: [
@@ -169,7 +223,7 @@ async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = f
     },
     archive: [archiveItem],
     today: {
-      label: `${formatDateLabel(report.date)} ?? ?? ??? ? ?? ${issues.length}?`,
+      label: `${formatDateLabel(report.date)} - ?? ?? ??? - ?? ${issues.length}?`,
       date: report.date,
     },
     detail: {

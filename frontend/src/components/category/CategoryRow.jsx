@@ -5,33 +5,16 @@
 // 1020px 이하에서는 CSS가 자동으로 1열(1fr)로 바꿔줍니다. 이 컴포넌트에서 화면 폭을 신경 쓸 필요는 없고,
 // 그냥 배열을 그대로 map만 하면 됩니다.
 //
-// ⚠ 수정한 부분:
-//  1) 카드 클릭 시 그 카테고리의 관련 뉴스를 모달로 보여줍니다(CategoryNewsModal).
-//  2) data/mockDashboard.js를 직접 뒤져서 카테고리별 뉴스를 걸러내던 걸,
-//     services/categoryApi.js의 fetchNewsByCategory()를 통해 받아오도록 바꿨습니다.
-//     → 카드 6개 전부의 "N건" 배지를 마운트 시점에 한 번에 받아와서 state에 캐시해두고,
-//       카드를 클릭했을 때 뜨는 모달도 같은 캐시를 재사용합니다(같은 소스라 숫자가 항상 일치).
-//     실제 API가 붙으면 fetchNewsByCategory 안쪽만 바뀌고 이 컴포넌트는 그대로 씁니다.
+// 카드 클릭 시 그 카테고리의 관련 뉴스를 모달로 보여줍니다(CategoryNewsModal).
+// 뉴스는 카테고리 객체의 recentDocuments로 함께 오므로 여기서 따로 받아오지 않습니다 —
+// 예전엔 마운트마다 카테고리별로 6번을 더 불러서 화면당 7요청이었습니다.
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import CategoryCard from './CategoryCard';
 import CategoryNewsModal from './CategoryNewsModal';
-import { fetchNewsByCategory } from '../../services/categoryApi';
 
 export default function CategoryRow({ categories }) {
   const [selected, setSelected] = useState(null);
-  const [newsByCategory, setNewsByCategory] = useState({});
-
-  useEffect(() => {
-    let alive = true;
-    Promise.all(
-      categories.map((c) => fetchNewsByCategory(c.name).then((list) => [c.name, list]))
-    ).then((pairs) => {
-      if (!alive) return;
-      setNewsByCategory(Object.fromEntries(pairs));
-    });
-    return () => { alive = false; };
-  }, [categories]);
 
   return (
     <section className="sec">
@@ -41,20 +24,19 @@ export default function CategoryRow({ categories }) {
       </div>
 
       <div className="cat-card-grid">
-        {categories.map((c) => {
-          const news = newsByCategory[c.name] || [];
-          return (
-            <CategoryCard
-              key={c.id}
-              name={c.name}
-              count={news.length}
-              topIssue={c.topIssue}
-              tags={c.tags}
-              level={c.level}
-              onClick={() => setSelected(c)}
-            />
-          );
-        })}
+        {categories.map((c) => (
+          <CategoryCard
+            key={c.id}
+            name={c.name}
+            // 백엔드가 문서 단위로 센 건수. 모달에 뜨는 기사 수(최대 5건)와는 다릅니다 —
+            // 모달은 최신 몇 건만 보여주고 카드는 그 분류 전체를 셉니다.
+            count={c.count}
+            topIssue={c.topIssue}
+            tags={c.tags}
+            level={c.level}
+            onClick={() => setSelected(c)}
+          />
+        ))}
       </div>
 
       <div className="legend">
@@ -65,7 +47,7 @@ export default function CategoryRow({ categories }) {
 
       <CategoryNewsModal
         category={selected}
-        newsItems={selected ? (newsByCategory[selected.name] || []) : []}
+        newsItems={selected?.recentDocuments ?? []}
         onClose={() => setSelected(null)}
       />
     </section>

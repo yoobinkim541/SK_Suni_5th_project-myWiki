@@ -7,21 +7,26 @@
 // 왼쪽 조각(또는 범례)을 누르면 오른쪽 그래프가 그 분류로 바뀝니다.
 // 상단 칩으로도 직접 고를 수 있게 해서, 조각이 작아 누르기 어려운 분류도 접근 가능합니다.
 //
-// 두 그래프 모두 data/mockCategory.js의 MOCK_CATEGORY_KEYWORDS 하나에서 나오므로
-// 왼쪽 합계와 오른쪽 조각 합이 항상 일치합니다.
+// 데이터는 전부 categories prop에서 옵니다 — 예전엔 이 파일이 data/mockCategory.js를
+// 직접 import해서, 카드가 실데이터가 돼도 원그래프만 목업으로 남아 숫자가 어긋났습니다.
+// 목업/실데이터 분기는 services/categoryApi.js 한 곳에만 둡니다.
+//
+// 두 파이는 서로 다른 것을 셉니다.
+//   왼쪽  = 분류별 문서 수 (카드의 건수와 같은 값)
+//   오른쪽 = 그 분류 안에서 어떤 수집 키워드가 문서를 끌어왔는지
+// 백엔드가 문서 단위로 세므로 오른쪽 조각 합은 왼쪽의 해당 조각과 일치합니다.
 
 import { useState } from 'react';
 import KeywordPie from './KeywordPie';
-import { MOCK_CATEGORY_KEYWORDS, getCategoryTotals } from '../../data/mockCategory';
 
 export default function CategoryKeywordChart({ categories }) {
   const [activeId, setActiveId] = useState(categories[0]?.id);
 
-  const totals = getCategoryTotals(categories);
+  const totals = categories.map((c) => ({ id: c.id, word: c.name, count: c.count }));
   const grandTotal = totals.reduce((s, t) => s + t.count, 0);
 
   const active = categories.find((c) => c.id === activeId) || categories[0];
-  const activeKeywords = MOCK_CATEGORY_KEYWORDS[active?.id] || [];
+  const activeKeywords = active?.keywords ?? [];
   const activeTotal = activeKeywords.reduce((s, k) => s + k.count, 0);
 
   function selectByName(name) {

@@ -18,6 +18,10 @@
 
   --ease:cubic-bezier(.22,.61,.36,1);
   --dur-fast:.16s; --dur-base:.28s; --dur-slow:.5s;
+
+  /* TailAdmin 마케팅 대시보드 참고 — 테두리 위주 카드에 부드러운 그림자를 얹는다.
+     border는 var(--hair-3)(옅은 톤)로 낮추고 이 그림자를 같이 쓴다. */
+  --shadow-card: 0 1px 2px rgba(21,23,26,.04), 0 2px 8px rgba(21,23,26,.06);
 }
 :root[data-theme="dark"]{
   --ink:#eef0f2; --ink-2:#c7ccd1; --muted:#8f979d; --faint:#5c6469;
@@ -28,6 +32,10 @@
   --conf-high:#3fb98b; --conf-high-tint:#122720;
   --conf-mid:#9aa2a8;  --conf-mid-tint:#22262a;
   --conf-low:#d9584a;  --conf-low-tint:#2d1512;
+
+  /* 다크는 패널 배경 자체가 거의 검정이라 라이트와 같은 옅은 그림자는 안 보인다 —
+     불투명도를 올려서 카드 경계가 살짝이라도 뜨게 한다. */
+  --shadow-card: 0 1px 2px rgba(0,0,0,.24), 0 2px 10px rgba(0,0,0,.32);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -156,7 +164,10 @@ svg text{font-family:inherit}
 .chart text.xl{text-anchor:middle}
 .chart .bars rect{fill:var(--track)}
 .chart .bars rect.now{fill:var(--hair)}
-.chart .area{fill:var(--green-tint)}
+/* TrendChart.jsx의 <defs> 안 <linearGradient id="trend-area-gradient">를 가리킨다 —
+   위에서 진하고 아래로 갈수록 투명해지는 TailAdmin 스타일 채우기. CSS가 SVG
+   presentation attribute(fill)보다 우선 적용되므로, 그라데이션은 여기서 지정해야 한다. */
+.chart .area{fill:url(#trend-area-gradient)}
 .chart .line{fill:none;stroke:var(--green);stroke-width:1.8;
   stroke-linejoin:round;stroke-linecap:round}
 .chart .dots circle{fill:var(--panel);stroke:var(--green);stroke-width:1.4}
@@ -409,6 +420,14 @@ svg text{font-family:inherit}
 .ev .x{font-size:11px;font-weight:300;color:var(--muted);line-height:1.6;
   padding-left:10px;border-left:1px solid var(--hair)}
 .ev .f{font-size:10px;font-weight:300;color:var(--faint);margin-top:7px}
+
+.mascot-float{display:flex;justify-content:center;padding:24px 0;
+  animation:mascot-bob 3s ease-in-out infinite}
+.mascot-float img{width:160px;height:auto}
+@keyframes mascot-bob{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-10px)}
+}
 
 @media (max-width:1020px){
   .app{grid-template-columns:1fr}
@@ -731,6 +750,12 @@ a.cite:hover .ex{color:var(--green)}
 .who .fl{margin-left:8px;font-size:9px;font-weight:700;letter-spacing:.08em;
   padding:2px 7px;border-radius:4px;background:var(--green-tint);color:var(--green)}
 .who .fl.priv{background:var(--tint);color:var(--muted)}
+
+/* 위키 근거 없이 일반 지식으로 답한 응답(core.py의 is_llm_fallback) 표시 —
+   .none(근거 부족 카드)과 같은 왼쪽 세로선 언어를 그대로 쓰되, 위키 citations가
+   있는 정상 답변과 절대 헷갈리면 안 되므로 색만 green이 아닌 amber로 다르게 준다. */
+.llm-note{border-left:2px solid var(--amber);padding-left:15px;margin-bottom:12px;
+  font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--amber)}
 .ag-pane.mine .thread{border-top-color:var(--hair)}
 
 
@@ -914,7 +939,8 @@ a.fn:hover{text-decoration:underline}
 /* ---------- 대시보드 최신 뉴스(상단 고정) ---------- */
 .news-feed{margin-bottom:6px}
 .news-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-.news-card{border:1px solid var(--hair);border-radius:16px;padding:16px 18px;background:var(--panel);
+.news-card{border:1px solid var(--hair-3);border-radius:16px;padding:16px 18px;background:var(--panel);
+  box-shadow:var(--shadow-card);
   transition:border-color var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease)}
 .news-card:hover{border-color:var(--green);transform:translateY(-3px);box-shadow:0 16px 30px -16px rgba(21,23,26,.18)}
 .news-card.hidden{display:none}
@@ -1173,7 +1199,8 @@ a.fn:hover{text-decoration:underline}
 
 /* Card.jsx — 범용 흰 카드 틀. 시안에 "어디서나 쓰는 카드" 클래스가 없어
    .set-card 와 동일한 값으로 새로 만들었습니다(.cd 는 카테고리 카드 전용이라 재사용 불가). */
-.panel-card{border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:var(--panel)}
+.panel-card{border:1px solid var(--hair-3);border-radius:12px;overflow:hidden;background:var(--panel);
+  box-shadow:var(--shadow-card)}
 
 /* TopBar.jsx (PC) — 시안 .deck 의 h1 과 같은 값 + 로고 아이콘(LogoMark). */
 .deck .brand2{display:flex;align-items:center;gap:6px;
@@ -1677,5 +1704,207 @@ a.fn:hover{text-decoration:underline}
   .m-logo-img {
     height: 19px;
   }
+}
+
+/* ===== 역할 배지 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 참여자 칩(.pt-chip) / 추가 후보 행(.pt-row) 안에 붙는 작은 역할 배지 */
+.pt-role {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  margin-left: 2px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 관리자 — 가장 높은 권한이라 채운 배경 */
+.pt-role.admin {
+  background: var(--brand, #175243);
+  color: #fff;
+}
+
+/* 팀장 — 테두리형 */
+.pt-role.leader {
+  border: 1px solid var(--brand, #175243);
+  color: var(--brand, #175243);
+}
+
+/* 팀원 — 옅은 회색 */
+.pt-role.member {
+  background: var(--line, #e3e6e5);
+  color: var(--muted, #6b7280);
+}
+
+/* 게스트 — 앰버 계열로 외부 사용자임을 구분 */
+.pt-role.guest {
+  background: #f5e6c8;
+  color: #9a5b00;
+}
+
+:root[data-theme="dark"] .pt-role.admin {
+  background: #5fd4b0;
+  color: #0f1f1a;
+}
+:root[data-theme="dark"] .pt-role.leader {
+  border-color: #5fd4b0;
+  color: #5fd4b0;
+}
+:root[data-theme="dark"] .pt-role.member {
+  background: rgba(255, 255, 255, .12);
+  color: rgba(255, 255, 255, .7);
+}
+:root[data-theme="dark"] .pt-role.guest {
+  background: rgba(154, 91, 0, .3);
+  color: #e8c46c;
+}
+
+/* 추가 후보 행에서 배지가 + 버튼을 밀지 않도록 이름 영역이 남는 공간을 먹게 한다 */
+.pt-row .nm {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ===== 소속 팀 / 회원 탈퇴 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 프로필 드롭다운 안의 소속 팀 행 */
+.pp-team {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line, #e3e6e5);
+}
+.pp-team .lb {
+  font-size: 11px;
+  color: var(--muted, #8a8f8d);
+  letter-spacing: .02em;
+}
+.pp-team .tx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 회원 탈퇴 모달 */
+.da-warn {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  background: rgba(154, 91, 0, .1);
+  color: #9a5b00;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+:root[data-theme="dark"] .da-warn {
+  background: rgba(154, 91, 0, .25);
+  color: #e8c46c;
+}
+
+.da-list {
+  margin: 0 0 18px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--muted, #6b7280);
+}
+
+.da-input {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.da-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.da-actions .dlbtn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+/* ===== 소속 팀 / 회원 탈퇴 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 프로필 드롭다운 안의 소속 팀 행 */
+.pp-team {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line, #e3e6e5);
+}
+.pp-team .lb {
+  font-size: 11px;
+  color: var(--muted, #8a8f8d);
+  letter-spacing: .02em;
+}
+.pp-team .tx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 회원 탈퇴 모달 */
+.da-warn {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  background: rgba(154, 91, 0, .1);
+  color: #9a5b00;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+:root[data-theme="dark"] .da-warn {
+  background: rgba(154, 91, 0, .25);
+  color: #e8c46c;
+}
+
+.da-list {
+  margin: 0 0 18px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--muted, #6b7280);
+}
+
+.da-input {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.da-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.da-actions .dlbtn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+
+/* 위키 좌측 트리 그룹 제목 */
+.tree .g {
+  font-size: 14px;
+  font-weight: 700;
+  color: #175243;
+  letter-spacing: -0.01em;
+}
+:root[data-theme="dark"] .tree .g {
+  color: #5fd4b0;
 }
 

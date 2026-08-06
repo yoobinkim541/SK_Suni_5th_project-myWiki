@@ -115,6 +115,14 @@ export default function ChatMessage({ message, flag, flagPriv = false, onAction,
           MYWIKI{flag && <span className={`fl${flagPriv ? ' priv' : ''}`}>{flag}</span>}
         </div>
 
+        {/* 위키 근거를 못 찾아 일반 지식으로 답한 경우 — 근거 태그·출처 정보 대신
+            이 표시만 보여준다. 절대 위키 출처처럼 보이면 안 되므로 본문 위, 가장
+            먼저 눈에 띄는 자리에 둔다. .none(근거 부족 카드)과 같은 왼쪽 세로선
+            표시 언어를 그대로 써서 이 화면 안에서 낯설지 않게 한다. */}
+        {message.llmFallback && (
+          <div className="llm-note">LLM 답변 · 위키 근거 아님</div>
+        )}
+
         {message.none ? (
           <div className="none">
             <h6>{message.none.title}</h6>

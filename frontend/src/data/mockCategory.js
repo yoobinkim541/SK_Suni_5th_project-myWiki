@@ -115,12 +115,7 @@ export const MOCK_CATEGORY_KEYWORDS = {
   ],
 };
 
-// 분류 자체의 비중(왼쪽 원그래프)은 카테고리별 키워드 합계로 계산합니다.
-// → 오른쪽 "분류 내부 키워드" 원그래프와 항상 같은 소스를 보게 되므로 숫자가 어긋나지 않습니다.
-export function getCategoryTotals(categories = MOCK_CATEGORIES) {
-  return categories.map((c) => ({
-    id: c.id,
-    word: c.name,
-    count: (MOCK_CATEGORY_KEYWORDS[c.id] || []).reduce((sum, k) => sum + k.count, 0),
-  }));
-}
+// getCategoryTotals는 제거했습니다.
+// 왼쪽 원그래프를 "카테고리별 키워드 합계"로 계산하던 함수인데, 그 값이 카드의 건수와
+// 달라서 한 화면에 두 숫자가 어긋나 보였습니다(합계 89 vs 427). 이제 왼쪽 파이는
+// 카드와 같은 c.count를 쓰고, 그 계산은 CategoryKeywordChart 안에 한 줄로 들어 있습니다.
