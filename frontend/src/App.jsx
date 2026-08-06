@@ -46,7 +46,7 @@ import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
 import Footer from './components/common/Footer';
 import DeleteAccountModal from './components/common/DeleteAccountModal';
-import { signInWithProvider, signOut, getCurrentSession, isNewAccount, deleteAccount } from './api/auth';
+import { signInWithProvider, signOut, getCurrentSession, deleteAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
 import { listWorkspaceMembers } from './services/agentApi';
 import {
@@ -201,28 +201,20 @@ export default function App() {
         setEntryStep('landing');
         return;
       }
-      // 저장된 선호도가 "지금 로그인한 이 계정" 것일 때만 완료된 걸로 인정한다(계정 기준).
-      // 그래서 신규 계정 체크(isNewAccount)보다 이 매칭을 먼저 본다 — 신규 계정이라도
-      // 이미 이 세션 안에서 선호조사를 끝냈으면(userId가 일치) 새로고침할 때마다 선호조사가
-      // 다시 뜨지 않는다.
+      // 저장된 선호도가 "지금 로그인한 이 계정" 것일 때만 완료된 걸로 인정한다(계정 기준,
+      // isNewAccount는 안 쓴다 — 신규/기존을 따지지 않고 "이 계정이 이 브라우저에서
+      // 선호조사를 끝낸 적이 있는가"만 본다).
       const existingPrefs = readPrefs();
       if (existingPrefs !== null && existingPrefs.userId === session.user.id) {
         setPrefs(existingPrefs);
         setEntryStep(null);
         return;
       }
-      // ⚠ userId가 안 맞거나(다른 계정이 이 브라우저에 남긴 기록) 아예 기록이 없으면,
-      //   신규 계정인지를 본다. 예전엔 이 순서가 반대라, 브라우저에 선호도가 한 번이라도
-      //   저장돼 있으면(예: 다른 계정으로 쓰다가 "건너뛰기"로 빈 값이 저장된 경우) 새 계정으로
-      //   로그인해도 선호조사 화면을 아예 못 보고 대시보드로 직행했다.
-      if (isNewAccount(session)) {
-        setEntryStep('survey');
-        return;
-      }
-      // 기존 계정인데 이 기기엔 관심사 기록이 없음(다른 기기로 처음 로그인) — 빈 기본값으로 대시보드 진입.
-      // "설정 > 관심사 다시 고르기"로 나중에 채우면 됨.
-      setPrefs({ keywords: [], role: null });
-      setEntryStep(null);
+      // 이 계정으로 이 브라우저에서 선호조사를 끝낸 기록이 없다 — 로그아웃 후 같은 계정으로
+      // 다시 들어왔든, 처음 보는 계정이든, 다른 계정 흔적만 남아있든 전부 선호조사부터
+      // 다시 보여준다. (예전엔 "기존 계정이면 그냥 대시보드로" 예외를 뒀는데, 그 예외 때문에
+      // 로그아웃 후 재로그인해도 선호조사가 다시 안 뜨는 문제가 있었다.)
+      setEntryStep('survey');
     }
     function applySession(session) {
       // 구글 로그인 등 OAuth 콜백은 access_token/refresh_token을 URL 해시에 실어 돌아온다.
