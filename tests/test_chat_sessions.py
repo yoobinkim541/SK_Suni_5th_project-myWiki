@@ -18,6 +18,7 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from src.analysis.exceptions import OpenRouterTimeoutError
 from src.api import db
 from src.api import main as main_module
 from src.api.auth import get_current_user
@@ -802,6 +803,56 @@ def test_save_to_wiki_auto_publishes_version(make_client, monkeypatch):
         ("review_wiki_version", ("version-1", None, "approved")),
         ("publish_wiki_version", ("page-1", "version-1")),
     ]
+
+
+def test_save_to_wiki_uses_real_compose_chat_wiki_draft_fallback(make_client, monkeypatch):
+    """다른 save-to-wiki 테스트들은 전부 main_module.compose_chat_wiki_draft 자체를
+    monkeypatch하기 때문에, main.py가 chat_wiki.py의 실제 함수 시그니처(위치 인자
+    question/answer/citations)와 실제로 맞물려 동작하는지는 아무 테스트도 증명하지
+    않는다 — chat_wiki.py에서 인자 순서가 바뀌어도 이 테스트 파일의 fake들은 자기가
+    정의한 (question, answer, citations) 시그니처로만 호출되므로 전부 그대로 통과한다.
+
+    이 테스트는 compose_chat_wiki_draft를 모킹하지 않고 실제로 호출되게 두되,
+    chat_wiki.create_json_completion만 실패시켜(OPENROUTER_API_KEY 유무와 무관하게
+    네트워크 호출 없이) 코드 폴백 경로를 태운다. 그 결과로 저장된 markdown이 폴백
+    템플릿의 섹션 헤더를 담고 있는지 확인해서, 통합 지점과 폴백 계약을 동시에
+    고정한다."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [SAMPLE_CITATION])
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+
+    def fake_create_json_completion(**kwargs):
+        raise OpenRouterTimeoutError("timed out")
+
+    # chat_wiki.create_json_completion을 직접 실패시킨다 — get_openrouter_settings()가
+    # load_dotenv()를 호출하므로, 개발자 로컬 .env에 진짜 OPENROUTER_API_KEY가 있으면
+    # MissingApiKeyError 유도 방식(env var 미설정)은 실제로 살아있는 OpenRouter API를
+    # 호출해버릴 수 있다. 이 방식은 그 경로 자체를 원천 차단한다.
+    monkeypatch.setattr(chat_wiki, "create_json_completion", fake_create_json_completion)
+
+    monkeypatch.setattr(main_module, "upsert_wiki_page", lambda workspace_id, slug, title, page_type: "page-1")
+
+    captured = {}
+
+    def fake_create_wiki_version(draft):
+        captured["draft"] = draft
+        return "version-1"
+
+    monkeypatch.setattr(main_module, "create_wiki_version", fake_create_wiki_version)
+    monkeypatch.setattr(main_module, "record_wiki_validation", lambda *a, **kw: None)
+    monkeypatch.setattr(main_module, "review_wiki_version", lambda *a, **kw: None)
+    monkeypatch.setattr(main_module, "publish_wiki_version", lambda *a, **kw: None)
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/save-to-wiki"
+    )
+
+    assert res.status_code == 200
+    markdown = captured["draft"].markdown
+    assert "## 질문" in markdown
+    assert "## 답변 요약" in markdown
+    assert "## 출처" in markdown
 
 
 # ---------------------------------------------------------------------------

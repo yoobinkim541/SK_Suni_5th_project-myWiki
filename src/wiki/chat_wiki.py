@@ -107,6 +107,10 @@ def compose_chat_wiki_draft(
                 system_prompt=CHAT_WIKI_SYSTEM_PROMPT,
                 user_prompt=user_prompt,
                 model=settings.model,
+                # 기본 30초 타임아웃 * 최대 2회 시도(기본 모델 + 폴백 모델) = 최악의 경우 약 60초까지
+                # 걸릴 수 있어, 리버스 프록시/게이트웨이가 이 엔드포인트 자체를 504로 먼저 끊어버릴
+                # 수 있다. 15초로 줄여 두 번 시도해도 최악의 경우 약 30초 안에 끝나도록 한다.
+                timeout=15,
             )
         payload = parse_json_response(response_text)
         result = ChatWikiLLMResult.model_validate(payload)
