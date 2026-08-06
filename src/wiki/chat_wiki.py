@@ -50,3 +50,56 @@ def _build_chat_wiki_user_prompt(question: str, answer: str, citations: list[dic
     else:
         lines.append("없음")
     return "\n".join(lines)
+
+
+class ChatWikiDraft(BaseModel):
+    title: str
+    markdown: str
+
+
+def _build_sources_lines(citations: list[dict]) -> list[str]:
+    lines = ["## 출처"]
+    for citation in citations:
+        quoted = citation.get("quoted_text") or ""
+        lines.append(f"- {quoted} (document_version_id={citation['document_version_id']})")
+    return lines
+
+
+def _build_markdown(
+    title: str, question: str, answer_summary: str, key_evidence: list[str], citations: list[dict],
+) -> str:
+    lines = [
+        f"# {title}", "",
+        "## 질문", question, "",
+        "## 답변 요약", answer_summary, "",
+        "## 핵심 근거",
+    ]
+    lines.extend(f"- {item}" for item in key_evidence)
+    lines.append("")
+    lines.extend(_build_sources_lines(citations))
+    return "\n".join(lines)
+
+
+def compose_chat_wiki_draft(
+    question: str,
+    answer: str,
+    citations: list[dict],
+    *,
+    llm_client=None,
+) -> ChatWikiDraft:
+    settings = get_openrouter_settings()
+    user_prompt = _build_chat_wiki_user_prompt(question, answer, citations)
+
+    if llm_client is not None:
+        response_text = llm_client(CHAT_WIKI_SYSTEM_PROMPT, user_prompt, settings.model)
+    else:
+        response_text = create_json_completion(
+            system_prompt=CHAT_WIKI_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            model=settings.model,
+        )
+    payload = parse_json_response(response_text)
+    result = ChatWikiLLMResult.model_validate(payload)
+
+    markdown = _build_markdown(result.title, question, result.answer_summary, result.key_evidence, citations)
+    return ChatWikiDraft(title=result.title, markdown=markdown)

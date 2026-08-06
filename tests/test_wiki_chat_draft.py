@@ -36,3 +36,51 @@ def test_user_prompt_handles_no_citations():
         question="HBM4가 뭐야?", answer="답변", citations=[],
     )
     assert "없음" in prompt
+
+
+def test_compose_chat_wiki_draft_builds_structured_markdown(monkeypatch):
+    monkeypatch.setattr(
+        chat_wiki,
+        "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {
+                "title": "HBM4 개요",
+                "answer_summary": "HBM4는 차세대 고대역폭 메모리다.",
+                "key_evidence": ["HBM4는 차세대 메모리다."],
+            }
+        ),
+    )
+
+    draft = chat_wiki.compose_chat_wiki_draft(
+        question="HBM4가 뭐야?",
+        answer="HBM4는 차세대 메모리다. [1]",
+        citations=[SAMPLE_CITATION],
+    )
+
+    assert draft.title == "HBM4 개요"
+    assert "# HBM4 개요" in draft.markdown
+    assert "## 질문" in draft.markdown
+    assert "HBM4가 뭐야?" in draft.markdown
+    assert "## 답변 요약" in draft.markdown
+    assert "HBM4는 차세대 고대역폭 메모리다." in draft.markdown
+    assert "## 핵심 근거" in draft.markdown
+    assert "- HBM4는 차세대 메모리다." in draft.markdown
+    assert "## 출처" in draft.markdown
+    assert "(document_version_id=dv-1)" in draft.markdown
+
+
+def test_compose_chat_wiki_draft_uses_injected_llm_client(monkeypatch):
+    """generation.py의 llm_client 주입 패턴과 동일 — 테스트에서 fake client를 직접 넘길 수 있어야 한다."""
+    calls = []
+
+    def fake_client(system_prompt, user_prompt, model):
+        calls.append((system_prompt, user_prompt, model))
+        return json.dumps({"title": "t", "answer_summary": "s", "key_evidence": ["e"]})
+
+    draft = chat_wiki.compose_chat_wiki_draft(
+        question="q", answer="a", citations=[SAMPLE_CITATION], llm_client=fake_client,
+    )
+
+    assert draft.title == "t"
+    assert len(calls) == 1
+    assert calls[0][0] == chat_wiki.CHAT_WIKI_SYSTEM_PROMPT
