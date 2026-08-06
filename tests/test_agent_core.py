@@ -92,6 +92,13 @@ class FakePage:
     sources: list
 
 
+@dataclass
+class FakeSearchHit:
+    slug: str
+    title: str
+    score: float
+
+
 @pytest.fixture
 def wiki_tools() -> MagicMock:
     return MagicMock()
@@ -141,6 +148,36 @@ def test_answer_returns_result_with_citations_after_reading_page(agent, wiki_too
     assert result.citations[0].relevance_score == 0.9
 
     wiki_tools.list_wiki_topics.assert_called_once()
+    wiki_tools.read_wiki_page.assert_called_once_with("hbm4")
+
+
+def test_answer_uses_search_wiki_pages_tool_to_find_and_read_page(agent, wiki_tools, monkeypatch):
+    """제목만 훑는 list_wiki_topics 대신 search_wiki_pages(제목+본문 관련도 검색)로
+    페이지를 찾아도 read_wiki_page -> submit_answer 흐름이 그대로 동작해야 한다."""
+    wiki_tools.search_wiki_pages.return_value = [FakeSearchHit(slug="hbm4", title="HBM4", score=0.83)]
+    wiki_tools.read_wiki_page.return_value = FakePage(
+        title="HBM4",
+        markdown="# HBM4\nHBM4는 차세대 메모리다.",
+        sources=[FakeSource(document_version_id="doc-1", claim_text="HBM4는 차세대 메모리다.")],
+    )
+
+    citation = {
+        "document_version_id": "doc-1",
+        "wiki_slug": "hbm4",
+        "quote": "HBM4는 차세대 메모리다.",
+        "relevance_score": 0.9,
+    }
+    responses = [
+        tool_call_response(("call-1", "search_wiki_pages", {"query": "HBM4 수요"})),
+        tool_call_response(("call-2", "read_wiki_page", {"slug": "hbm4"})),
+        tool_call_response(("call-3", "submit_answer", {"answer": "HBM4는 차세대 메모리다. [1]", "citations": [citation]})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4 수요는 어때?")
+
+    assert result.has_answer is True
+    wiki_tools.search_wiki_pages.assert_called_once_with("HBM4 수요")
     wiki_tools.read_wiki_page.assert_called_once_with("hbm4")
 
 
