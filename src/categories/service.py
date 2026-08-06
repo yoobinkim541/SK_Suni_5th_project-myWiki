@@ -52,6 +52,18 @@ MAX_RECENT_DOCUMENTS = 10
 # 조회 상한. 워크스페이스 하나에 7일치라 현재는 수백 건 규모지만, 무한정 긁지 않는다.
 _FETCH_LIMIT = 5000
 
+_IN_CLAUSE_CHUNK_SIZE = 150
+"""
+.in_() 한 번에 넣을 id 개수 상한. id 목록이 수백 개가 되면 전부 한 URL의 .in_(...)에
+담을 때 PostgREST가 400 Bad Request로 거부한다(2026-08-07 확인: document_analysis_results가
+656건으로 늘면서 _documents_by_version()이 크래시 -> /categories/stats 500).
+src/analysis/repository.py, src/pipeline_common/repository.py의 동일 상수와 같은 값.
+"""
+
+
+def _chunked(items: list, size: int = _IN_CLAUSE_CHUNK_SIZE) -> list[list]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
 
 def _level(avg_score: float | None) -> CategoryLevel:
     """reliability_score 평균 -> 카드가 아는 소문자 3종.
@@ -101,25 +113,29 @@ def _documents_by_version(
     if not version_ids:
         return {}
 
-    versions = (
-        db.table("document_versions")
-        .select("id, document_id")
-        .in_("id", version_ids)
-        .execute()
-        .data
-    )
+    versions: list[dict] = []
+    for chunk in _chunked(version_ids):
+        versions.extend(
+            db.table("document_versions")
+            .select("id, document_id")
+            .in_("id", chunk)
+            .execute()
+            .data
+        )
     document_ids = [str(v["document_id"]) for v in versions if v.get("document_id")]
     if not document_ids:
         return {}
 
-    documents = (
-        db.table("documents")
-        .select("id, title, canonical_url, published_at, source_id")
-        .eq("workspace_id", workspace_id)
-        .in_("id", document_ids)
-        .execute()
-        .data
-    )
+    documents: list[dict] = []
+    for chunk in _chunked(document_ids):
+        documents.extend(
+            db.table("documents")
+            .select("id, title, canonical_url, published_at, source_id")
+            .eq("workspace_id", workspace_id)
+            .in_("id", chunk)
+            .execute()
+            .data
+        )
     by_document = {str(d["id"]): d for d in documents}
 
     # 다른 workspace의 문서는 위 조회에서 빠지므로 여기서 자연히 제외된다.
