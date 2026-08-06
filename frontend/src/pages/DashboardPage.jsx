@@ -6,8 +6,8 @@
 //   KPI 숫자(수집 문서 312건 등)도 전엔 이 파일에 그냥 박혀 있었는데, data/mockDashboard.js의
 //   MOCK_KPI_SUMMARY로 빼서 같이 fetchDashboard()로 받아오게 했습니다.
 //
-// 섹션 순서: 최근 현황(KPI) → 지식 축적화(KnowledgeGraph, 장식용) → 산업 동향 분석(그래프)
-//   → 최신 뉴스 → 오늘의 키워드 → 최근 산업 이슈.
+// 섹션 순서: 관심 키워드(InterestsBar, 추가·삭제) → 최근 현황(KPI) → 지식 축적화
+//   (KnowledgeGraph, 장식용) → 산업 동향 분석(그래프) → 최신 뉴스 → 오늘의 키워드 → 최근 산업 이슈.
 // 검색창(.search)은 없고, "관심사"(App.jsx, 선호조사에서 고른 키워드)와 "오늘의 키워드" 클릭
 // 두 갈래로만 뉴스를 좁힙니다.
 //
@@ -21,6 +21,7 @@ import KpiCard from '../components/dashboard/KpiCard';
 import TrendChart from '../components/dashboard/TrendChart';
 import IssueList from '../components/dashboard/IssueList';
 import KnowledgeGraph from '../components/dashboard/KnowledgeGraph';
+import InterestsBar from '../components/dashboard/InterestsBar';
 import { fetchDashboard } from '../services/dashboardApi';
 import { filterNewsByInterests } from '../data/mockOnboarding';
 
@@ -49,7 +50,7 @@ function kpiDesc(desc) {
   return desc;
 }
 
-export default function DashboardPage({ onNavigate, interests = [] }) {
+export default function DashboardPage({ onNavigate, interests = [], onUpdateInterests }) {
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState([]);
   const [issues, setIssues] = useState([]);
@@ -118,6 +119,9 @@ export default function DashboardPage({ onNavigate, interests = [] }) {
         ))}
         <span className="nx">다음 실행 08:00 · 무인 자동</span>
       </div>
+
+      {/* 0) 관심 키워드 — 온보딩과 별개로 대시보드에서 바로 추가·삭제 */}
+      <InterestsBar interests={interests} onUpdateInterests={onUpdateInterests} />
 
       {/* 1) 최근 현황 — 화면에 들어오자마자 보이는 첫 섹션 */}
       <section className="sec">

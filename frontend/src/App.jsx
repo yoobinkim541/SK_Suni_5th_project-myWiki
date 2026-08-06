@@ -39,6 +39,7 @@ import SideNav from './components/common/SideNav';
 import { BottomNav, Drawer, MoreSheet } from './components/common/MobileNav';
 import SettingsPanel from './components/common/SettingsPanel';
 import ProfilePanel from './components/common/ProfilePanel';
+import Footer from './components/common/Footer';
 import { signInWithProvider, signOut, getCurrentSession, isNewAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
 import {
@@ -54,6 +55,7 @@ import CategoryPage from './pages/CategoryPage';
 import WikiPage from './pages/WikiPage';
 import AgentPage from './pages/AgentPage';
 import SettingsPage from './pages/SettingsPage';
+import PrivacyPage from './pages/PrivacyPage';
 
 const INTERESTS_KEY = 'mywiki-interests';
 
@@ -99,6 +101,10 @@ export default function App() {
   const [notiWiki, setNotiWiki] = useState(true);
   const [dark, setDark] = useState(() => getInitial('mywiki-theme', 'light') === 'dark');
   const [fontSize, setFontSize] = useState(() => getInitial('mywiki-fontsize', 'm'));
+  // PC 사이드바 접기 상태. 페이지를 옮겨다녀도(새로고침해도) 유지되게 localStorage에 저장.
+  const [sideCollapsed, setSideCollapsed] = useState(
+    () => getInitial('mywiki-side-collapsed', 'false') === 'true'
+  );
 
   // 선호 조사 결과: null이면 아직 온보딩을 안 거친 상태입니다.
   const [prefs, setPrefs] = useState(readPrefs);
@@ -224,6 +230,15 @@ export default function App() {
     }
   }, [fontSize]);
 
+  // PC 사이드바 접기 상태 저장. 모바일은 이 상태와 무관(Drawer/BottomNav를 따로 씀).
+  useEffect(() => {
+    try {
+      localStorage.setItem('mywiki-side-collapsed', sideCollapsed ? 'true' : 'false');
+    } catch {
+      // 저장 실패해도 화면 동작에는 지장 없음
+    }
+  }, [sideCollapsed]);
+
   // 온보딩 완료 — 선호 조사 결과를 저장하고 대시보드로 들어갑니다.
   // 관심 키워드는 대시보드 "최신 뉴스" 기본 필터로, 직무는 추후 랭킹 가중치로 씁니다.
   function handleOnboardingComplete(result) {
@@ -251,6 +266,20 @@ export default function App() {
     }
     setPrefs(null);
     setEntryStep('survey');
+  }
+
+  // 대시보드 InterestsBar에서 씀 — 온보딩 전체를 다시 거치지 않고 관심 키워드만 즉시
+  // 추가·삭제한다. role은 건드리지 않고 그대로 유지, keywords만 교체해서 저장.
+  function updateInterests(nextKeywords) {
+    setPrefs((prev) => {
+      const value = { keywords: nextKeywords, role: prev?.role ?? null };
+      try {
+        localStorage.setItem(INTERESTS_KEY, JSON.stringify(value));
+      } catch {
+        // 저장 실패해도 이번 세션 동안은 상태로 유지됩니다.
+      }
+      return value;
+    });
   }
 
   // 두 번째 인자(payload)는 위키 문서 지정용입니다.
@@ -330,7 +359,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app${!isMobile && sideCollapsed ? ' side-collapsed' : ''}`}>
       <TopBar
         variant={isMobile ? 'mobile' : 'pc'}
         onMenuClick={() => setDrawerOpen(true)}
@@ -342,6 +371,8 @@ export default function App() {
         authed={authed}
         avatarInitial={(profile?.user_metadata?.full_name || profile?.email || '?').charAt(0).toUpperCase()}
         onLogoClick={handleLogoClick}
+        onSideToggle={() => setSideCollapsed((c) => !c)}
+        sideCollapsed={sideCollapsed}
       />
 
       {isMobile ? (
@@ -353,11 +384,22 @@ export default function App() {
           onLogoClick={handleLogoClick}
         />
       ) : (
-        <SideNav activeKey={view} onNavigate={navigateTo} onLogoClick={handleLogoClick} />
+        <SideNav
+          activeKey={view}
+          onNavigate={navigateTo}
+          onLogoClick={handleLogoClick}
+          collapsed={sideCollapsed}
+        />
       )}
 
       <main className="main" key={refreshKey}>
-        {view === 'dash' && <DashboardPage onNavigate={navigateTo} interests={prefs.keywords} />}
+        {view === 'dash' && (
+          <DashboardPage
+            onNavigate={navigateTo}
+            interests={prefs.keywords}
+            onUpdateInterests={updateInterests}
+          />
+        )}
         {view === 'report' && <ReportPage onNavigate={navigateTo} />}
         {view === 'cat' && <CategoryPage />}
         {view === 'wiki' && <WikiPage docId={wikiDocId} />}
@@ -375,7 +417,14 @@ export default function App() {
             onResetInterests={resetOnboarding}
           />
         )}
+        {view === 'privacy' && <PrivacyPage onBack={() => navigateTo('dash')} />}
       </main>
+
+      <Footer
+        onNavigate={navigateTo}
+        onPwaInstallClick={handlePwaInstallClick}
+        pwaStateLabel={pwaStateLabel}
+      />
 
       {isMobile && (
         <>

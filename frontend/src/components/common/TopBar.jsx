@@ -11,6 +11,11 @@
 //
 // ⚠ 우측 상단 프로필 버튼(PC만): 톱니바퀴(SettingsPanel) + .avatar(ProfilePanel).
 //   .deck-right로 감싸고 margin-left:auto로 우측 끝에 붙입니다. 열고 닫기는 App.jsx가 합니다.
+//
+// ⚠ 사이드바 접기 버튼(PC만) 추가: .brand2 왼쪽에 햄버거 버튼을 새로 붙였습니다. 누르면
+//   App.jsx의 sideCollapsed 상태가 토글되고 SideNav가 아이콘만 남은 폭으로 접힙니다.
+//   모바일 변형은 원래 쓰던 메뉴 버튼(.m-icobtn, onMenuClick=드로어 열기)을 그대로 씁니다 —
+//   이 접기 버튼과는 별개 기능이라 손대지 않았습니다.
 
 import logo from '../../assets/logo.png';
 import logoDark from '../../assets/logo-dark.png';
@@ -26,6 +31,8 @@ export default function TopBar({
   profileOpen = false,
   authed = true,
   avatarInitial = '',
+  onSideToggle,
+  sideCollapsed = false,
 }) {
   if (variant === 'mobile') {
     return (
@@ -56,6 +63,18 @@ export default function TopBar({
 
   return (
     <header className="deck">
+      <button
+        className="side-toggle"
+        aria-label={sideCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+        aria-expanded={!sideCollapsed}
+        title={sideCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+        onClick={onSideToggle}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
+
       <button className="brand2" onClick={onLogoClick} title="myWiki — 처음 화면으로 새로고침">
         <img src={logo} alt="myWiki" className="brand2-logo-img logo-light" />
         <img src={logoDark} alt="myWiki" className="brand2-logo-img logo-dark" />

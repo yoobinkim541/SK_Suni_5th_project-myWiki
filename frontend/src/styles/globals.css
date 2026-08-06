@@ -1706,3 +1706,43 @@ a.fn:hover{text-decoration:underline}
   }
 }
 
+/* ---------- PC 사이드바 접기 토글(.deck의 .side-toggle) ---------- */
+.side-toggle{flex:none;width:36px;height:36px;border-radius:10px;border:1px solid var(--hair);
+  background:var(--panel);color:var(--ink-2);cursor:pointer;display:flex;align-items:center;
+  justify-content:center;margin-right:14px;
+  transition:background var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease)}
+.side-toggle:hover{border-color:var(--green);color:var(--green);background:var(--green-tint)}
+
+/* ---------- PC 사이드바 접힘 모드(.side.collapsed) ---------- */
+.app.side-collapsed{grid-template-columns:76px 1fr}
+.side.collapsed{width:76px;padding:26px 12px 22px;align-items:center}
+.side.collapsed .brand{display:flex;align-items:center;justify-content:center;
+  width:40px;height:40px;margin:0 auto}
+.side.collapsed nav{align-items:center;width:100%}
+.side.collapsed a{display:flex;align-items:center;justify-content:center;
+  width:44px;height:44px;padding:0;border-radius:12px;margin:0 auto}
+.side.collapsed a.on::before{display:none}
+.side-ic{width:20px;height:20px;display:block}
+.side-ic svg{width:20px;height:20px;stroke:currentColor;fill:none;
+  stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- 사이트 footer 확장(개인정보 링크·PWA 설치·저작권) ---------- */
+.site-footer{flex-wrap:wrap;row-gap:6px}
+.ft-link,.ft-pwa{font:inherit;font-size:11.5px;color:var(--muted);background:none;border:0;
+  padding:0;cursor:pointer;text-decoration:none}
+.ft-link:hover,.ft-pwa:hover{color:var(--green);text-decoration:underline}
+.ft-copy{color:var(--faint)}
+.ft-link::before,.ft-pwa::before,.ft-copy::before{content:"·";margin-right:8px;color:var(--hair)}
+
+/* ---------- 관심 키워드 칩 삭제(✕) 버튼(InterestsBar.jsx) ---------- */
+.kwchip-x{font:inherit;font-size:11px;line-height:1;color:inherit;background:none;border:0;
+  padding:0;margin-left:2px;cursor:pointer;opacity:.6}
+.kwchip-x:hover{opacity:1}
+
+@media (max-width:768px){
+  .site-footer{margin-bottom:calc(66px + env(safe-area-inset-bottom) + 12px);
+    padding:20px 16px 16px;text-align:center}
+}
+
+
