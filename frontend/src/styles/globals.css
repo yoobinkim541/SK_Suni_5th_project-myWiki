@@ -1706,3 +1706,205 @@ a.fn:hover{text-decoration:underline}
   }
 }
 
+/* ===== 역할 배지 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 참여자 칩(.pt-chip) / 추가 후보 행(.pt-row) 안에 붙는 작은 역할 배지 */
+.pt-role {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  margin-left: 2px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 관리자 — 가장 높은 권한이라 채운 배경 */
+.pt-role.admin {
+  background: var(--brand, #175243);
+  color: #fff;
+}
+
+/* 팀장 — 테두리형 */
+.pt-role.leader {
+  border: 1px solid var(--brand, #175243);
+  color: var(--brand, #175243);
+}
+
+/* 팀원 — 옅은 회색 */
+.pt-role.member {
+  background: var(--line, #e3e6e5);
+  color: var(--muted, #6b7280);
+}
+
+/* 게스트 — 앰버 계열로 외부 사용자임을 구분 */
+.pt-role.guest {
+  background: #f5e6c8;
+  color: #9a5b00;
+}
+
+:root[data-theme="dark"] .pt-role.admin {
+  background: #5fd4b0;
+  color: #0f1f1a;
+}
+:root[data-theme="dark"] .pt-role.leader {
+  border-color: #5fd4b0;
+  color: #5fd4b0;
+}
+:root[data-theme="dark"] .pt-role.member {
+  background: rgba(255, 255, 255, .12);
+  color: rgba(255, 255, 255, .7);
+}
+:root[data-theme="dark"] .pt-role.guest {
+  background: rgba(154, 91, 0, .3);
+  color: #e8c46c;
+}
+
+/* 추가 후보 행에서 배지가 + 버튼을 밀지 않도록 이름 영역이 남는 공간을 먹게 한다 */
+.pt-row .nm {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ===== 소속 팀 / 회원 탈퇴 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 프로필 드롭다운 안의 소속 팀 행 */
+.pp-team {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line, #e3e6e5);
+}
+.pp-team .lb {
+  font-size: 11px;
+  color: var(--muted, #8a8f8d);
+  letter-spacing: .02em;
+}
+.pp-team .tx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 회원 탈퇴 모달 */
+.da-warn {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  background: rgba(154, 91, 0, .1);
+  color: #9a5b00;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+:root[data-theme="dark"] .da-warn {
+  background: rgba(154, 91, 0, .25);
+  color: #e8c46c;
+}
+
+.da-list {
+  margin: 0 0 18px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--muted, #6b7280);
+}
+
+.da-input {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.da-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.da-actions .dlbtn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+/* ===== 소속 팀 / 회원 탈퇴 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 프로필 드롭다운 안의 소속 팀 행 */
+.pp-team {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line, #e3e6e5);
+}
+.pp-team .lb {
+  font-size: 11px;
+  color: var(--muted, #8a8f8d);
+  letter-spacing: .02em;
+}
+.pp-team .tx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 회원 탈퇴 모달 */
+.da-warn {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  background: rgba(154, 91, 0, .1);
+  color: #9a5b00;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+:root[data-theme="dark"] .da-warn {
+  background: rgba(154, 91, 0, .25);
+  color: #e8c46c;
+}
+
+.da-list {
+  margin: 0 0 18px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--muted, #6b7280);
+}
+
+.da-input {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.da-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.da-actions .dlbtn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+
+/* 위키 좌측 트리 그룹 제목 */
+.tree .g {
+  font-size: 14px;
+  font-weight: 700;
+  color: #175243;
+  letter-spacing: -0.01em;
+}
+:root[data-theme="dark"] .tree .g {
+  color: #5fd4b0;
+}
+

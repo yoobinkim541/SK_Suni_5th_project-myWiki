@@ -7,13 +7,24 @@
 // 현재 참여자는 아바타+이름 칩에 x 아이콘(.pt-chip), 추가 후보는 아바타+이름 행에
 // + 아이콘(.pt-row)으로 표시한다 — .au/.avs와 같은 초록 원 이니셜 아바타 패턴을 재사용.
 //
-// 권한(다른 사람 빼기는 세션 생성자만)은 백엔드가 최종 검증한다 — 여기서는 버튼을
-// 다 보여주고, 거부되면 에러 메시지로 안내한다(굳이 프론트에서 먼저 숨기지 않음 —
-// "왜 안 보이지" 보다 "이건 못 함"이 더 명확하다).
+// ⚠ 2026-08-05 변경: 역할별로 버튼을 숨긴다.
+//   이전에는 버튼을 다 보여주고 백엔드가 거부하면 에러로 안내하는 방식이었으나,
+//   팀 요구사항이 권한 구조를 화면에 드러내는 쪽으로 정해져 역할 기반 제어로 바꿨다.
+//   · 세션 초대 → 관리자·팀장·팀원
+//   · 세션에서 제외 → 관리자·팀장 (본인 탈퇴는 누구나)
+//   · 게스트는 아무것도 못 함
+//   실제 차단은 여전히 백엔드가 한다 — 버튼을 숨겨도 API 직접 호출은 막지 못하므로
+//   서버 권한 체크가 반드시 함께 있어야 한다.
 //
 // 모달 틀은 WikiKeywordModal.jsx/ReportDetailModal.jsx와 같은 시안 클래스를 재사용한다.
 
 import { useEffect } from 'react';
+import {
+  roleLabel,
+  roleClass,
+  canInviteToSession,
+  canRemoveFromSession,
+} from '../../constants/roles';
 
 function initialOf(nameOrId) {
   return (nameOrId || '?').charAt(0).toUpperCase();
@@ -26,6 +37,8 @@ export default function ParticipantsModal({
   loading,
   error,
   busyUserId,
+  myRole,
+  myUserId,
   onAdd,
   onRemove,
   onClose,
@@ -43,6 +56,7 @@ export default function ParticipantsModal({
 
   const participantIds = new Set((participants ?? []).map((p) => p.user_id));
   const addable = (workspaceMembers ?? []).filter((m) => !participantIds.has(m.user_id));
+  const mayInvite = canInviteToSession(myRole);
 
   return (
     <>
@@ -66,54 +80,80 @@ export default function ParticipantsModal({
             <div className="kwm-empty">참여자가 없습니다.</div>
           ) : (
             <div className="pt-chips">
-              {participants.map((p) => (
-                <span className="pt-chip" key={p.user_id}>
-                  <i className="av">{initialOf(p.display_name || p.user_id)}</i>
-                  <span className="nm">{p.display_name || p.user_id}</span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="x"
-                    aria-label={`${p.display_name || p.user_id} 빼기`}
-                    style={{ opacity: busyUserId === p.user_id ? 0.4 : 1 }}
-                    onClick={() => busyUserId !== p.user_id && onRemove(p.user_id)}
-                    onKeyDown={(e) => e.key === 'Enter' && busyUserId !== p.user_id && onRemove(p.user_id)}
-                  >
-                    ✕
+              {participants.map((p) => {
+                const isSelf = p.user_id === myUserId;
+                const mayRemove = canRemoveFromSession(myRole, { isSelf });
+                const name = p.display_name || p.user_id;
+                return (
+                  <span className="pt-chip" key={p.user_id}>
+                    <i className="av">{initialOf(name)}</i>
+                    <span className="nm">{name}</span>
+                    {p.role && (
+                      <span className={`pt-role ${roleClass(p.role)}`}>{roleLabel(p.role)}</span>
+                    )}
+                    {mayRemove && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="x"
+                        aria-label={isSelf ? '대화에서 나가기' : `${name} 빼기`}
+                        title={isSelf ? '대화에서 나가기' : `${name} 빼기`}
+                        style={{ opacity: busyUserId === p.user_id ? 0.4 : 1 }}
+                        onClick={() => busyUserId !== p.user_id && onRemove(p.user_id)}
+                        onKeyDown={(e) => e.key === 'Enter' && busyUserId !== p.user_id && onRemove(p.user_id)}
+                      >
+                        ✕
+                      </span>
+                    )}
                   </span>
-                </span>
-              ))}
+                );
+              })}
             </div>
           )}
 
-          <div className="mw-lb">추가하기</div>
-          {loading && !workspaceMembers ? (
-            <div className="kwm-empty">불러오는 중…</div>
-          ) : addable.length === 0 ? (
-            <div className="kwm-empty">추가할 수 있는 워크스페이스 멤버가 없습니다.</div>
-          ) : (
-            <div className="pt-list">
-              {addable.map((m) => (
-                <div className="pt-row" key={m.user_id}>
-                  <i className="av">{initialOf(m.display_name || m.user_id)}</i>
-                  <span className="nm">
-                    {m.display_name || m.user_id}
-                    {m.email && <span className="d"> ({m.email})</span>}
-                  </span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="add"
-                    aria-label={`${m.display_name || m.user_id} 추가`}
-                    style={{ opacity: busyUserId === m.user_id ? 0.4 : 1 }}
-                    onClick={() => busyUserId !== m.user_id && onAdd(m.user_id)}
-                    onKeyDown={(e) => e.key === 'Enter' && busyUserId !== m.user_id && onAdd(m.user_id)}
-                  >
-                    +
-                  </span>
+          {/* 초대 권한이 없으면(게스트) 추가 영역 자체를 숨긴다. */}
+          {mayInvite && (
+            <>
+              <div className="mw-lb">추가하기</div>
+              {loading && !workspaceMembers ? (
+                <div className="kwm-empty">불러오는 중…</div>
+              ) : addable.length === 0 ? (
+                <div className="kwm-empty">추가할 수 있는 워크스페이스 멤버가 없습니다.</div>
+              ) : (
+                <div className="pt-list">
+                  {addable.map((m) => {
+                    const name = m.display_name || m.user_id;
+                    return (
+                      <div className="pt-row" key={m.user_id}>
+                        <i className="av">{initialOf(name)}</i>
+                        <span className="nm">
+                          {name}
+                          {m.email && <span className="d"> ({m.email})</span>}
+                        </span>
+                        {m.role && (
+                          <span className={`pt-role ${roleClass(m.role)}`}>{roleLabel(m.role)}</span>
+                        )}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="add"
+                          aria-label={`${name} 추가`}
+                          style={{ opacity: busyUserId === m.user_id ? 0.4 : 1 }}
+                          onClick={() => busyUserId !== m.user_id && onAdd(m.user_id)}
+                          onKeyDown={(e) => e.key === 'Enter' && busyUserId !== m.user_id && onAdd(m.user_id)}
+                        >
+                          +
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
+          )}
+
+          {!mayInvite && (
+            <div className="kwm-empty">참여자를 추가할 권한이 없습니다.</div>
           )}
         </div>
       </div>
