@@ -84,3 +84,55 @@ def test_compose_chat_wiki_draft_uses_injected_llm_client(monkeypatch):
     assert draft.title == "t"
     assert len(calls) == 1
     assert calls[0][0] == chat_wiki.CHAT_WIKI_SYSTEM_PROMPT
+
+
+def test_compose_chat_wiki_draft_falls_back_on_invalid_json(monkeypatch):
+    monkeypatch.setattr(chat_wiki, "create_json_completion", lambda **kwargs: "이건 JSON이 아님")
+
+    draft = chat_wiki.compose_chat_wiki_draft(
+        question="HBM4가 뭐야?", answer="HBM4는 차세대 메모리다.", citations=[SAMPLE_CITATION],
+    )
+
+    assert draft.title == "HBM4가 뭐야?"
+    assert "## 답변 요약" in draft.markdown
+    assert "HBM4는 차세대 메모리다." in draft.markdown
+    assert "- HBM4는 차세대 메모리다." in draft.markdown  # key_evidence 폴백 = citation quoted_text
+
+
+def test_compose_chat_wiki_draft_falls_back_on_schema_validation_error(monkeypatch):
+    monkeypatch.setattr(
+        chat_wiki, "create_json_completion", lambda **kwargs: json.dumps({"title": "제목만 있음"}),
+    )
+
+    draft = chat_wiki.compose_chat_wiki_draft(
+        question="HBM4가 뭐야?", answer="답변 원문", citations=[SAMPLE_CITATION],
+    )
+
+    assert draft.title == "HBM4가 뭐야?"
+    assert "답변 원문" in draft.markdown
+
+
+def test_compose_chat_wiki_draft_falls_back_on_llm_exception(monkeypatch):
+    def raise_timeout(**kwargs):
+        raise OpenRouterTimeoutError("timeout")
+
+    monkeypatch.setattr(chat_wiki, "create_json_completion", raise_timeout)
+
+    draft = chat_wiki.compose_chat_wiki_draft(
+        question="HBM4가 뭐야?", answer="답변 원문", citations=[SAMPLE_CITATION],
+    )
+
+    assert draft.title == "HBM4가 뭐야?"
+    assert "답변 원문" in draft.markdown
+
+
+def test_compose_chat_wiki_draft_truncates_long_question_for_fallback_title(monkeypatch):
+    def raise_timeout(**kwargs):
+        raise OpenRouterTimeoutError("timeout")
+
+    monkeypatch.setattr(chat_wiki, "create_json_completion", raise_timeout)
+    long_question = "가" * 100
+
+    draft = chat_wiki.compose_chat_wiki_draft(question=long_question, answer="답변", citations=[SAMPLE_CITATION])
+
+    assert draft.title == long_question[:80]

@@ -80,6 +80,13 @@ def _build_markdown(
     return "\n".join(lines)
 
 
+def _fallback_draft(question: str, answer: str, citations: list[dict]) -> ChatWikiDraft:
+    title = question[:80]
+    key_evidence = [citation.get("quoted_text") or "" for citation in citations]
+    markdown = _build_markdown(title, question, answer, key_evidence, citations)
+    return ChatWikiDraft(title=title, markdown=markdown)
+
+
 def compose_chat_wiki_draft(
     question: str,
     answer: str,
@@ -90,16 +97,26 @@ def compose_chat_wiki_draft(
     settings = get_openrouter_settings()
     user_prompt = _build_chat_wiki_user_prompt(question, answer, citations)
 
-    if llm_client is not None:
-        response_text = llm_client(CHAT_WIKI_SYSTEM_PROMPT, user_prompt, settings.model)
-    else:
-        response_text = create_json_completion(
-            system_prompt=CHAT_WIKI_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            model=settings.model,
-        )
-    payload = parse_json_response(response_text)
-    result = ChatWikiLLMResult.model_validate(payload)
+    try:
+        if llm_client is not None:
+            response_text = llm_client(CHAT_WIKI_SYSTEM_PROMPT, user_prompt, settings.model)
+        else:
+            response_text = create_json_completion(
+                system_prompt=CHAT_WIKI_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                model=settings.model,
+            )
+        payload = parse_json_response(response_text)
+        result = ChatWikiLLMResult.model_validate(payload)
+    except (
+        MissingApiKeyError,
+        OpenRouterApiError,
+        OpenRouterTimeoutError,
+        InvalidJsonResponseError,
+        ValidationError,
+    ) as exc:
+        logger.warning("chat_wiki_draft_llm_fallback", extra={"error": str(exc)})
+        return _fallback_draft(question, answer, citations)
 
     markdown = _build_markdown(result.title, question, result.answer_summary, result.key_evidence, citations)
     return ChatWikiDraft(title=result.title, markdown=markdown)
