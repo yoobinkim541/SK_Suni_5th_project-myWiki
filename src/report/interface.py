@@ -6,15 +6,15 @@ from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from supabase import Client
 
-from .artifact_service import create_and_save_markdown_artifact
+from .artifact_service import create_and_save_docx_artifact, create_and_save_markdown_artifact, create_and_save_pdf_artifact, create_and_save_pptx_artifact
 from .assembler import DEFAULT_REPORT_TITLE, assemble_generated_report
 from .candidate_provider import get_report_candidates
 from .composer import ReportComposerConfig, compose_report_sections
 from .grouper import IssueGroupingConfig, group_report_candidates
-from .models import GeneratedReport, ReportGenerationRequest, ReportStatus
+from .models import ArtifactType, GeneratedReport, ReportGenerationRequest, ReportStatus
 from .repository import (
     SavedReportArtifact,
     create_report_version,
@@ -38,17 +38,8 @@ except ZoneInfoNotFoundError:
 
 class ReportSelectionConfig(BaseModel):
     max_candidates: int | None = Field(default=None, ge=1)
-    # 2026-08-04 개정: 원래 70(= ReliabilityLevel.HIGH/ImportanceLevel.HIGH 하한, 둘 다
-    # analysis/*_models.py의 LOW(0-39)/MEDIUM(40-69)/HIGH(70-100) 3단계 기준 공유)이었다.
-    # 그런데 실제 수집되는 반도체 뉴스는 대부분 비공식·단일 출처라서
-    # reliability_scoring.py의 source_authority_max/independent_evidence_max 상한 때문에
-    # HIGH(70+)를 사실상 못 넘긴다 — 라이브 데이터 확인 결과 reliability_score가 70을 넘긴
-    # 행이 하나도 없었고(최고 63), 그 결과 리포트·위키 후보 선정이 매번 0건이었다("HIGH만"
-    # 요구하는 게 사실상 "전부 거부"와 같았음). 채점 로직 자체는 설계대로 정상 동작 중이므로,
-    # 로직을 고치는 대신 기준을 MEDIUM 이상(40)으로 낮췄다 — LOW(명백히 부실한 단일신호/충돌
-    # 정황 등으로 캡이 걸린 건)만 걸러내고 MEDIUM 이상은 통과시킨다.
-    min_reliability_score: int = Field(default=40, ge=0, le=100)
-    min_importance_score: int = Field(default=40, ge=0, le=100)
+    min_reliability_score: int = Field(default=70, ge=0, le=100)
+    min_importance_score: int = Field(default=70, ge=0, le=100)
     min_ranking_score: Decimal | None = Field(default=None, ge=0, le=100)
     category_limits: dict[Category, int] | None = None
 
@@ -62,6 +53,31 @@ class ReportSelectionConfig(BaseModel):
 
 class WikiEnrichmentConfig(BaseModel):
     limit_per_group: int = Field(default=DEFAULT_WIKI_CONTEXT_LIMIT, ge=0)
+
+
+class ReportArtifactConfig(BaseModel):
+    formats: list[ArtifactType] = Field(default_factory=lambda: [ArtifactType.MARKDOWN])
+
+    @field_validator("formats", mode="before")
+    @classmethod
+    def normalize_formats(cls, value: object) -> list[ArtifactType] | object:
+        if value is None:
+            return [ArtifactType.MARKDOWN]
+        if isinstance(value, (str, ArtifactType)):
+            return [value]
+        return value
+
+    @model_validator(mode="after")
+    def validate_formats(self) -> "ReportArtifactConfig":
+        if not self.formats:
+            raise ValueError("formats must not be empty.")
+        deduped: list[ArtifactType] = []
+        for item in self.formats:
+            artifact_type = item if isinstance(item, ArtifactType) else ArtifactType(str(item))
+            if artifact_type not in deduped:
+                deduped.append(artifact_type)
+        self.formats = deduped
+        return self
 
 
 class ReportGenerationConfig(BaseModel):
@@ -78,6 +94,7 @@ class ReportGenerationConfig(BaseModel):
     )
     wiki: WikiEnrichmentConfig = Field(default_factory=WikiEnrichmentConfig)
     composer: ReportComposerConfig = Field(default_factory=ReportComposerConfig)
+    artifacts: ReportArtifactConfig = Field(default_factory=ReportArtifactConfig)
     explicit_group_keys: dict[str, str] | None = None
 
     @field_validator("requested_by", mode="before")
@@ -92,6 +109,7 @@ class ReportGenerationConfig(BaseModel):
 class DailyReportGenerationResult(BaseModel):
     report: GeneratedReport
     artifact: SavedReportArtifact
+    artifacts: list[SavedReportArtifact] = Field(default_factory=list)
 
 
 def generate_daily_report(
@@ -149,15 +167,17 @@ def generate_daily_report(
                 report=report,
                 generated_at=generated_at,
             )
-            artifact = _create_report_artifact(
+            artifacts = _create_report_artifacts(
                 generated_report=empty_report,
                 requested_by=pipeline_config.requested_by,
                 supabase=supabase,
+                artifact_config=pipeline_config.artifacts,
             )
+            primary_artifact = artifacts[0]
             stage = "complete_report"
             mark_report_completed(report_id=report.report_id, supabase=supabase)
-            _apply_completion_metadata(report=empty_report, artifact=artifact)
-            return DailyReportGenerationResult(report=empty_report, artifact=artifact)
+            _apply_completion_metadata(report=empty_report, artifact=primary_artifact)
+            return DailyReportGenerationResult(report=empty_report, artifact=primary_artifact, artifacts=artifacts)
 
         stage = "group_candidates"
         issue_groups = group_report_candidates(
@@ -227,16 +247,18 @@ def generate_daily_report(
             raise ValueError("saved section count must match section_draft count.")
 
         stage = "save_artifact"
-        artifact = _create_report_artifact(
+        artifacts = _create_report_artifacts(
             generated_report=assembled_report,
             requested_by=pipeline_config.requested_by,
             supabase=supabase,
+            artifact_config=pipeline_config.artifacts,
         )
+        primary_artifact = artifacts[0]
 
         stage = "complete_report"
         mark_report_completed(report_id=report.report_id, supabase=supabase)
-        _apply_completion_metadata(report=assembled_report, artifact=artifact)
-        return DailyReportGenerationResult(report=assembled_report, artifact=artifact)
+        _apply_completion_metadata(report=assembled_report, artifact=primary_artifact)
+        return DailyReportGenerationResult(report=assembled_report, artifact=primary_artifact, artifacts=artifacts)
     except Exception as exc:
         logger.exception(
             "report_generation_failed",
@@ -294,6 +316,9 @@ def _build_request_config(
             "prompt_version": config.composer.prompt_version,
             "max_retries": config.composer.max_retries,
         },
+        "artifacts": {
+            "formats": [artifact_type.value for artifact_type in config.artifacts.formats],
+        },
         "explicit_group_keys": dict(config.explicit_group_keys or {}),
     }
 
@@ -331,17 +356,53 @@ def _build_empty_generated_report(
     )
 
 
-def _create_report_artifact(
+def _create_report_artifacts(
     *,
     generated_report: GeneratedReport,
     requested_by: str | None,
     supabase: Client | None,
-) -> SavedReportArtifact:
-    return create_and_save_markdown_artifact(
-        report=generated_report,
-        supabase=supabase,
-        created_by=requested_by,
-    )
+    artifact_config: ReportArtifactConfig,
+) -> list[SavedReportArtifact]:
+    artifacts: list[SavedReportArtifact] = []
+    for artifact_type in artifact_config.formats:
+        if artifact_type == ArtifactType.MARKDOWN:
+            artifacts.append(
+                create_and_save_markdown_artifact(
+                    report=generated_report,
+                    supabase=supabase,
+                    created_by=requested_by,
+                )
+            )
+            continue
+        if artifact_type == ArtifactType.DOCX:
+            artifacts.append(
+                create_and_save_docx_artifact(
+                    report=generated_report,
+                    supabase=supabase,
+                    created_by=requested_by,
+                )
+            )
+            continue
+        if artifact_type == ArtifactType.PDF:
+            artifacts.append(
+                create_and_save_pdf_artifact(
+                    report=generated_report,
+                    supabase=supabase,
+                    created_by=requested_by,
+                )
+            )
+            continue
+        if artifact_type == ArtifactType.PPTX:
+            artifacts.append(
+                create_and_save_pptx_artifact(
+                    report=generated_report,
+                    supabase=supabase,
+                    created_by=requested_by,
+                )
+            )
+            continue
+        raise ValueError(f"Unsupported artifact type for report generation: {artifact_type.value}")
+    return artifacts
 
 
 def _apply_completion_metadata(

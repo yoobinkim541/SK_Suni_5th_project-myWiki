@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from collections.abc import Callable, Sequence
 from functools import lru_cache
@@ -13,6 +12,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from ..analysis.importance_models import ImpactDirection, TimeHorizon
 from ..analysis.models import Category
 from .models import (
+    ReportSectionStatus,
     EnrichedIssueGroup,
     ReportCandidate,
     ReportCitationDraft,
@@ -23,13 +23,7 @@ from .models import (
 from .prompts import SECTION_PROMPT_VERSION, build_report_section_messages
 
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# 팀 확정 모델(agent/core.py, analysis/classifier.py와 통일) — 2026-08-04까지
-# openai/gpt-4.1-mini가 잘못 기본값으로 남아있었다.
-DEFAULT_REPORT_MODEL = "deepseek/deepseek-v4-flash"
-# 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
-DEFAULT_FALLBACK_MODEL = "deepseek/deepseek-v4-pro"
-
-logger = logging.getLogger(__name__)
+DEFAULT_REPORT_MODEL = "openai/gpt-4.1-mini"
 
 
 class ReportComposerError(Exception):
@@ -42,7 +36,6 @@ class ReportReferenceValidationError(ReportComposerError):
 
 class ReportComposerConfig(BaseModel):
     model: str = DEFAULT_REPORT_MODEL
-    fallback_model: str = DEFAULT_FALLBACK_MODEL
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     language: str = "ko"
     max_wiki_contexts: int = Field(default=3, ge=0)
@@ -144,7 +137,6 @@ class GeneratedReportSectionPayload(BaseModel):
 class OpenRouterSettings(BaseModel):
     api_key: str
     model: str
-    fallback_model: str
     base_url: str
 
 
@@ -299,6 +291,7 @@ def to_report_section_draft(
         watch_points=[point.text for point in payload.watch_points],
         news_citations=news_citations,
         wiki_references=wiki_references,
+        status=ReportSectionStatus.COMPLETED,
     )
 
 
@@ -372,7 +365,6 @@ def get_openrouter_settings() -> OpenRouterSettings:
     return OpenRouterSettings(
         api_key=os.getenv("OPENROUTER_API_KEY", "").strip(),
         model=os.getenv("OPENROUTER_MODEL", "").strip() or DEFAULT_REPORT_MODEL,
-        fallback_model=os.getenv("OPENROUTER_FALLBACK_MODEL", "").strip() or DEFAULT_FALLBACK_MODEL,
         base_url=os.getenv("OPENROUTER_BASE_URL", "").strip() or DEFAULT_OPENROUTER_BASE_URL,
     )
 
@@ -520,41 +512,13 @@ def _create_report_json_completion(
     user_prompt: str,
     config: ReportComposerConfig,
 ) -> str:
-    """기본 모델로 호출하고, 실패하면 fallback_model로 한 번만 더 시도한다."""
     settings = get_openrouter_settings()
     if not settings.api_key:
         raise ReportComposerError("OPENROUTER_API_KEY is not configured.")
 
-    primary_model = config.model or settings.model
-    try:
-        return _complete_report_section(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            model=primary_model,
-            temperature=config.temperature,
-        )
-    except Exception:
-        fallback_model = config.fallback_model or settings.fallback_model
-        if fallback_model == primary_model:
-            raise
-        logger.warning(
-            "openrouter_primary_model_failed_using_fallback",
-            extra={"primary_model": primary_model, "fallback_model": fallback_model},
-        )
-        return _complete_report_section(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            model=fallback_model,
-            temperature=config.temperature,
-        )
-
-
-def _complete_report_section(
-    *, system_prompt: str, user_prompt: str, model: str, temperature: float,
-) -> str:
     response = get_openrouter_client().chat.completions.create(
-        model=model,
-        temperature=temperature,
+        model=config.model or settings.model,
+        temperature=config.temperature,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
