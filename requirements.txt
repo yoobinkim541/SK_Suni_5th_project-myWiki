@@ -1,4 +1,4 @@
-﻿fastapi>=0.115
+fastapi>=0.115
 uvicorn[standard]>=0.32
 anthropic>=0.40
 openai>=1.99  # OpenRouter??OpenAI ?명솚 API ??base_url留?援먯껜?댁꽌 ?ъ슜
