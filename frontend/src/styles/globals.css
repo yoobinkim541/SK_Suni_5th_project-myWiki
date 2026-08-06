@@ -1764,3 +1764,15 @@ a.fn:hover{text-decoration:underline}
   cursor: default;
 }
 
+
+/* 위키 좌측 트리 그룹 제목 */
+.tree .g {
+  font-size: 14px;
+  font-weight: 700;
+  color: #175243;
+  letter-spacing: -0.01em;
+}
+:root[data-theme="dark"] .tree .g {
+  color: #5fd4b0;
+}
+
