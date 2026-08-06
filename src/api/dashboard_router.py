@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from . import db
 from .auth import get_current_user
-from .schemas import DashboardSummaryOut
+from .schemas import DashboardSummaryOut, DashboardTrendOut
 from ..dashboard import service as dashboard_service
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -27,3 +27,10 @@ def get_summary(profile: dict = Depends(get_current_user)):
     """DashboardPage KPI 카드(수집 문서·생성 보고서·위키 문서·평균 신뢰도) 전용."""
     workspace_id = _require_workspace(profile)
     return dashboard_service.get_dashboard_summary(workspace_id)
+
+
+@router.get("/trend", response_model=DashboardTrendOut)
+def get_trend(profile: dict = Depends(get_current_user)):
+    """DashboardPage 동향 차트 전용. 최근 7일 일별 수집·채택 건수 (KST 기준)."""
+    workspace_id = _require_workspace(profile)
+    return dashboard_service.get_dashboard_trend(workspace_id)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date as dt_date
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -196,6 +197,34 @@ class DashboardSummaryOut(BaseModel):
     wiki_docs: int
     wiki_docs_new_today: int
     avg_reliability_label: str
+
+
+# ---------------------------------------------------------------------------
+# 일별 수집·채택 추이 — GET /dashboard/trend 전용
+#
+# DashboardSummaryOut에 배열을 끼워넣지 않고 따로 뺐다. 저쪽은 스칼라 6개로
+# 프론트와 배선이 끝난 계약이라 모양을 흔들지 않는다.
+# ---------------------------------------------------------------------------
+
+class TrendDayOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    # KST 기준 날짜. 'YYYY-MM-DD'로 직렬화된다
+    date: dt_date
+    collected: int
+    # 그날 수집분 중 랭킹이 끝난 문서 수. 분석이 수집보다 늦게 돌아서
+    # 오늘 값은 거의 0으로 나오는 게 정상이다
+    adopted: int
+    # collected의 수집 경로별 내역. 그 밖의 source_type이 생기면
+    # news + disclosure < collected 가 될 수 있다
+    news: int
+    disclosure: int
+
+
+class DashboardTrendOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    days: list[TrendDayOut]
 
 
 # ---------------------------------------------------------------------------
