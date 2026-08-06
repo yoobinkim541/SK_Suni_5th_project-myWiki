@@ -2144,7 +2144,7 @@ a.fn:hover{text-decoration:underline}
 }
  
 /* 펼친 상태 로고 정렬 */
-.nm {
+.brand .nm {
   display: flex;
   justify-content: center;
   align-items: center;
