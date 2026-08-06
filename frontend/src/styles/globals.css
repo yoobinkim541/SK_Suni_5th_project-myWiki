@@ -1574,3 +1574,67 @@ a.fn:hover{text-decoration:underline}
   }
 }
 
+/* ===== 역할 배지 — globals.css 맨 아래에 붙여넣기 ===== */
+
+/* 참여자 칩(.pt-chip) / 추가 후보 행(.pt-row) 안에 붙는 작은 역할 배지 */
+.pt-role {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  margin-left: 2px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 관리자 — 가장 높은 권한이라 채운 배경 */
+.pt-role.admin {
+  background: var(--brand, #175243);
+  color: #fff;
+}
+
+/* 팀장 — 테두리형 */
+.pt-role.leader {
+  border: 1px solid var(--brand, #175243);
+  color: var(--brand, #175243);
+}
+
+/* 팀원 — 옅은 회색 */
+.pt-role.member {
+  background: var(--line, #e3e6e5);
+  color: var(--muted, #6b7280);
+}
+
+/* 게스트 — 앰버 계열로 외부 사용자임을 구분 */
+.pt-role.guest {
+  background: #f5e6c8;
+  color: #9a5b00;
+}
+
+:root[data-theme="dark"] .pt-role.admin {
+  background: #5fd4b0;
+  color: #0f1f1a;
+}
+:root[data-theme="dark"] .pt-role.leader {
+  border-color: #5fd4b0;
+  color: #5fd4b0;
+}
+:root[data-theme="dark"] .pt-role.member {
+  background: rgba(255, 255, 255, .12);
+  color: rgba(255, 255, 255, .7);
+}
+:root[data-theme="dark"] .pt-role.guest {
+  background: rgba(154, 91, 0, .3);
+  color: #e8c46c;
+}
+
+/* 추가 후보 행에서 배지가 + 버튼을 밀지 않도록 이름 영역이 남는 공간을 먹게 한다 */
+.pt-row .nm {
+  flex: 1;
+  min-width: 0;
+}
+
