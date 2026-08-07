@@ -11,7 +11,7 @@ import logging
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 
 # db.py/auth.py는 SUPABASE_* 값을 요청 처리 중(첫 호출 시점)에 os.environ에서 직접 읽는다 —
@@ -29,6 +29,7 @@ from . import db
 from .auth import get_current_user
 from .schemas import (
     AddParticipantRequest,
+    AdminSessionOut,
     ChatMessageOut,
     ChatSessionOut,
     CitationOut,
@@ -508,6 +509,32 @@ def update_member_role(
         user_id=updated["user_id"], display_name=updated.get("display_name"),
         email=updated.get("email"), role=updated.get("role"),
     )
+
+
+@app.get("/workspace/sessions", response_model=list[AdminSessionOut])
+def list_admin_sessions(
+    visibility: Literal["team", "private"] = Query(...), profile: dict = Depends(get_current_user)
+):
+    """오너가 워크스페이스의 모든 세션을 참여 여부/소유자 무관하게 열람한다."""
+    workspace_id = _require_workspace(profile)
+    _require_owner(profile, workspace_id)
+
+    rows = db.list_workspace_sessions_for_admin(workspace_id, visibility)
+    return [AdminSessionOut(**r) for r in rows]
+
+
+@app.get("/workspace/sessions/{session_id}/messages", response_model=list[ChatMessageOut])
+def get_admin_session_messages(session_id: str, profile: dict = Depends(get_current_user)):
+    """오너가 세션 하나의 대화 내용을 읽기 전용으로 조회한다."""
+    workspace_id = _require_workspace(profile)
+    _require_owner(profile, workspace_id)
+
+    session = db.get_chat_session_for_admin(session_id, workspace_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
+
+    messages = db.list_chat_messages(session_id)
+    return [_to_message_out(m) for m in messages]
 
 
 @app.delete("/account", status_code=status.HTTP_204_NO_CONTENT)

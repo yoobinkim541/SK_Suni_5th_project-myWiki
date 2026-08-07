@@ -108,3 +108,71 @@ def test_update_role_rejects_invalid_role_value(client_as, monkeypatch):
     res = client_as(OWNER_ID).patch(f"/workspace/members/{TARGET_ID}/role", json={"role": "owner"})
 
     assert res.status_code == 422
+
+
+def test_list_sessions_requires_owner(client_as, monkeypatch):
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "editor")
+
+    res = client_as(OWNER_ID).get("/workspace/sessions", params={"visibility": "team"})
+
+    assert res.status_code == 403
+
+
+def test_list_sessions_returns_admin_session_list(client_as, monkeypatch):
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "owner")
+    monkeypatch.setattr(
+        db, "list_workspace_sessions_for_admin",
+        lambda wid, visibility: [{
+            "id": "sess-1", "workspace_id": wid, "user_id": TARGET_ID, "title": "팀 세션",
+            "visibility": visibility, "owner_name": "박하늘", "archived_at": None,
+            "created_at": "2026-08-07T00:00:00Z", "updated_at": "2026-08-07T00:00:00Z",
+        }],
+    )
+
+    res = client_as(OWNER_ID).get("/workspace/sessions", params={"visibility": "team"})
+
+    assert res.status_code == 200
+    assert res.json()[0]["owner_name"] == "박하늘"
+    assert res.json()[0]["id"] == "sess-1"
+
+
+def test_list_sessions_rejects_invalid_visibility(client_as, monkeypatch):
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "owner")
+
+    res = client_as(OWNER_ID).get("/workspace/sessions", params={"visibility": "bogus"})
+
+    assert res.status_code == 422
+
+
+def test_get_admin_session_messages_requires_owner(client_as, monkeypatch):
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "editor")
+
+    res = client_as(OWNER_ID).get("/workspace/sessions/sess-1/messages")
+
+    assert res.status_code == 403
+
+
+def test_get_admin_session_messages_404_for_missing_session(client_as, monkeypatch):
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "owner")
+    monkeypatch.setattr(db, "get_chat_session_for_admin", lambda sid, wid: None)
+
+    res = client_as(OWNER_ID).get("/workspace/sessions/sess-missing/messages")
+
+    assert res.status_code == 404
+
+
+def test_get_admin_session_messages_success(client_as, monkeypatch):
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "owner")
+    monkeypatch.setattr(db, "get_chat_session_for_admin", lambda sid, wid: {"id": sid, "workspace_id": wid})
+    monkeypatch.setattr(
+        db, "list_chat_messages",
+        lambda sid: [{
+            "id": "msg-1", "session_id": sid, "role": "user", "content": "질문",
+            "created_at": "2026-08-07T00:00:00Z",
+        }],
+    )
+
+    res = client_as(OWNER_ID).get("/workspace/sessions/sess-1/messages")
+
+    assert res.status_code == 200
+    assert res.json()[0]["content"] == "질문"
