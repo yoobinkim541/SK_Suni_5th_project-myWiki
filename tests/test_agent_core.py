@@ -99,6 +99,23 @@ class FakeSearchHit:
     score: float
 
 
+@dataclass
+class FakeDocumentSearchHit:
+    document_version_id: str
+    title: str
+    score: float
+
+
+@dataclass
+class FakeDocumentDetail:
+    document_version_id: str
+    title: str
+    markdown: str
+    canonical_url: str
+    source_name: str
+    published_at: str
+
+
 @pytest.fixture
 def wiki_tools() -> MagicMock:
     return MagicMock()
@@ -240,7 +257,13 @@ def test_answer_passes_question_and_history_to_first_call(agent, wiki_tools, mon
 # ---------------------------------------------------------------------------
 
 def test_answer_returns_no_answer_when_model_calls_submit_no_answer(agent, wiki_tools, monkeypatch):
-    responses = [tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"}))]
+    # 위키 단계가 근거 없음이면 원문 단계가 이어서 시도되므로(3단계 파이프라인),
+    # 그 단계도 근거 없음으로 끝나는 응답을 준비해야 한다 — 최종 no_answer_reason은
+    # 마지막으로 실제 실행된 단계(원문 단계)의 사유가 된다.
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
+    ]
     monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
 
     result = agent.answer("존재하지 않는 주제에 대해 알려줘")
@@ -248,11 +271,15 @@ def test_answer_returns_no_answer_when_model_calls_submit_no_answer(agent, wiki_
     assert result.has_answer is False
     assert result.answer is None
     assert result.citations == []
-    assert result.no_answer_reason == "위키에 관련 문서 없음"
+    assert result.no_answer_reason == "원문에도 관련 문서 없음"
 
 
 def test_answer_returns_no_answer_when_model_ends_without_tool_calls(agent, wiki_tools, monkeypatch):
-    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=[text_only_response()]))
+    # 위키 단계가 이 사유로 끝나면 원문 단계도 실행되므로, 검증하려는 "도구 호출 없이
+    # 텍스트로 종료" 동작이 최종 결과에도 그대로 남게 원문 단계도 같은 방식으로 끝낸다.
+    monkeypatch.setattr(
+        agent, "_call_model", MagicMock(side_effect=[text_only_response(), text_only_response()])
+    )
 
     result = agent.answer("아무 질문")
 
@@ -278,6 +305,10 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
     wiki_tools.list_wiki_topics.return_value = []
     responses = [
         tool_call_response((f"call-{i}", "list_wiki_topics", {})) for i in range(MAX_TOOL_ROUNDS)
+    ] + [
+        # 위키 단계가 라운드 초과로 끝나면 원문 단계가 이어서 시도된다 — 그 단계는
+        # 바로 근거 없음으로 끝내서 흐름이 계속 이어짐(→ llm 폴백 시도)만 확인한다.
+        tool_call_response(("call-doc", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"}))
     ]
     call_mock = MagicMock(side_effect=responses)
     monkeypatch.setattr(agent, "_call_model", call_mock)
@@ -285,11 +316,14 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
     result = agent.answer("계속 조회만 하는 모델")
 
     assert result.has_answer is False
-    assert result.no_answer_reason == "최대 조회 횟수 초과 — 근거 확정 실패"
-    # MAX_TOOL_ROUNDS번은 _wiki_answer, +1번은 answer()가 이어서 시도하는
-    # _llm_fallback_answer의 호출 — side_effect 목록이 그만큼만 있어 StopIteration으로
-    # 실패하고(폴백 실패로 처리) 원래의 no_answer 결과가 그대로 반환된다.
-    assert call_mock.call_count == MAX_TOOL_ROUNDS + 1
+    # 위키 단계의 "최대 조회 횟수 초과" 사유는 원문 단계가 정상적으로 근거 없음을
+    # 판정하면서 대체된다 — 최종 결과는 마지막으로 실행된 단계(원문 단계)의 사유다.
+    assert result.no_answer_reason == "원문에도 관련 문서 없음"
+    # MAX_TOOL_ROUNDS번은 _wiki_answer(라운드 초과), +1번은 _document_answer(근거 없음
+    # 판정), +1번은 answer()가 이어서 시도하는 _llm_fallback_answer의 호출 — side_effect
+    # 목록이 그만큼만 있어 마지막 호출은 StopIteration으로 실패하고(폴백 실패로 처리)
+    # 원문 단계의 no_answer 결과가 그대로 반환된다.
+    assert call_mock.call_count == MAX_TOOL_ROUNDS + 2
 
 
 # ---------------------------------------------------------------------------
@@ -358,6 +392,87 @@ def test_answer_falls_back_to_llm_when_wiki_answer_raises(agent, wiki_tools, mon
 
 
 # ---------------------------------------------------------------------------
+# 원문 문서 그라운딩 — 위키에 근거가 없어도 수집된 원문(뉴스+DART)에 근거가
+# 있으면 그걸로 답변한다. citations[0].wiki_slug는 위키 페이지가 아니므로 None.
+# ---------------------------------------------------------------------------
+
+def test_answer_uses_document_answer_when_wiki_has_no_answer(agent, wiki_tools, monkeypatch):
+    wiki_tools.search_documents.return_value = [
+        FakeDocumentSearchHit(document_version_id="doc-ver-1", title="SK하이닉스 ADR 상장 공시", score=0.7)
+    ]
+    wiki_tools.read_document.return_value = FakeDocumentDetail(
+        document_version_id="doc-ver-1",
+        title="SK하이닉스 ADR 상장 공시",
+        markdown="SK하이닉스가 나스닥에 ADR을 상장했다.",
+        canonical_url="https://dart.fss.or.kr/example",
+        source_name="DART - SK하이닉스",
+        published_at="2026-07-10T00:00:00+00:00",
+    )
+    citation = {
+        "document_version_id": "doc-ver-1",
+        "quote": "SK하이닉스가 나스닥에 ADR을 상장했다.",
+        "relevance_score": 0.9,
+    }
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "search_documents", {"query": "SK하이닉스 ADR 상장"})),
+        tool_call_response(("call-3", "read_document", {"document_version_id": "doc-ver-1"})),
+        tool_call_response(("call-4", "submit_answer", {
+            "answer": "SK하이닉스가 나스닥에 ADR을 상장했다. [1]",
+            "citations": [citation],
+        })),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("SK하이닉스 ADR 상장 공시가 뭐야?")
+
+    assert result.has_answer is True
+    assert result.is_llm_fallback is False
+    assert len(result.citations) == 1
+    assert result.citations[0].document_version_id == "doc-ver-1"
+    assert result.citations[0].wiki_slug is None
+    wiki_tools.search_documents.assert_called_once_with("SK하이닉스 ADR 상장")
+    wiki_tools.read_document.assert_called_once_with("doc-ver-1")
+
+
+def test_answer_falls_back_to_llm_when_wiki_and_documents_both_have_no_answer(agent, wiki_tools, monkeypatch):
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
+        plain_text_response("SK하이닉스는 국내 반도체 기업이다."),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("아무 질문")
+
+    assert result.has_answer is True
+    assert result.is_llm_fallback is True
+    assert result.citations == []
+
+
+def test_answer_falls_back_to_llm_when_document_answer_raises(agent, wiki_tools, monkeypatch):
+    """_document_answer 도중 예외(OpenRouter 응답 이상 등)가 나도 500으로 죽지 않고
+    다음 단계(LLM 폴백)로 넘어가야 한다 — _wiki_answer에 이미 있는 크래시 내성과 동일."""
+    call_count = {"n": 0}
+
+    def fake_call_model(messages, use_tools=True, tools=None):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"}))
+        if not use_tools:
+            return plain_text_response("일반 지식 답변")
+        raise RuntimeError("OpenRouter returned no choices")
+
+    monkeypatch.setattr(agent, "_call_model", fake_call_model)
+
+    result = agent.answer("질문")
+
+    assert result.has_answer is True
+    assert result.is_llm_fallback is True
+    assert result.answer == "일반 지식 답변"
+
+
+# ---------------------------------------------------------------------------
 # LLM 폴백 — 위키 근거를 못 찾으면(has_answer=False) 일반 지식으로 한 번 더 시도한다.
 # 위키 citations와 절대 헷갈리면 안 되므로 is_llm_fallback=True로 명확히 구분한다.
 # ---------------------------------------------------------------------------
@@ -365,6 +480,8 @@ def test_answer_falls_back_to_llm_when_wiki_answer_raises(agent, wiki_tools, mon
 def test_answer_falls_back_to_llm_when_no_wiki_answer(agent, wiki_tools, monkeypatch):
     responses = [
         tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        # 위키 다음 원문 단계도 근거 없음으로 끝나야 그 뒤에 llm 폴백이 시도된다.
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
         plain_text_response("HBM은 여러 D램을 수직으로 쌓아 대역폭을 늘린 고대역폭 메모리다."),
     ]
     monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
@@ -418,8 +535,13 @@ def test_llm_fallback_answer_calls_model_without_tools(agent, wiki_tools, monkey
 
 def test_answer_keeps_no_answer_when_llm_fallback_raises(agent, wiki_tools, monkeypatch):
     """폴백 호출 자체가 실패하면(예외) 폴백 실패를 감추지 않고 원래의 근거 없음
-    결과를 그대로 낸다 — 거짓 답을 주면 안 된다."""
-    def fake_call_model(messages, use_tools=True):
+    결과를 그대로 낸다 — 거짓 답을 주면 안 된다.
+
+    fake_call_model의 시그니처에 tools 키워드를 추가한 건 순수 호환성 수정이다 —
+    _document_answer는 tools=DOCUMENT_TOOLS를 명시적으로 넘기므로 이 kwarg를 받아야
+    한다. 값 자체는 안 쓰므로(use_tools만으로 분기) 원문 단계도 위키 단계와 동일하게
+    submit_no_answer("근거 없음")로 끝나 최종 사유 문자열은 바뀌지 않는다."""
+    def fake_call_model(messages, use_tools=True, tools=None):
         if use_tools:
             return tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"}))
         raise RuntimeError("OpenRouter 호출 실패")
@@ -437,6 +559,9 @@ def test_answer_keeps_no_answer_when_llm_fallback_returns_empty_text(agent, wiki
     """폴백 모델이 빈 응답을 주면 근거 없음으로 취급하고, 있지도 않은 답을 만들지 않는다."""
     responses = [
         tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"})),
+        # 원문 단계도 근거 없음으로 끝나야 llm 폴백이 시도된다. 폴백이 빈 텍스트를
+        # 주면 최종 결과는 마지막으로 실행된 단계(원문 단계)의 사유로 남는다.
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
         plain_text_response("   "),
     ]
     monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
@@ -445,7 +570,7 @@ def test_answer_keeps_no_answer_when_llm_fallback_returns_empty_text(agent, wiki
 
     assert result.has_answer is False
     assert result.is_llm_fallback is False
-    assert result.no_answer_reason == "근거 없음"
+    assert result.no_answer_reason == "원문에도 관련 문서 없음"
 
 
 # ---------------------------------------------------------------------------
@@ -492,6 +617,10 @@ def test_answer_rejects_citation_not_grounded_in_read_page(agent, wiki_tools, mo
     responses = [
         tool_call_response(("call-1", "read_wiki_page", {"slug": "hbm4"})),
         tool_call_response(("call-2", "submit_answer", {"answer": "답변", "citations": [hallucinated_citation]})),
+        # 위키 단계가 지어낸 근거로 거부되면 원문 단계가 이어서 시도된다 — 검증하려는
+        # "그라운딩 안 된 citation은 거부된다"는 동작 자체가 최종 결과에도 남게, 원문
+        # 단계도 동일하게 그라운딩 안 된 citation을 제출해 같은 사유로 거부시킨다.
+        tool_call_response(("call-3", "submit_answer", {"answer": "답변", "citations": [hallucinated_citation]})),
     ]
     monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
 
@@ -551,6 +680,10 @@ def test_answer_does_not_crash_when_citation_missing_required_quote(agent, wiki_
     responses = [
         tool_call_response(("call-1", "read_wiki_page", {"slug": "hbm4"})),
         tool_call_response(("call-2", "submit_answer", {"answer": "답변", "citations": [citation_missing_quote]})),
+        # 위키 단계가 필수 필드 누락으로 거부되면 원문 단계가 이어서 시도된다 — 검증
+        # 하려는 "크래시 없이 근거 없음으로 강등된다"는 동작이 최종 결과에도 남게,
+        # 원문 단계도 동일하게 필수 필드 누락 citation을 제출해 같은 사유로 거부시킨다.
+        tool_call_response(("call-3", "submit_answer", {"answer": "답변", "citations": [citation_missing_quote]})),
     ]
     monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
 

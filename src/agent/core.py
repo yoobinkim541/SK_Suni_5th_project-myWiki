@@ -69,6 +69,25 @@ LLM_FALLBACK_SYSTEM_PROMPT = """\
 네 일반 지식으로만 답하고, 확실하지 않으면 그렇다고 말해라.
 """
 
+# 위키에는 없지만 수집된 원문(뉴스+DART)에는 있을 수 있는 경우에 쓰는 시스템 프롬프트.
+# _wiki_answer가 실패했을 때만 시도하는 2차 그라운딩 단계.
+DOCUMENT_ANSWER_SYSTEM_PROMPT = """\
+너는 myWiki의 답변 Agent다. 위키에는 정리된 문서가 없지만, 수집된 원문(뉴스 기사·
+DART 공시) 중에 관련 있는 게 있는지 찾는 단계다. 규칙:
+1. 반드시 read_document로 실제 읽은 원문 내용만 근거로 답변해라. 사전 지식이나
+   추측으로 빈틈을 채우지 마라.
+2. search_documents로 질문의 핵심 키워드와 관련된 원문을 먼저 찾고, read_document로
+   내용을 확인해라. 필요하면 여러 문서를 읽어도 된다.
+3. 답을 뒷받침할 근거를 찾았으면 submit_answer를 호출해라. 문장마다 어떤 근거
+   (citations)를 썼는지 반드시 포함하고, citations의 document_version_id는
+   read_document 결과에서 실제로 읽은 것 중에서만 골라라 (지어내지 마라). 답변
+   본문에 쓰는 근거 번호 [N]은 반드시 citations 배열의 N번째(1부터 시작) 항목과
+   정확히 대응해야 한다 — citations에 없는 번호는 절대 쓰지 마라.
+4. 근거를 찾지 못했거나 근거가 불충분하면 submit_answer 대신 반드시
+   submit_no_answer를 호출해라.
+5. 톤은 직접적이고 전문적으로, 가벼운 대화체는 쓰지 마라.
+"""
+
 TOOLS = [
     {
         "type": "function",
@@ -156,6 +175,48 @@ TOOLS = [
     },
 ]
 
+_SUBMIT_ANSWER_TOOL = next(t for t in TOOLS if t["function"]["name"] == "submit_answer")
+_SUBMIT_NO_ANSWER_TOOL = next(t for t in TOOLS if t["function"]["name"] == "submit_no_answer")
+
+DOCUMENT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_documents",
+            "description": (
+                "질문 키워드로 수집된 원문(뉴스 기사·DART 공시, 위키 발행 여부 무관)을 "
+                "제목+본문 관련도 순으로 찾는다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "질문에서 뽑은 검색 키워드"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_document",
+            "description": "특정 원문 문서의 전체 내용과 출처(매체명·게시일·원문 링크)를 반환한다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "document_version_id": {
+                        "type": "string",
+                        "description": "search_documents 결과의 document_version_id",
+                    },
+                },
+                "required": ["document_version_id"],
+            },
+        },
+    },
+    _SUBMIT_ANSWER_TOOL,
+    _SUBMIT_NO_ANSWER_TOOL,
+]
+
 
 @dataclass
 class Citation:
@@ -186,23 +247,36 @@ class WikiAgent:
         )
 
     def answer(self, question: str, history: Optional[list[dict]] = None) -> AgentResult:
-        """위키 근거로 먼저 답을 찾고(_wiki_answer), 못 찾으면 일반 LLM 지식으로
-        한 번 더 시도한다(_llm_fallback_answer) — 이때는 반드시 is_llm_fallback=True로
-        표시해서 위키 근거 답변과 구분되게 한다. 폴백마저 실패하면(예외) 원래의
-        has_answer=False 결과를 그대로 낸다 — 폴백 실패를 감추고 거짓 답을 주면 안 된다.
-
-        _wiki_answer 자체가 예외를 던져도(OpenRouter가 choices=None을 주는 등 실측
-        사례) 그대로 새 나가게 두지 않는다 — 이 요청이 500으로 죽는 대신 근거 없음으로
-        강등해 LLM 폴백을 시도할 기회를 준다."""
-        try:
-            result = self._wiki_answer(question, history)
-        except Exception:  # noqa: BLE001 - OpenRouter 응답 이상 등, 폴백으로 넘긴다
-            logger.warning("wiki_answer_failed_falling_back_to_llm", exc_info=True)
-            result = AgentResult(has_answer=False, no_answer_reason="위키 근거 조회 중 오류 발생")
+        """3단계로 근거를 찾는다: 위키(_wiki_answer) -> 수집된 원문(_document_answer) ->
+        위키 근거 없이 일반 지식(_llm_fallback_answer). 앞 두 그라운딩 단계는 예외가
+        나도(OpenRouter 응답 이상 등) 그대로 새 나가지 않고 다음 단계로 넘어간다 —
+        500으로 죽는 대신 최소한 다음 단계 결과(또는 일반 지식 폴백)라도 낸다."""
+        result = self._safe_run(
+            self._wiki_answer, question, history, no_answer_reason="위키 근거 조회 중 오류 발생"
+        )
+        if result.has_answer:
+            return result
+        result = self._safe_run(
+            self._document_answer, question, history, no_answer_reason="원문 문서 조회 중 오류 발생"
+        )
         if result.has_answer:
             return result
         fallback = self._llm_fallback_answer(question, history)
         return fallback if fallback is not None else result
+
+    def _safe_run(
+        self,
+        method: Callable[[str, Optional[list[dict]]], AgentResult],
+        question: str,
+        history: Optional[list[dict]],
+        *,
+        no_answer_reason: str,
+    ) -> AgentResult:
+        try:
+            return method(question, history)
+        except Exception:  # noqa: BLE001 - OpenRouter 응답 이상 등, 다음 단계로 넘긴다
+            logger.warning("grounded_answer_step_failed", exc_info=True, extra={"step": method.__name__})
+            return AgentResult(has_answer=False, no_answer_reason=no_answer_reason)
 
     def _llm_fallback_answer(
         self, question: str, history: Optional[list[dict]] = None
@@ -250,6 +324,35 @@ class WikiAgent:
                 "list_wiki_topics": handle_list_wiki_topics,
                 "search_wiki_pages": handle_search_wiki_pages,
                 "read_wiki_page": handle_read_wiki_page,
+            },
+        )
+
+    def _document_answer(self, question: str, history: Optional[list[dict]] = None) -> AgentResult:
+        def handle_search_documents(args: dict, seen: set[str]) -> object:
+            hits = self.wiki_tools.search_documents(args["query"])
+            return [h.__dict__ for h in hits]
+
+        def handle_read_document(args: dict, seen: set[str]) -> object:
+            document = self.wiki_tools.read_document(args["document_version_id"])
+            if document is None:
+                return {"error": "문서를 찾을 수 없음"}
+            seen.add(document.document_version_id)
+            return {
+                "title": document.title,
+                "markdown": document.markdown,
+                "canonical_url": document.canonical_url,
+                "source_name": document.source_name,
+                "published_at": document.published_at,
+            }
+
+        return self._run_grounded_answer(
+            question,
+            history,
+            system_prompt=DOCUMENT_ANSWER_SYSTEM_PROMPT,
+            tools=DOCUMENT_TOOLS,
+            tool_handlers={
+                "search_documents": handle_search_documents,
+                "read_document": handle_read_document,
             },
         )
 
