@@ -384,6 +384,46 @@ def insert_document_version(
     return _rows(res)[0]
 
 
+def update_document_version_content(
+    document_version_id: UUID,
+    *,
+    content_hash: str,
+    parser_version: str,
+    language: str | None,
+) -> dict | None:
+    """
+    파서를 바꿔 같은 원문을 다시 정제했을 때 기존 행을 제자리에서 갱신한다.
+
+    ⚠ 이건 일반 정제 경로가 쓰는 함수가 아니다. preprocess()는 내용이 바뀌면
+    새 행을 만든다(insert_document_version). 이 함수는 재해시 마이그레이션
+    (scripts/run_pipeline.py --rehash) 전용이다.
+
+    새 행을 만들지 않는 이유: 분석 단계가 "분석 행이 없는 document_versions"를
+    잡아가므로, 파서 교체로 993개 행을 새로 만들면 993건이 그대로 LLM 4단계
+    대기열에 얹힌다. 제자리 갱신은 id가 그대로라 기존 분석·인용이 전부 유효하다.
+
+    raw는 건드리지 않는다 — markdown은 raw에서 언제든 다시 만들 수 있는 파생물이고,
+    그래서 되돌리기가 '이전 파서로 다시 돌리기'로 끝난다 (절대원칙 §3 예외 근거).
+
+    workspace 필터가 없다. document_versions에 workspace_id 컬럼이 없어서
+    get_version과 같은 제약이다 — 호출자가 documents를 거쳐 확인해야 한다.
+    """
+    patch: dict[str, Any] = {
+        "content_hash": content_hash,
+        "parser_version": parser_version,
+    }
+    if language is not None:
+        patch["language"] = language
+    res = (
+        db.get_client()
+        .table("document_versions")
+        .update(patch)
+        .eq("id", str(document_version_id))
+        .execute()
+    )
+    return _first(res)
+
+
 def get_version(document_version_id: UUID) -> dict | None:
     """
     workspace 필터가 없다. 호출자는 반환된 document_id로 documents를 조회해

@@ -5,10 +5,31 @@ from datetime import date, datetime, timedelta, timezone
 from supabase import Client
 
 from ..analysis.repository import get_supabase
+from ..categories.documents import (
+    display_title,
+    documents_by_version,
+    quote_for,
+    source_label,
+    unique_documents,
+)
+from ..categories.keywords import (
+    CATEGORY_SLUGS,
+    MAX_PIE_KEYWORDS,
+    count_keywords,
+    extract_tags,
+)
 from ..report.candidate_provider import get_report_time_range
 from ..report.candidate_provider import REPORT_TIMEZONE
 from ..report.models import ReportStatus
-from .models import DashboardSummary, DashboardTrend, TrendDay
+from .models import (
+    DashboardKeyword,
+    DashboardKeywords,
+    DashboardNews,
+    DashboardNewsItem,
+    DashboardSummary,
+    DashboardTrend,
+    TrendDay,
+)
 
 RELIABILITY_LOW_THRESHOLD = 40
 RELIABILITY_MEDIUM_THRESHOLD = 70
@@ -21,6 +42,13 @@ ADOPTED_RANKING_STATUS = "completed"
 # sources.source_type -> 추이 차트의 계열. rss는 구글 뉴스 RSS라 뉴스로 묶는다.
 NEWS_SOURCE_TYPES = frozenset({"news", "rss"})
 DISCLOSURE_SOURCE_TYPES = frozenset({"disclosure"})
+
+# 최신 뉴스 카드 수. 화면은 기본 4장을 보여주고 '더보기'로 펼친다.
+MAX_NEWS_ITEMS = 20
+
+# 분석 행 조회 상한. 워크스페이스 하나에 7일치라 수백 건 규모지만 무한정 긁지 않는다.
+# categories/service.py의 _FETCH_LIMIT과 같은 값.
+_ANALYSIS_FETCH_LIMIT = 5000
 
 _IN_CLAUSE_CHUNK_SIZE = 150
 """
@@ -260,4 +288,140 @@ def _trend_day(
         adopted=sum(1 for row in rows if str(row["id"]) in adopted_ids),
         news=sum(1 for t in types if t in NEWS_SOURCE_TYPES),
         disclosure=sum(1 for t in types if t in DISCLOSURE_SOURCE_TYPES),
+    )
+
+
+# ------------------------------------------------------------
+# 오늘의 키워드 · 최신 뉴스 (DashboardPage 하단 두 섹션)
+#
+# /categories/stats에 이미 같은 값이 있지만 대시보드가 그걸 부르지는 않는다.
+#   - 화면 독립성: 2026-08-07에 /categories/stats가 .in_() 버그로 500을 냈을 때
+#     /dashboard/*는 정상이라 대시보드는 멀쩡했다. 붙여 뒀으면 같이 죽었다.
+#   - 응답 크기: 그쪽은 18,851 B인데 칩이 쓰는 건 상위 8개뿐이다.
+#     현재 대시보드 전체 응답이 678 B라 28배가 된다.
+#   - 카테고리 분류 체계가 3곳에서 다르고 아직 미합의다(CLAUDE.md 7). 대시보드를
+#     그 계약에 묶어두면 합의가 끝날 때까지 같이 발이 묶인다.
+# ------------------------------------------------------------
+
+
+def _analysis_rows_with_titles(
+    db: Client, workspace_id: str, now: datetime
+) -> tuple[list[dict], dict[str, dict]]:
+    """최근 7일 분석 행 + document_version_id -> documents 행.
+
+    카테고리 현황과 같은 창(WINDOW_DAYS)을 쓴다. 두 화면이 다른 기간을 보면
+    같은 낱말에 다른 숫자가 붙는다.
+    """
+    window_start = (now - timedelta(days=WINDOW_DAYS)).isoformat()
+    rows = (
+        db.table("document_analysis_results")
+        .select(
+            "primary_category, document_version_id, created_at, "
+            "core_summary, summary_evidence_refs"
+        )
+        .eq("workspace_id", workspace_id)
+        .gte("created_at", window_start)
+        .limit(_ANALYSIS_FETCH_LIMIT)
+        .execute()
+        .data
+    )
+    rows = [r for r in rows if r.get("primary_category") in CATEGORY_SLUGS]
+    version_ids = [
+        str(r["document_version_id"]) for r in rows if r.get("document_version_id")
+    ]
+    return rows, documents_by_version(db, workspace_id, version_ids)
+
+
+def get_dashboard_keywords(
+    workspace_id: str,
+    *,
+    supabase: Client | None = None,
+    now: datetime | None = None,
+) -> DashboardKeywords:
+    """'오늘의 키워드' 칩 — 제목에서 사전 매칭한 낱말을 등장 문서 수 순으로.
+
+    카테고리별로 count_keywords를 돌려 합산한다. CATEGORY_KEYWORDS가 카테고리별
+    사전이라, 문서의 primary_category에 맞는 사전으로만 매칭해야 오탐이 안 난다
+    (예: '수율'은 공급망 문서에서만 의미가 있다).
+
+    수집 질의어(sources.config.query)를 쓰지 않는 이유는 DashboardKeyword 참조.
+    횟수는 count_keywords가 이미 만들고 있다 — extract_tags가 그걸 버릴 뿐이다.
+    """
+    db = supabase or get_supabase()
+    now = now or datetime.now(timezone.utc)
+
+    rows, documents = _analysis_rows_with_titles(db, workspace_id, now)
+
+    titles_by_category: dict[str, list[str]] = {}
+    for row in rows:
+        document = documents.get(str(row.get("document_version_id")))
+        if document is None:
+            continue
+        titles_by_category.setdefault(row["primary_category"], []).append(
+            document.get("title") or ""
+        )
+
+    totals: dict[str, int] = {}
+    for category, titles in titles_by_category.items():
+        for word, count in count_keywords(titles, category):
+            totals[word] = totals.get(word, 0) + count
+
+    # 빈도 내림차순, 동점이면 낱말 순 — 같은 데이터에 같은 순서가 나와야 한다.
+    ranked = sorted(totals.items(), key=lambda pair: (-pair[1], pair[0]))
+    return DashboardKeywords(
+        keywords=[
+            DashboardKeyword(word=word, count=count)
+            for word, count in ranked[:MAX_PIE_KEYWORDS]
+        ]
+    )
+
+
+def get_dashboard_news(
+    workspace_id: str,
+    *,
+    supabase: Client | None = None,
+    now: datetime | None = None,
+    limit: int = MAX_NEWS_ITEMS,
+) -> DashboardNews:
+    """'최신 뉴스' 카드 — 발행일 내림차순.
+
+    문서 단위로 접는다. 재수집으로 버전이 늘어난 문서를 두 번 세면 같은 기사가
+    카드 두 장이 된다.
+
+    tags는 그 문서의 제목 하나에 카테고리 사전을 적용해 뽑는다. 칩과 같은 사전을
+    쓰는 게 핵심이다 — 화면의 키워드 필터(newsMatchesInterest)가 title+quote+
+    category+sourceLabel+tags에 대한 텍스트 매칭이라, 사전이 다르면 칩을 눌렀을 때
+    걸리는 카드가 없어 빈 화면이 된다.
+    """
+    db = supabase or get_supabase()
+    now = now or datetime.now(timezone.utc)
+
+    rows, documents = _analysis_rows_with_titles(db, workspace_id, now)
+    unique = unique_documents(rows, documents)
+    source_types = _source_types_by_id(db, workspace_id)
+
+    picked = sorted(
+        unique.values(),
+        key=lambda entry: str(entry["document"].get("published_at") or ""),
+        reverse=True,
+    )[:limit]
+
+    return DashboardNews(
+        items=[
+            DashboardNewsItem(
+                title=display_title(entry["document"].get("title") or ""),
+                quote=quote_for(entry["row"]),
+                category=entry["row"]["primary_category"],
+                tags=extract_tags(
+                    [entry["document"].get("title") or ""],
+                    entry["row"]["primary_category"],
+                ),
+                source_label=source_label(entry["document"].get("canonical_url")),
+                source_url=entry["document"].get("canonical_url") or "",
+                published_at=entry["document"].get("published_at"),
+                is_doc=source_types.get(str(entry["document"].get("source_id")))
+                in DISCLOSURE_SOURCE_TYPES,
+            )
+            for entry in picked
+        ]
     )
