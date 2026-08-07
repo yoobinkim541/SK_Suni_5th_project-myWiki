@@ -150,10 +150,11 @@ TOOLS = [
                             "properties": {
                                 "document_version_id": {"type": "string"},
                                 "wiki_slug": {"type": "string"},
+                                "source_url": {"type": "string"},
                                 "quote": {"type": "string"},
                                 "relevance_score": {"type": "number"},
                             },
-                            "required": ["document_version_id", "quote"],
+                            "required": ["quote"],
                         },
                     },
                 },
@@ -220,10 +221,13 @@ DOCUMENT_TOOLS = [
 
 @dataclass
 class Citation:
-    document_version_id: str
     quote: str
+    document_version_id: Optional[str] = None
     wiki_slug: Optional[str] = None
     relevance_score: Optional[float] = None
+    source_url: Optional[str] = None
+    source_title: Optional[str] = None
+    source_published_at: Optional[str] = None
 
 
 @dataclass
@@ -377,14 +381,15 @@ class WikiAgent:
 
         tool_handlers는 {tool 이름: handler}. handler(args, seen_document_version_ids)는
         JSON 직렬화 가능한 tool 결과를 반환하고, "읽기" 성격의 도구라면
-        seen_document_version_ids를 in-place로 갱신해야 한다(뒤이은 submit_answer의
-        grounding 검증이 이 집합을 기준으로 판정한다). submit_answer/submit_no_answer는
-        두 그라운딩 단계에서 동일하므로 여기서 직접 처리하고 tool_handlers에 넣지 않는다.
+        seen(식별자 집합, document_version_id 또는 URL)을 in-place로 갱신해야 한다(뒤이은
+        submit_answer의 grounding 검증이 이 집합을 기준으로 판정한다). submit_answer/
+        submit_no_answer는 두 그라운딩 단계에서 동일하므로 여기서 직접 처리하고
+        tool_handlers에 넣지 않는다.
         """
         messages: list[dict] = [{"role": "system", "content": system_prompt}]
         messages.extend(history or [])
         messages.append({"role": "user", "content": question})
-        seen_document_version_ids: set[str] = set()
+        seen_identifiers: set[str] = set()
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = self._call_model(messages, tools=tools)
@@ -412,13 +417,13 @@ class WikiAgent:
                     continue
 
                 if name in tool_handlers:
-                    output = tool_handlers[name](args, seen_document_version_ids)
+                    output = tool_handlers[name](args, seen_identifiers)
                     messages.append(self._tool_result(tool_call.id, output))
 
                 elif name == "submit_answer":
                     try:
                         citations = [Citation(**c) for c in args.get("citations", [])]
-                        is_grounded = self._is_grounded(citations, seen_document_version_ids)
+                        is_grounded = self._is_grounded(citations, seen_identifiers)
                     except (TypeError, ValueError):
                         # 모델이 citations 항목에 필수 필드(quote 등)를 빼먹거나
                         # relevance_score에 숫자가 아닌 값을 넣는 등 도구 스키마를 어겼을 때 —
@@ -456,13 +461,15 @@ class WikiAgent:
         return AgentResult(has_answer=False, no_answer_reason="최대 조회 횟수 초과 — 근거 확정 실패")
 
     @staticmethod
-    def _is_grounded(citations: list[Citation], seen_document_version_ids: set[str]) -> bool:
-        """citations가 비어있지 않고, 전부 실제로 read_wiki_page로 조회한 문서를
-        인용하며, relevance_score가 있다면 message_citations의 CHECK 제약(0~1) 범위 안인지."""
+    def _is_grounded(citations: list[Citation], seen_identifiers: set[str]) -> bool:
+        """citations가 비어있지 않고, 전부 실제로 조회한 문서/검색 결과를 인용하며
+        (document_version_id 또는 source_url 중 있는 쪽으로 seen_identifiers를 검증),
+        relevance_score가 있다면 message_citations의 CHECK 제약(0~1) 범위 안인지."""
         if not citations:
             return False
         for citation in citations:
-            if citation.document_version_id not in seen_document_version_ids:
+            identifier = citation.document_version_id or citation.source_url
+            if identifier is None or identifier not in seen_identifiers:
                 return False
             if citation.relevance_score is not None and not (0.0 <= citation.relevance_score <= 1.0):
                 return False

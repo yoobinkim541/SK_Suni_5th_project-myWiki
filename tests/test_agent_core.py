@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.agent.core import DOCUMENT_TOOLS, MAX_TOOL_ROUNDS, TOOLS, AgentResult, WikiAgent
+from src.agent.core import DOCUMENT_TOOLS, MAX_TOOL_ROUNDS, TOOLS, AgentResult, Citation, WikiAgent
 
 
 # ---------------------------------------------------------------------------
@@ -826,6 +826,28 @@ def test_answer_does_not_crash_when_relevance_score_is_not_numeric(agent, wiki_t
     result = agent.answer("HBM4가 뭐야?")
 
     assert result.has_answer is False
+
+
+def test_is_grounded_accepts_source_url_identifier():
+    citation = Citation(quote="인용문", source_url="https://example.com/a")
+    assert WikiAgent._is_grounded([citation], {"https://example.com/a"})
+
+
+def test_is_grounded_rejects_url_not_in_seen_set():
+    citation = Citation(quote="인용문", source_url="https://example.com/fake")
+    assert not WikiAgent._is_grounded([citation], {"https://example.com/real"})
+
+
+def test_is_grounded_rejects_citation_with_no_identifier():
+    citation = Citation(quote="인용문")  # document_version_id도 source_url도 없음
+    assert not WikiAgent._is_grounded([citation], {"https://example.com/a"})
+
+
+def test_is_grounded_still_validates_document_version_id_identifier():
+    """기존 동작 회귀 확인 — document_version_id 경로는 그대로 동작해야 한다."""
+    citation = Citation(quote="인용문", document_version_id="doc-1")
+    assert WikiAgent._is_grounded([citation], {"doc-1"})
+    assert not WikiAgent._is_grounded([citation], {"doc-2"})
 
 
 # ---------------------------------------------------------------------------
