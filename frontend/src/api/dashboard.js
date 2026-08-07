@@ -3,7 +3,7 @@
 // 이 파일에 있던 이전 제안 계약(GET /dashboard/kpis 등, KpiCard 3개짜리 옛 레이아웃
 // 기준)은 지금 DashboardPage.jsx의 실제 KPI 카드 4개(수집 문서/생성 보고서/위키 문서/
 // 평균 신뢰도) 구성과 안 맞고 백엔드도 없는 상태였다. 아래 fetchDashboardSummary()가
-// 그 자리를 대신한다 — issues(IssueList)/news/categoryPreview/keywords는
+// 그 자리를 대신한다 — issues(IssueList)/news/keywords는
 // 아직 백엔드가 없어 목업이다(services/dashboardApi.js 참고).
 import { apiFetch } from './client';
 

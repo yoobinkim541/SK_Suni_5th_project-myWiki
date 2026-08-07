@@ -3,19 +3,24 @@
 // 화면 컴포넌트는 이 파일만 봅니다. 나머지 항목을 실제 fetch로 바꿀 때도
 // pages/DashboardPage.jsx는 손댈 필요가 없습니다.
 //
-// 항목별 연동 현황 (2026-08-05 확인):
+// 항목별 연동 현황 (2026-08-07 확인):
 //   [LIVE] kpiSummary   GET /dashboard/summary -> src/api/dashboard_router.py
 //                       수집 문서·생성 보고서·위키 문서·평균 신뢰도 4종
 //   [LIVE] trend        GET /dashboard/trend   -> src/api/dashboard_router.py
 //                       최근 7일 일별 수집·채택 (KST 기준)
 //   [목업] news         백엔드 없음
 //   [목업] issues       백엔드 없음
-//   [목업] categoryPreview  백엔드 없음. 분류 체계 미합의 상태라 착수 전 팀 결정 필요
-//                       + #92(대시보드 개편)로 DashboardPage에서 렌더링이 빠졌다.
-//                         fetchDashboard()는 아직 이 값을 반환하지만 지금은 쓰이지 않는다.
 //   [목업] keywords     백엔드 없음
 //
 // 목업 항목은 백엔드가 생기기 전까지 지우지 않습니다 — 지우면 화면이 빕니다.
+//
+// categoryPreview는 이 파일에서 뺐습니다. #92(대시보드 개편)로 DashboardPage가
+// CategoryPreview를 렌더링하지 않게 됐는데 fetchDashboard()가 값을 계속 반환하고
+// 있어서, 화면에 없는 항목이 "아직 연동할 게 남은 것"처럼 목록에 잡혔습니다.
+// 컴포넌트(components/dashboard/CategoryPreview.jsx)와 목업
+// (data/mockDashboard.js MOCK_CATEGORY_PREVIEW)은 되살릴 때를 위해 남겨뒀습니다.
+// 되살린다면 지금은 /categories/stats가 같은 값을 이미 내려주므로 목업이 아니라
+// 그쪽에 붙이면 됩니다.
 //
 // ⚠ VITE_USE_MOCK은 전역 스위치입니다. 'false'로 두면 이 파일뿐 아니라
 //   agentApi·wikiApi·settingsApi도 함께 실백엔드로 붙습니다.
@@ -25,7 +30,6 @@ import {
   MOCK_NEWS,
   MOCK_ISSUES,
   MOCK_TREND,
-  MOCK_CATEGORY_PREVIEW,
   MOCK_KEYWORDS,
   MOCK_KPI_SUMMARY,
 } from '../data/mockDashboard';
@@ -68,12 +72,6 @@ function toTrendDay(day) {
 export function fetchTrend() {
   if (USE_MOCK) return delay(MOCK_TREND);
   return fetchDashboardTrend().then((res) => (res.days ?? []).map(toTrendDay));
-}
-
-// [목업 · 현재 미사용] #92 이후 DashboardPage가 CategoryPreview를 렌더링하지 않습니다.
-// 백엔드도 없고 분류 체계도 미합의라, 화면에 되살릴지부터 팀 결정이 필요합니다 (api/category.js 참고).
-export function fetchCategoryPreview() {
-  return delay(MOCK_CATEGORY_PREVIEW);
 }
 
 // [목업] 백엔드 없음
@@ -143,7 +141,6 @@ export async function fetchDashboard() {
     news: MOCK_NEWS,
     issues: MOCK_ISSUES,
     trend,
-    categoryPreview: MOCK_CATEGORY_PREVIEW,
     keywords: MOCK_KEYWORDS,
     kpiSummary,
   };
