@@ -635,3 +635,39 @@ def update_workspace_member_role(workspace_id: str, user_id: str, role: str) -> 
     get_supabase().table("workspace_members").update({"role": role}).eq(
         "workspace_id", workspace_id
     ).eq("user_id", user_id).execute()
+
+
+def list_workspace_sessions_for_admin(workspace_id: str, visibility: str) -> list[dict]:
+    """참여자/소유자 필터 없이 워크스페이스의 세션을 전부 조회한다(오너 전용 열람용).
+    get_chat_session/list_chat_sessions(일반 사용자용, 접근 제어 있음)와는 별개 함수다."""
+    res = (
+        get_supabase()
+        .table("chat_sessions")
+        .select("*, profiles(display_name)")
+        .eq("workspace_id", workspace_id)
+        .eq("visibility", visibility)
+        .is_("deleted_at", "null")
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    rows = []
+    for row in res.data:
+        profile = row.pop("profiles", None) or {}
+        row["owner_name"] = profile.get("display_name")
+        rows.append(row)
+    return rows
+
+
+def get_chat_session_for_admin(session_id: str, workspace_id: str) -> Optional[dict]:
+    """get_chat_session과 달리 참여자/소유자 여부를 확인하지 않는다 — workspace_id
+    일치만 확인한다(오너 전용 열람용)."""
+    res = (
+        get_supabase()
+        .table("chat_sessions")
+        .select("*")
+        .eq("id", session_id)
+        .eq("workspace_id", workspace_id)
+        .maybe_single()
+        .execute()
+    )
+    return res.data

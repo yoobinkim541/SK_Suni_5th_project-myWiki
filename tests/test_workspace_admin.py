@@ -133,8 +133,21 @@ def fake_db(monkeypatch):
             {"workspace_id": WORKSPACE_ID, "user_id": TARGET_ID, "role": "editor"},
         ],
         "chat_sessions": [
-            {"id": "sess-1", "workspace_id": WORKSPACE_ID, "user_id": TARGET_ID, "visibility": "team"},
-            {"id": "sess-2", "workspace_id": OTHER_WORKSPACE_ID, "user_id": TARGET_ID, "visibility": "team"},
+            {
+                "id": "sess-1", "workspace_id": WORKSPACE_ID, "user_id": TARGET_ID,
+                "visibility": "team", "title": "팀 세션 하나", "updated_at": "2026-08-07T00:00:00Z",
+                "profiles": {"display_name": "박하늘"},
+            },
+            {
+                "id": "sess-2", "workspace_id": OTHER_WORKSPACE_ID, "user_id": TARGET_ID,
+                "visibility": "team", "title": "다른 워크스페이스 세션", "updated_at": "2026-08-07T00:00:00Z",
+                "profiles": {"display_name": "박하늘"},
+            },
+            {
+                "id": "sess-3", "workspace_id": WORKSPACE_ID, "user_id": OWNER_ID,
+                "visibility": "private", "title": "오너의 개인 세션", "updated_at": "2026-08-07T00:00:00Z",
+                "profiles": {"display_name": "오너"},
+            },
         ],
         "chat_session_participants": [
             {"session_id": "sess-1", "user_id": TARGET_ID},
@@ -166,3 +179,37 @@ def test_update_workspace_member_role_updates_row(fake_db):
 
     updated = next(r for r in fake_db._data["workspace_members"] if r["user_id"] == TARGET_ID)
     assert updated["role"] == "admin"
+
+
+def test_list_workspace_sessions_for_admin_filters_by_workspace_and_visibility(fake_db):
+    result = db.list_workspace_sessions_for_admin(WORKSPACE_ID, "team")
+
+    assert [r["id"] for r in result] == ["sess-1"]
+
+
+def test_list_workspace_sessions_for_admin_attaches_owner_name(fake_db):
+    result = db.list_workspace_sessions_for_admin(WORKSPACE_ID, "team")
+
+    assert result[0]["owner_name"] == "박하늘"
+    assert "profiles" not in result[0]
+
+
+def test_list_workspace_sessions_for_admin_private_scope(fake_db):
+    result = db.list_workspace_sessions_for_admin(WORKSPACE_ID, "private")
+
+    assert [r["id"] for r in result] == ["sess-3"]
+
+
+def test_get_chat_session_for_admin_ignores_participation(fake_db):
+    """OWNER_ID는 sess-1의 참여자가 아니지만(위 fixture 참고), 관리자 조회이므로
+    워크스페이스만 맞으면 그냥 조회돼야 한다."""
+    result = db.get_chat_session_for_admin("sess-1", WORKSPACE_ID)
+
+    assert result is not None
+    assert result["id"] == "sess-1"
+
+
+def test_get_chat_session_for_admin_blocks_cross_workspace(fake_db):
+    result = db.get_chat_session_for_admin("sess-2", WORKSPACE_ID)
+
+    assert result is None
