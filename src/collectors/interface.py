@@ -13,7 +13,7 @@ NOT NULL이라 workspace_id가 필요하고, since·limit로 배치를 분할한
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -71,6 +71,65 @@ def register_source(
         return UUID(str(raced["id"]))
 
 
+REFETCH_INTERVAL_HOURS = 6
+"""
+같은 기사를 다시 받아오기까지 두는 최소 간격.
+
+왜 필요한가: 수집이 스케줄러 실행시간의 82%다(2026-08-07 실측, 27.7분 중 22.8분).
+30분 주기로 매번 피드 전량 225건을 다시 받는데, 그중 실제로 본문이 바뀌는 건
+극소수다 — 재수집 28건을 재정제해 보니 24건이 내용 동일, 3건은 조회수·댓글 수
+카운터였고 실제 본문 변경은 1건(3.6%)이었다.
+
+조건부 요청(If-Modified-Since/ETag)을 먼저 시도했는데 이 코퍼스에서는 쓸 수 없다.
+도메인 18종에 걸어 보니 전부 200으로 응답했고(304 0건), ETag는 1곳, Last-Modified는
+2곳만 준다. 언론사 페이지가 대부분 동적 렌더링이라 조건부 GET을 지원하지 않는다.
+서버에 묻는 방식이 안 되니 우리가 안 받는 쪽으로 간다.
+
+6시간인 이유: 정정은 보통 발행 직후에 일어나고, 그보다 늦은 정정을 30분 안에 잡으려고
+같은 기사를 하루 48번 받는 것은 비용이 맞지 않는다. 이 값이면 하루 4번 확인한다.
+
+⚠ 이건 제품 동작을 바꾸는 값이다. 정정 반영이 최대 6시간 늦어진다.
+줄이면 반영은 빨라지지만 수집 시간이 그만큼 늘어난다.
+"""
+
+
+def _build_refetch_policy(workspace_id: UUID):
+    """
+    url -> 받아올지 여부. 최근 REFETCH_INTERVAL_HOURS 안에 수집한 문서면 False.
+
+    판정 기준은 문서 단위 collect job의 완료 시각이다. documents.updated_at은
+    제목 교정 등으로도 갱신돼서 '마지막으로 원문을 받아온 시각'을 뜻하지 않는다.
+
+    문서 목록과 job을 미리 한 번씩만 받아 캐시한다 — 항목마다 조회하면 N+1이고,
+    아끼려는 시간을 DB 왕복으로 도로 쓴다.
+    """
+    documents = repository.list_active_documents(workspace_id)
+    document_ids = [UUID(str(doc["id"])) for doc in documents]
+    collect_jobs = repository.latest_completed_collect_jobs_by_document(
+        workspace_id, document_ids
+    )
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=REFETCH_INTERVAL_HOURS)
+    fetched_at_by_url: dict[str, datetime] = {}
+    for doc in documents:
+        url = (doc.get("canonical_url") or "").strip()
+        if not url:
+            continue
+        job = collect_jobs.get(str(doc["id"]))
+        finished = parse_datetime(
+            str((job or {}).get("completed_at") or (job or {}).get("created_at") or "")
+        )
+        if finished is not None:
+            fetched_at_by_url[url] = finished
+
+    def should_fetch(url: str) -> bool:
+        # 수집기가 주는 주소와 documents.canonical_url은 같은 정규화를 거쳐야 맞는다.
+        fetched_at = fetched_at_by_url.get((normalize_url(url) or "").strip())
+        return fetched_at is None or fetched_at < cutoff
+
+    return should_fetch
+
+
 def collect(request: CollectRequest) -> list[CollectedDocument]:
     """
     소스에서 새 문서를 수집해 documents 행 생성 + raw 파일을 업로드한다.
@@ -113,6 +172,10 @@ def collect(request: CollectRequest) -> list[CollectedDocument]:
         jobs.cancel_job(source_job["id"], "sources.enabled = false")
         return []
 
+    # 최근에 이미 받아온 주소는 다시 받지 않는다 (_build_refetch_policy 참조).
+    # 소스 단위로 걸고, 어떤 경로로 끝나든 반드시 푼다 — 모듈 전역이라 남으면
+    # 다음 호출까지 새어 나간다.
+    fetchers.set_refetch_policy(_build_refetch_policy(workspace_id))
     try:
         outcome = fetchers.get_fetcher(source["source_type"])(source, request)
     except FetchError as exc:
@@ -121,6 +184,8 @@ def collect(request: CollectRequest) -> list[CollectedDocument]:
     except Exception as exc:  # noqa: BLE001 - 수집기 내부 예외도 job에 남긴다
         jobs.fail_job(source_job["id"], f"소스 수집 중 예외: {exc}")
         return []
+    finally:
+        fetchers.reset_refetch_policy()
 
     collected: list[CollectedDocument] = []
     # skip_reasons는 "문서를 만들지 않고 건너뛴" 사유만 센다. 실패는 failure_reasons로

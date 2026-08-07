@@ -15,6 +15,8 @@ import pytest
 from conftest import EMPTY_HTML, StubFeed
 from fake_supabase import FakeSupabase
 
+from src.collectors import fetchers
+from src.collectors import interface as collectors_interface
 from src.collectors.interface import collect, register_source
 from src.pipeline_common import repository
 from src.pipeline_common.constants import MAX_RETRY
@@ -361,3 +363,83 @@ def test_다른_workspace_문서는_페이지_조회에도_안_섞인다(
 
     assert len(rows) == 5
     assert all(str(r["workspace_id"]) == str(workspace_id) for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# 재수집 간격 정책
+#
+# 수집이 스케줄러 실행시간의 82%인데(2026-08-07 실측) 매번 피드 전량을 다시 받는다.
+# 그중 실제로 본문이 바뀌는 건 3.6%였다. 조건부 요청은 이 코퍼스에서 안 통한다
+# (도메인 18종 전부 200 응답, 304 0건).
+# ---------------------------------------------------------------------------
+
+
+def test_최근_수집한_주소는_다시_받지_않는다(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed
+) -> None:
+    _collect_once(workspace_id, source_id)
+
+    should_fetch = collectors_interface._build_refetch_policy(workspace_id)
+
+    assert should_fetch("https://example.com/news/1") is False
+
+
+def test_간격이_지난_주소는_다시_받는다(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed, monkeypatch
+) -> None:
+    """간격을 0으로 두면 방금 받은 것도 대상이 된다 — 경계가 시각 비교임을 고정한다."""
+    _collect_once(workspace_id, source_id)
+    monkeypatch.setattr(collectors_interface, "REFETCH_INTERVAL_HOURS", 0)
+
+    should_fetch = collectors_interface._build_refetch_policy(workspace_id)
+
+    assert should_fetch("https://example.com/news/1") is True
+
+
+def test_처음_보는_주소는_받는다(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed
+) -> None:
+    _collect_once(workspace_id, source_id)
+
+    should_fetch = collectors_interface._build_refetch_policy(workspace_id)
+
+    assert should_fetch("https://example.com/news/처음") is True
+
+
+def test_표기가_달라도_같은_주소로_본다(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed
+) -> None:
+    """
+    수집기가 주는 주소와 documents.canonical_url은 같은 정규화를 거쳐야 맞는다.
+    안 맞으면 정책이 통과시켜 버려서 절감이 0이 된다 — 조용히 실패하는 종류다.
+    """
+    _collect_once(workspace_id, source_id)
+
+    should_fetch = collectors_interface._build_refetch_policy(workspace_id)
+
+    assert should_fetch("https://example.com/news/1?utm_source=x") is False
+
+
+def test_수집이_끝나면_정책을_푼다(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed
+) -> None:
+    """모듈 전역이라 안 풀면 다음 호출까지 새어 나간다."""
+    _collect_once(workspace_id, source_id)
+
+    assert fetchers._refetch_policy is None
+
+
+def test_정책이_없으면_전부_받는다() -> None:
+    """주입 전 기본 동작은 기존과 같아야 한다."""
+    fetchers.reset_refetch_policy()
+
+    fetchers._ensure_fetchable("https://example.com/아무거나")  # 예외 없음
+
+
+def test_정책이_거부하면_RecentlyFetchedError() -> None:
+    fetchers.set_refetch_policy(lambda url: False)
+    try:
+        with pytest.raises(fetchers.RecentlyFetchedError):
+            fetchers._ensure_fetchable("https://example.com/1")
+    finally:
+        fetchers.reset_refetch_policy()

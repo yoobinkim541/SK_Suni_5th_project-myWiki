@@ -86,6 +86,40 @@ class UnresolvedURLError(Exception):
     """
 
 
+class RecentlyFetchedError(Exception):
+    """
+    최근에 이미 받아온 주소라 다시 받지 않는다. 실패가 아니라 의도된 건너뛰기다.
+
+    UnresolvedURLError와 같은 자리에서 잡히지만 사유를 나눠 세야 한다 — '못 받은 것'과
+    '안 받은 것'이 한 숫자로 뭉치면 수집이 망가진 건지 절약 중인 건지 구분되지 않는다.
+    """
+
+
+# 최근 수집 여부 판정을 주입받는다. 기본값 None이면 전부 받아온다(기존 동작).
+#
+# fetchers는 순수 수집 계층이라 repository를 import하지 않는다. DB를 아는 쪽은
+# collectors/interface.py이므로 그쪽이 판정 함수를 만들어 넣어 준다
+# (pipeline_common/db.py의 set_client와 같은 주입 방식).
+_refetch_policy: Any = None
+
+
+def set_refetch_policy(policy: Any) -> None:
+    """policy(url) -> True면 받아온다. collect()가 소스 단위로 걸고 끝나면 푼다."""
+    global _refetch_policy
+    _refetch_policy = policy
+
+
+def reset_refetch_policy() -> None:
+    global _refetch_policy
+    _refetch_policy = None
+
+
+def _ensure_fetchable(url: str) -> None:
+    """최근에 받아온 주소면 RecentlyFetchedError. 정책이 없으면 통과."""
+    if _refetch_policy is not None and not _refetch_policy(url):
+        raise RecentlyFetchedError(url)
+
+
 @dataclass
 class FetchOutcome:
     """수집 결과와, 문서를 만들지 않고 건너뛴 사유 집계."""
@@ -216,7 +250,13 @@ def _fetch_article(
     문서 식별에 쓰는 url은 요청한 주소가 아니라 리다이렉트 최종 주소다.
     경유 주소를 그대로 쓰면 같은 기사가 중복 문서로 쌓인다.
     """
+    # 구글 뉴스 주소는 디코딩해야 실제 기사 주소를 알 수 있어서, 최근 수집 판정을
+    # 여기서 한 번 더 한다. 호출부가 피드 주소로 미리 걸러 주지만 그건 직접 주소인
+    # 소스에만 통하고, 구글 경유 주소는 디코딩 전에는 무엇인지 알 수 없다.
+    # 디코딩 비용(약 1초)은 치르되 본문 다운로드(약 4초)는 아낀다.
     url = _resolve_google_news_url(url)
+    _ensure_fetchable(url)
+
     body, content_type, status, final_url = _http_get(url, source)
     if status in _BLOCKED_STATUS or status >= 400 or not body:
         return None
@@ -274,9 +314,17 @@ def fetch_rss(source: dict, request: CollectRequest) -> FetchOutcome:
         if request.since and published_at and published_at < request.since:
             outcome.skip("older_than_since")
             continue
+        try:
+            _ensure_fetchable(url)
+        except RecentlyFetchedError:
+            outcome.skip("recently_fetched")
+            continue
         _sleep_between_requests(source)
         try:
             item = _fetch_article(source, url, getattr(entry, "title", None), published_at)
+        except RecentlyFetchedError:
+            outcome.skip("recently_fetched")
+            continue
         except UnresolvedURLError:
             outcome.skip("google_url_unresolved")
             continue
@@ -465,11 +513,19 @@ def fetch_naver_news(source: dict, request: CollectRequest) -> FetchOutcome:
         if request.since and published_at and published_at < request.since:
             outcome.skip("older_than_since")
             continue
+        try:
+            _ensure_fetchable(url)
+        except RecentlyFetchedError:
+            outcome.skip("recently_fetched")
+            continue
         _sleep_between_requests(source)
         try:
             # description은 RawFetchResult로 넘기지 않아 정제 대상이 아니다.
             # 넘기게 되면 title과 같이 strip_html()을 거쳐야 한다.
             item = _fetch_article(source, url, strip_html(entry.get("title")), published_at)
+        except RecentlyFetchedError:
+            outcome.skip("recently_fetched")
+            continue
         except UnresolvedURLError:
             outcome.skip("google_url_unresolved")
             continue
@@ -548,9 +604,17 @@ def fetch_gnews(source: dict, request: CollectRequest) -> FetchOutcome:
         if request.since and published_at and published_at < request.since:
             outcome.skip("older_than_since")
             continue
+        try:
+            _ensure_fetchable(url)
+        except RecentlyFetchedError:
+            outcome.skip("recently_fetched")
+            continue
         _sleep_between_requests(source)
         try:
             item = _fetch_article(source, url, entry.get("title"), published_at)
+        except RecentlyFetchedError:
+            outcome.skip("recently_fetched")
+            continue
         except UnresolvedURLError:
             outcome.skip("google_url_unresolved")
             continue
@@ -739,6 +803,13 @@ def fetch_disclosure(source: dict, request: CollectRequest) -> FetchOutcome:
         published_at = _parse_dart_date(entry.get("rcept_dt"))
         if since and published_at and published_at < since:
             outcome.skip("older_than_since")
+            continue
+        # 공시는 피드에 원문 주소가 없다. canonical_url이 되는 뷰어 주소를 rcept_no로
+        # 미리 만들어 판정한다 (_fetch_disclosure_document가 쓰는 것과 같은 형식).
+        try:
+            _ensure_fetchable(f"{DART_VIEWER_URL}?rcpNo={rcept_no}")
+        except RecentlyFetchedError:
+            outcome.skip("recently_fetched")
             continue
         _sleep_between_requests(source)
         try:
