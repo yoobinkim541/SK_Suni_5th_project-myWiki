@@ -2144,49 +2144,56 @@ a.fn:hover{text-decoration:underline}
 
 
 
+/* ===== SUNI Logo ===== */
 
-* ===== SUNI Logo (기존 "===== SUNI Logo =====" 블록이 있으면 통째로 교체) ===== */
- 
 /* 펼친 상태: 아이콘+워드마크 전체 로고 */
 .suni-logo {
   display: block;
-  width: 118px;      /* 사이드바 폭에 맞춰 조정 가능 */
-  height: auto;
-  object-fit: contain;
-}
- 
-/* 접힌 상태: 삼각형 "my" 마크만 잘라낸 별도 파일 (suni-mark.png) */
-.suni-mark {
-  display: block;
-  height: 26px;      /* 접힌 레일 폭에 맞춰 조정 — 마크가 가로로 넓어서 height 기준으로 잡음 */
+  height: 88px;        /* 로고 크기 — 크거나 작으면 이 숫자만 조정 */
   width: auto;
   object-fit: contain;
 }
- 
+
+/* 접힌 상태: 삼각형 "my" 마크만 */
+.suni-mark {
+  display: block;
+  height: 20px;        /* 접힌 마크 크기 */
+  width: auto;
+  object-fit: contain;
+}
+
 /* 펼친 상태 로고 정렬 */
 .brand .nm {
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 100%;
 }
+
+/* 토글(메뉴숨기기) + 로고 한 줄 — gap 줄여서 붙임 */
 .nm-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 4px;
+  margin-top: -8px !important;   /* 음수로 위로 끌어올림 + !important로 강제 */
 }
- 
-/* 접힌 상태: 마크 + 토글 세로 정렬 (마크가 가운데 오게) */
+.brand .eb {
+  margin-bottom: -4px !important;
+}
+
+
+/* "반도체 동향 시스템" 라벨 아래 여백 최소화 */
+.brand .eb {
+  margin-bottom: 2px;
+  line-height: 1.2;
+}
+
+/* 접힌 상태: 마크 + 토글 세로 정렬 */
 .side.collapsed .brand {
   flex-direction: column;
   align-items: center;
   gap: 8px;
 }
- 
-.suni-logo { display:block; height:88px; width:auto; }
-.suni-mark { display:block; height:20px; width:auto; }
-
 
 
 
@@ -2216,3 +2223,4 @@ a.fn:hover{text-decoration:underline}
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
