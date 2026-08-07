@@ -103,7 +103,7 @@ function linkifyKeywords(text, onKeyword, keyPrefix) {
   });
 }
 
-export default function WikiCard({ doc, onKeyword, onKeywordDocs }) {
+export default function WikiCard({ doc, onKeyword, onKeywordDocs, catalog, linkWords }) {
   if (!doc) return null;
 
   return (
@@ -120,7 +120,7 @@ export default function WikiCard({ doc, onKeyword, onKeywordDocs }) {
         })}
       </div>
 
-      <WikiKeywordBar doc={doc} onKeyword={onKeywordDocs} />
+      <WikiKeywordBar doc={doc} onKeyword={onKeywordDocs} catalog={catalog} linkWords={linkWords} />
 
       {doc.zones.map((zone) => (
         <div key={zone.title}>

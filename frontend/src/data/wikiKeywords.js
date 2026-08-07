@@ -8,8 +8,11 @@
 // 카탈로그에 있지만 링크 데이터가 없는 키워드는 화면에서 클릭 불가로 남겨 둡니다.
 // 없는 원문을 지어내지 않기 위한 처리입니다.
 //
-// ⚠ 실제 API 연동 시: GET /api/wiki/keywords 가 [{ word, category }] 로 내려주면
-//    이 상수만 교체하면 됩니다. 개수는 전부 이 배열에서 계산하므로 화면 수정이 필요 없습니다.
+// [LIVE] GET /wiki/keywords 실제 연결 완료 — services/wikiApi.js의 fetchWikiKeywordCatalog()가
+// 백엔드의 [{ word, category }] 응답을 groupKeywordCatalog()로 이 파일과 같은 분류별 배열
+// 모양으로 바꿔서 WikiPage.jsx state로 들고 있다가 prop으로 내려줍니다.
+// 아래 WIKI_KEYWORD_CATALOG는 목업 모드(USE_MOCK) 전용 기본값으로 남겨둡니다 — 이 파일의
+// 모든 함수는 catalog를 인자로 받고, 생략하면 이 상수를 기본값으로 씁니다.
 
 import { MOCK_WIKI_DOCS, WIKI_KEYWORD_LINKS } from './mockWiki';
 
@@ -66,21 +69,41 @@ export const WIKI_KEYWORD_CATALOG = [
   },
 ];
 
+/**
+ * 백엔드 GET /wiki/keywords의 평탄한 [{word, category}] 응답을 이 파일의 분류별
+ * [{cat, words}] 모양으로 묶습니다. 카테고리가 응답 안에서 흩어져 있어도(연속이 아니어도)
+ * Map으로 모으므로 정상 동작합니다 — 그룹 "순서"만 처음 등장한 순서를 따릅니다.
+ * 같은 카테고리 안에서 같은 단어가 중복으로 와도 한 번만 남깁니다(React key 충돌 방지).
+ */
+export function groupKeywordCatalog(flatCatalog) {
+  if (!flatCatalog?.length) return [];
+  const order = [];
+  const byCat = new Map();
+  for (const { word, category } of flatCatalog) {
+    if (!byCat.has(category)) {
+      byCat.set(category, new Set());
+      order.push(category);
+    }
+    byCat.get(category).add(word);
+  }
+  return order.map((cat) => ({ cat, words: [...byCat.get(cat)] }));
+}
+
 /** 카탈로그 전체 키워드 수 — 화면 표기용(하드코딩 금지). */
-export function getKeywordTotal() {
-  return WIKI_KEYWORD_CATALOG.reduce((sum, g) => sum + g.words.length, 0);
+export function getKeywordTotal(catalog = WIKI_KEYWORD_CATALOG) {
+  return catalog.reduce((sum, g) => sum + g.words.length, 0);
 }
 
 /** 카탈로그 전체를 평탄화. 긴 키워드가 먼저 매칭되도록 길이 내림차순. */
-export function getCatalogKeywordList() {
-  return WIKI_KEYWORD_CATALOG
+export function getCatalogKeywordList(catalog = WIKI_KEYWORD_CATALOG) {
+  return catalog
     .flatMap((g) => g.words)
     .sort((a, b) => b.length - a.length);
 }
 
 /** 키워드 → 분류 조회. */
-export function getKeywordCategory(word) {
-  const found = WIKI_KEYWORD_CATALOG.find((g) => g.words.includes(word));
+export function getKeywordCategory(word, catalog = WIKI_KEYWORD_CATALOG) {
+  const found = catalog.find((g) => g.words.includes(word));
   return found ? found.cat : null;
 }
 
@@ -99,22 +122,22 @@ function docBody(doc) {
  * 본문에 없는 키워드를 상단에 띄우지 않기 위한 함수입니다 — 등장하지 않으면 제외합니다.
  * @returns {{ word: string, count: number, cat: string|null }[]}
  */
-export function collectDocCatalogKeywords(doc) {
+export function collectDocCatalogKeywords(doc, catalog = WIKI_KEYWORD_CATALOG) {
   const body = docBody(doc);
   if (!body) return [];
-  return getCatalogKeywordList()
+  return getCatalogKeywordList(catalog)
     .map((word) => ({
       word,
       count: body.split(word).length - 1,
-      cat: getKeywordCategory(word),
+      cat: getKeywordCategory(word, catalog),
     }))
     .filter((k) => k.count > 0)
     .sort((a, b) => b.count - a.count || b.word.length - a.word.length);
 }
 
 /** 특정 분류에 속한 키워드 목록. */
-export function getCategoryWords(cat) {
-  const found = WIKI_KEYWORD_CATALOG.find((g) => g.cat === cat);
+export function getCategoryWords(cat, catalog = WIKI_KEYWORD_CATALOG) {
+  const found = catalog.find((g) => g.cat === cat);
   return found ? found.words : [];
 }
 
@@ -127,13 +150,16 @@ export function getCategoryWords(cat) {
  *
  * @param {string} text 검사할 텍스트
  * @param {string[]} extraWords 카탈로그 외에 함께 볼 키워드(선택)
+ * @param {{cat: string, words: string[]}[]} catalog 생략하면 목업 상수(WIKI_KEYWORD_CATALOG) —
+ *   reportApi.js의 "오늘의 키워드"처럼 실제 카탈로그를 안 들고 있는 호출부용 기본값입니다.
+ *   실제 카탈로그가 있는 호출부(getDocCoreKeywords)는 반드시 명시적으로 넘겨야 합니다.
  * @returns {{ word: string, count: number, cat: string|null }[]}
  */
-export function extractCatalogKeywords(text, extraWords = []) {
+export function extractCatalogKeywords(text, extraWords = [], catalog = WIKI_KEYWORD_CATALOG) {
   if (!text) return [];
 
   const words = new Set([
-    ...WIKI_KEYWORD_CATALOG.flatMap((g) => g.words),
+    ...catalog.flatMap((g) => g.words),
     ...extraWords,
   ]);
 
@@ -141,7 +167,7 @@ export function extractCatalogKeywords(text, extraWords = []) {
     .map((word) => ({
       word,
       count: text.split(word).length - 1,
-      cat: getKeywordCategory(word),
+      cat: getKeywordCategory(word, catalog),
     }))
     .filter((k) => k.count > 0);
 
@@ -152,16 +178,21 @@ export function extractCatalogKeywords(text, extraWords = []) {
 
 /**
  * 이 문서의 핵심 키워드. 두 소스를 합칩니다.
- *   1) 분류 카탈로그(WIKI_KEYWORD_CATALOG) 중 본문에 등장한 키워드
- *   2) 원문 연동 키워드(WIKI_KEYWORD_LINKS) 중 본문에 등장한 키워드
+ *   1) 분류 카탈로그(catalog) 중 본문에 등장한 키워드
+ *   2) linkWords(본문 단어 클릭 → 공시·IR 원문/뉴스기사 모달 대상 단어) 중 본문에 등장한 키워드
  * 둘 다 "본문에 실제로 등장한 것"만 잡으므로 근거 없는 키워드는 올라오지 않습니다.
  * 정렬은 문서 분류와 일치하는 키워드 → 등장 횟수 → 긴 키워드 순입니다.
+ *
+ * linkWords 기본값(WIKI_KEYWORD_LINKS)은 목업 전용 데이터입니다 — 실제 모드 호출부
+ * (WikiKeywordBar.jsx, services/wikiApi.js의 getKeywordLinkWords() 경유)는 반드시
+ * linkWords를 명시적으로 넘겨야 합니다. 안 그러면 백엔드 122개 사전에 없는 목업 단어가
+ * 칩으로 뜨고, 눌러도 GET /wiki/pages?keyword=가 빈 결과만 돌려주는 막다른 클릭이 됩니다.
  */
-export function getDocCoreKeywords(doc) {
+export function getDocCoreKeywords(doc, catalog = WIKI_KEYWORD_CATALOG, linkWords = Object.keys(WIKI_KEYWORD_LINKS)) {
   const body = docBody(doc);
   if (!body) return [];
 
-  const rows = extractCatalogKeywords(body, Object.keys(WIKI_KEYWORD_LINKS));
+  const rows = extractCatalogKeywords(body, linkWords, catalog);
 
   // 이 문서 분류와 같은 키워드를 앞으로 올립니다.
   const cat = doc?.category;
@@ -173,10 +204,11 @@ export function getDocCoreKeywords(doc) {
 }
 
 /**
- * 이 키워드가 본문에 등장하는 위키 문서 목록을 돌려줍니다.
- * 목업 모드에서는 MOCK_WIKI_DOCS 본문을 직접 훑고, 실제 백엔드 모드에서는 본문을
- * 미리 갖고 있지 않으므로 좌측 트리의 문서 제목 매칭으로만 좁힙니다 —
- * 확인되지 않은 문서를 목록에 끼워 넣지 않기 위한 처리입니다.
+ * 이 키워드가 본문에 등장하는 위키 문서 목록을 돌려줍니다. 목업 모드 전용입니다 —
+ * MOCK_WIKI_DOCS 본문을 직접 훑어 등장 횟수를 셉니다.
+ * [LIVE] 실제 백엔드 모드는 services/wikiApi.js의 fetchDocsWithKeyword()가
+ * GET /wiki/pages?keyword=로 실제 태깅된 페이지를 가져옵니다(이 함수는 안 씀) —
+ * 본문 등장 횟수 대신 실제 wiki_page_keywords 태깅 여부를 근거로 삼습니다.
  * @returns {{ id: string, title: string, group: string, count: number }[]}
  */
 export function findDocsWithKeyword(word, tree) {

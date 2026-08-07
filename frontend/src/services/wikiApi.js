@@ -6,6 +6,8 @@
 import * as wikiApi from '../api/wiki';
 import { WIKI_PAGE_TYPE_LABELS } from '../api/wiki';
 import { MOCK_WIKI_DOCS, MOCK_WIKI_TREE, WIKI_SOURCES, WIKI_ALIAS, DEFAULT_WIKI_DOC } from '../data/mockWiki';
+import { WIKI_KEYWORD_CATALOG, groupKeywordCatalog, findDocsWithKeyword } from '../data/wikiKeywords';
+import { WIKI_KEYWORD_LINKS } from '../data/mockWiki';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 
@@ -109,6 +111,49 @@ export async function fetchWikiDoc(slug) {
   if (USE_MOCK) return MOCK_WIKI_DOCS[slug] || MOCK_WIKI_DOCS[DEFAULT_WIKI_DOC];
   const content = await wikiApi.fetchWikiPage(slug);
   return content ? toDoc(content) : null;
+}
+
+/**
+ * 연동 키워드 카탈로그(분류별). WikiKeywordBar가 그리는 칩 목록의 데이터 소스.
+ * 목업 모드에서는 고정 상수를 그대로, 실제 모드에서는 GET /wiki/keywords 응답을
+ * 이 파일과 같은 {cat, words} 모양으로 묶어서 돌려줍니다.
+ * @returns {Promise<{cat: string, words: string[]}[]>}
+ */
+export async function fetchWikiKeywordCatalog() {
+  if (USE_MOCK) return WIKI_KEYWORD_CATALOG;
+  const flat = await wikiApi.fetchWikiKeywordCatalog();
+  return groupKeywordCatalog(flat);
+}
+
+/**
+ * getDocCoreKeywords()가 카탈로그와 함께 합칠 "본문 단어 클릭 → 공시·IR 원문/뉴스기사
+ * 모달" 대상 단어 목록. WIKI_KEYWORD_LINKS는 목업 전용 데이터라, 실제 백엔드 모드에서는
+ * 빈 배열을 돌려준다 — 백엔드 122개 사전에 없는 단어가 칩으로 떴다가 클릭 시
+ * GET /wiki/pages?keyword=가 빈 결과만 주는 막다른 상황을 막는다.
+ * @returns {string[]}
+ */
+export function getKeywordLinkWords() {
+  return USE_MOCK ? Object.keys(WIKI_KEYWORD_LINKS) : [];
+}
+
+/**
+ * 이 키워드가 태깅된 위키 문서 목록 — WikiKeywordDocsModal용.
+ * 목업 모드에서는 본문 등장 횟수를 세고(findDocsWithKeyword), 실제 모드에서는
+ * GET /wiki/pages?keyword=로 실제 태깅된 페이지를 가져옵니다. 실제 모드는 본문 등장
+ * 횟수를 알 수 없으므로 count는 null로 둡니다(없는 값을 지어내지 않음) —
+ * WikiKeywordDocsModal이 count가 없으면 등장 횟수 문구를 생략합니다.
+ * @returns {Promise<{ id: string, title: string, group: string, count: number|null }[]>}
+ */
+export async function fetchDocsWithKeyword(word, tree) {
+  if (!word) return [];
+  if (USE_MOCK) return findDocsWithKeyword(word, tree);
+  const pages = await wikiApi.fetchWikiPages({ keyword: word });
+  return pages.map((p) => ({
+    id: p.slug,
+    title: p.title,
+    group: WIKI_PAGE_TYPE_LABELS[p.page_type] || p.page_type,
+    count: null,
+  }));
 }
 
 // 대시보드·리포트의 "관련 위키" 링크 이름을 문서 slug로 바꿉니다.
