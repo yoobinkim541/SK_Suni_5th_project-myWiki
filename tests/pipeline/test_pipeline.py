@@ -16,6 +16,7 @@ from conftest import EMPTY_HTML, StubFeed
 from fake_supabase import FakeSupabase
 
 from src.collectors.interface import collect, register_source
+from src.pipeline_common import repository
 from src.pipeline_common.constants import MAX_RETRY
 from src.pipeline_common.models import CollectRequest
 from src.preprocessing.interface import get_document_refs, get_markdown, preprocess
@@ -308,3 +309,55 @@ def test_other_workspace_data_is_not_visible(
     assert _collect_once(workspace_id, other_source_id) == []
     cancelled = [j for j in supabase.rows("pipeline_jobs") if j["status"] == "cancelled"]
     assert len(cancelled) == 1
+
+
+def test_active_문서가_한_페이지를_넘으면_전건을_받는다(
+    supabase: FakeSupabase, workspace_id: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    PostgREST는 한 응답에 기본 1,000행까지만 주고 넘으면 **에러도 경고도 없이** 자른다.
+
+    2026-08-07 실측: active 문서 1,470건인데 list_active_documents가 1,000건만
+    돌려주고 있었다. find_pending_documents가 이 목록으로 정제 대상을 고르므로
+    나머지 470건은 재정제 대상이 되지 못했고, 재해시 마이그레이션도 172건을 놓쳤다.
+
+    조용히 잘리는 종류라 눈으로는 안 보인다. 페이지 크기를 작게 바꿔 경계를 넘긴다.
+    """
+    monkeypatch.setattr(repository, "_PAGE_SIZE", 3)
+    total = 7  # 페이지 3 + 3 + 1
+    for index in range(total):
+        repository.insert_document(
+            workspace_id,
+            source_id=None,
+            title=f"문서 {index}",
+            canonical_url=f"https://example.com/{index}",
+            published_at=None,
+        )
+
+    rows = repository.list_active_documents(workspace_id)
+
+    assert len(rows) == total
+    assert len({str(r["id"]) for r in rows}) == total  # 페이지가 겹치지 않는다
+
+
+def test_다른_workspace_문서는_페이지_조회에도_안_섞인다(
+    supabase: FakeSupabase, workspace_id: UUID, other_workspace_id: UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """페이지를 나눠도 workspace 필터가 매 페이지에 걸려야 한다."""
+    monkeypatch.setattr(repository, "_PAGE_SIZE", 2)
+    for index in range(5):
+        repository.insert_document(
+            workspace_id, source_id=None, title=f"내 문서 {index}",
+            canonical_url=f"https://example.com/mine/{index}", published_at=None,
+        )
+    for index in range(4):
+        repository.insert_document(
+            other_workspace_id, source_id=None, title=f"남의 문서 {index}",
+            canonical_url=f"https://example.com/other/{index}", published_at=None,
+        )
+
+    rows = repository.list_active_documents(workspace_id)
+
+    assert len(rows) == 5
+    assert all(str(r["workspace_id"]) == str(workspace_id) for r in rows)
