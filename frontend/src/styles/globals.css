@@ -269,19 +269,17 @@ svg text{font-family:inherit}
 .tr.mid .l .v{color:var(--conf-mid)}
 .tr.low .l .v{color:var(--conf-low)}
 .tr.non .l .v{color:var(--faint)}
-.row .ct{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.09em}
-.row h3{font-size:16.5px;font-weight:700;letter-spacing:-.025em;line-height:1.4;margin:5px 0 7px}
+.row .ct{font-size:13.5px;font-weight:600;color:#175243;letter-spacing:-.005em}
+.row h3{font-size:16.5px;font-weight:700;letter-spacing:-.02em;line-height:1.4;margin:5px 0 7px;color:#17201E}
 .row h3.mu{font-weight:400;color:var(--ink-2)}
-.row p{font-size:12.5px;font-weight:300;color:var(--muted);line-height:1.75;max-width:620px}
+.row p{font-size:12.5px;font-weight:400;color:#68736F;line-height:1.75;max-width:620px}
 .row .meta{text-align:right}
 .row .meta .s{font-size:11px;font-weight:500;color:var(--ink-2)}
-.row .meta .s.doc{color:var(--green);font-weight:700}
-.row .meta .s.doc::before{content:"";display:inline-block;width:5px;height:5px;
-  border-radius:50%;background:var(--green);margin-right:6px;vertical-align:1px}
-.row .meta .w{display:block;font-size:11px;font-weight:300;color:var(--muted);margin-top:7px}
+.row .meta .s.doc{color:#175243;font-weight:600}
+.row .meta .w{display:block;font-size:11px;font-weight:400;color:#9AA6A2;margin-top:7px}
 .row.empty{border-left:2px dashed var(--hair);padding-left:16px}
 .legend{margin-top:20px;padding-top:13px;border-top:1px solid var(--hair);
-  display:flex;gap:22px;flex-wrap:wrap;font-size:10.5px;font-weight:300;color:var(--muted)}
+  display:flex;gap:22px;flex-wrap:wrap;font-size:10.5px;font-weight:400;color:#68736F}
 .legend b{font-weight:700;color:var(--ink-2)}
 .legend .lvl-btn{cursor:pointer;padding:2px 6px;border-radius:5px;
   transition:opacity var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease)}
@@ -1647,12 +1645,17 @@ a.fn:hover{text-decoration:underline}
 .kwchip.on .h{color:var(--green)}
 
 /* ---------- 대시보드 "최근 산업 이슈" — 최신 뉴스와 시각적으로 구분되는 패널 ---------- */
-.sec-issues{background:var(--tint);border-radius:20px;padding:26px 28px;border:1px solid var(--hair)}
-.sec-issues .sh .t{color:var(--ink-2)}
-.sec-issues .rows{border-top-color:var(--ink-2)}
-.sec-issues .badge-official{display:inline-flex;align-items:center;gap:5px;font-size:10px;
-  font-weight:700;color:var(--green);background:var(--green-tint);border-radius:20px;
-  padding:3px 10px;margin-left:8px}
+.sec-issues{background:#EFF4F1;border-radius:14px;padding:26px 28px;border:1px solid #D9E2DE}
+.sec-issues .sh{flex-wrap:wrap;row-gap:6px}
+.sec-issues .sh .t{font-size:16px;font-weight:800;letter-spacing:-.01em;color:#17201E}
+.sec-issues .sh .c{font-size:13px;font-weight:700;color:#17201E}
+.sec-issues .sh .s{font-size:11px;font-weight:400;color:#68736F}
+.sec-issues .rows{border-top-color:#D9E2DE}
+.sec-issues .row{border-bottom-color:#E5EBE8}
+.sec-issues .legend{border-top-color:#E5EBE8}
+.sec-issues .badge-official{display:inline-flex;align-items:center;font-size:11px;
+  font-weight:700;color:#175243;background:none;border-radius:0;
+  padding:0;margin-left:8px}
 
 /* ---------- 지식 축적화 네트워크 그래프 (KnowledgeGraph.jsx) ---------- */
 /* 반응형 크기·여백은 컴포넌트 쪽에서 Tailwind 유틸리티 클래스로 준다(w-full, max-h-, px- 등).
