@@ -24,6 +24,7 @@ import { useState } from 'react';
 
 const LEVEL_LABEL = { high: '높음', mid: '보통', low: '낮음' };
 const LEVEL_CLASS = { high: '', mid: 'mid', low: 'low' };
+const SW_CLASS = { high: 'hi', mid: 'md', low: 'lo' };
 const ALL_LEVELS = ['high', 'mid', 'low'];
 
 // ⚠ onOpenIssue (선택): 넘기면 이슈 행 전체가 클릭 가능해집니다.
@@ -129,6 +130,7 @@ export default function IssueList({ items, onSelectWiki, onOpenIssue, downloadFo
             className={`lvl-btn${activeLevels.has(level) ? '' : ' off'}`}
             onClick={() => toggleLevel(level)}
           >
+            <i className={`sw ${SW_CLASS[level]}`}></i>
             <b>{LEVEL_LABEL[level]}</b>
           </span>
         ))}
