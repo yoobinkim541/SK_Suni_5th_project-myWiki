@@ -177,7 +177,23 @@ svg text{font-family:inherit}
 
 /* ---------- 차트 ---------- */
 .chart{margin-top:4px}
-.chart svg{width:100%;height:auto;display:block}
+
+/* 동향 차트(TrendChart)의 크기 상한.
+   viewBox가 730x212라 width:100%만 걸면 높이가 폭에 비례해 계속 커진다. 그런데
+   viewBox 안의 글자도 같이 확대돼서, 넓은 화면일수록 축 라벨이 본문보다 커진다.
+       화면 1280px -> 차트 286px, 축 라벨 12.8px
+       화면 1920px -> 차트 472px, 축 라벨 21.1px
+       화면 2560px -> 차트 657px, 축 라벨 29.5px   (본문은 12~13px)
+   높이를 300px로 묶으면 배율이 1.42배에서 멈춰 축 라벨이 13.4px로 본문과 나란해진다.
+   막대 7개짜리 차트가 화면에서 가장 큰 요소가 되는 것도 같이 막힌다.
+
+   KnowledgeGraph(max-h-[420px] sm:480 lg:560, viewBox 1000x780)와 같은 방식이다 —
+   w-full + h-auto + 단계별 max-height. 두 시각화가 서로 다른 규칙으로 커지지 않게
+   맞춰 둔 것이므로, 한쪽을 바꾸면 다른 쪽도 같이 본다.
+   비율이 달라(3.44:1 vs 1.28:1) 수치까지 같게 두지는 않는다. */
+.chart svg{width:100%;height:auto;display:block;max-height:300px}
+@media (max-width:1020px){.chart svg{max-height:260px}}
+@media (max-width:520px){.chart svg{max-height:220px}}
 .chart .grid line{stroke:var(--hair-3);stroke-width:1}
 .chart .grid line.ax{stroke:var(--hair)}
 .chart text.yl,.chart text.xl{font-size:9.5px;font-weight:300;fill:var(--faint)}
