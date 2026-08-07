@@ -18,19 +18,30 @@ export const WIKI_PAGE_TYPE_LABELS = {
 };
 
 /**
- * WikiPage 좌측 트리 목록.
+ * WikiPage 좌측 트리 목록. keyword를 주면 그 키워드가 태깅된 페이지만 돌아온다
+ * (연동 키워드 바에서 칩을 눌렀을 때 쓴다 — WikiKeywordDocsModal).
  * @returns {Promise<{id, slug, title, page_type, status, parent_page_id, published_at}[]>}
  * 트리로 그룹핑하려면 프론트에서 page_type 기준으로 묶는다:
  *   const pages = await fetchWikiPages();
  *   const groups = Object.groupBy(pages, p => p.page_type); // 또는 reduce로 동일하게
  */
-export function fetchWikiPages({ pageType, q, limit = 50, offset = 0 } = {}) {
+export function fetchWikiPages({ pageType, q, keyword, limit = 50, offset = 0 } = {}) {
   const params = new URLSearchParams();
   if (pageType) params.set('page_type', pageType);
   if (q) params.set('q', q);
+  if (keyword) params.set('keyword', keyword);
   params.set('limit', String(limit));
   params.set('offset', String(offset));
   return apiFetch(`/wiki/pages?${params}`);
+}
+
+/**
+ * 연동 키워드 카탈로그 전체 — 실사용 여부와 무관한 고정 사전(word, category).
+ * WikiKeywordBar가 본문 키워드 하이라이트·칩 목록을 그릴 때 쓴다.
+ * @returns {Promise<{word: string, category: string}[]>}
+ */
+export function fetchWikiKeywordCatalog() {
+  return apiFetch('/wiki/keywords');
 }
 
 /**
