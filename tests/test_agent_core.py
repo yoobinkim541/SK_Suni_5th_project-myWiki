@@ -293,6 +293,71 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
 
 
 # ---------------------------------------------------------------------------
+# 실사용 크래시 — OpenRouter 응답 자체가 비정상인 경우
+# ---------------------------------------------------------------------------
+
+def test_answer_recovers_from_malformed_tool_call_json(agent, wiki_tools, monkeypatch):
+    """실측 버그: 모델이 tool call 인자로 잘린(비정상 종료된) JSON을 주면 json.loads가
+    JSONDecodeError를 던져 answer() 전체가 그대로 죽었다. 이 tool_call만 실패로 보고
+    라운드를 이어가야 한다(모델이 다음 라운드에 다시 시도할 기회를 얻는다)."""
+    bad_call = FakeToolCall("call-bad", "search_wiki_pages", {"query": "x"})
+    bad_call.function.arguments = '{"query": "SK하'  # 잘린 JSON
+    responses = [
+        FakeResponse([FakeChoice(FakeMessage(tool_calls=[bad_call]), "tool_calls")]),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "근거 없음"})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("SK하이닉스 ADR 상장 공시가 뭐야?")
+
+    assert result.has_answer is False
+    wiki_tools.search_wiki_pages.assert_not_called()
+
+
+def test_call_model_falls_back_when_primary_returns_no_choices(agent, wiki_tools):
+    """실측 버그: OpenRouter가 200으로 choices=None인 응답을 줄 때가 있다(에러를
+    본문에만 담고 예외를 안 던짐) — response.choices[0]에서 TypeError로 크래시했다.
+    choices가 비어 있으면 실패로 취급해 기존 폴백 모델 재시도 경로를 타야 한다."""
+
+    class EmptyChoicesResponse:
+        choices = None
+
+    agent.client.chat.completions.create = MagicMock(
+        side_effect=[
+            EmptyChoicesResponse(),
+            tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"})),
+        ]
+    )
+
+    result = agent.answer("질문")
+
+    # _wiki_answer가 근거 없음으로 끝나면 _llm_fallback_answer가 이어서 시도되므로,
+    # 여기서 확인할 건 "크래시 없이 폴백 모델 재시도 경로를 탔는가"이지 정확한 호출
+    # 횟수가 아니다 — primary 실패 -> fallback 성공(submit_no_answer)까지 최소 2번은
+    # 호출됐어야 한다.
+    assert result.has_answer is False
+    assert agent.client.chat.completions.create.call_count >= 2
+
+
+def test_answer_falls_back_to_llm_when_wiki_answer_raises(agent, wiki_tools, monkeypatch):
+    """_wiki_answer 도중 예외(OpenRouter 호출 실패 등)가 나도 500 성격의 크래시로 새지
+    않고 근거 없음으로 강등한 뒤 LLM 폴백을 시도해야 한다."""
+
+    def fake_call_model(messages, use_tools=True):
+        if use_tools:
+            raise RuntimeError("OpenRouter returned no choices")
+        return plain_text_response("일반 지식 답변")
+
+    monkeypatch.setattr(agent, "_call_model", fake_call_model)
+
+    result = agent.answer("질문")
+
+    assert result.has_answer is True
+    assert result.is_llm_fallback is True
+    assert result.answer == "일반 지식 답변"
+
+
+# ---------------------------------------------------------------------------
 # LLM 폴백 — 위키 근거를 못 찾으면(has_answer=False) 일반 지식으로 한 번 더 시도한다.
 # 위키 citations와 절대 헷갈리면 안 되므로 is_llm_fallback=True로 명확히 구분한다.
 # ---------------------------------------------------------------------------
