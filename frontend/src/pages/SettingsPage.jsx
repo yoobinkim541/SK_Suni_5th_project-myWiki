@@ -48,6 +48,7 @@ import SettingsRow from '../components/settings/SettingsRow';
 import ToggleSwitch from '../components/common/ToggleSwitch';
 import SegmentedControl from '../components/common/SegmentedControl';
 import { roleLabel, roleClass } from '../constants/roles';
+import AdminPanel from '../components/settings/AdminPanel';
 import {
   fetchCollectSources,
   formatSourceSummary,
@@ -218,6 +219,8 @@ export default function SettingsPage({
           <button className="dlbtn danger" onClick={() => onDeleteAccount?.()}>회원 탈퇴</button>
         </SettingsRow>
       </SettingsGroup>
+
+      {myRole === 'owner' && <AdminPanel />}
 
       <SettingsGroup title="화면">
         <SettingsRow label="다크 모드" desc="어두운 배경으로 전환합니다. 이 브라우저에만 저장됩니다.">
