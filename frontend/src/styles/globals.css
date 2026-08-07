@@ -62,11 +62,12 @@ svg text{font-family:inherit}
 
 /* ---------- 앱 셸 ---------- */
 .app{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
-.side{background:var(--rail);border-right:1px solid var(--hair);
+.side{background:#EFF4F1;border-right:1px solid var(--hair);
   padding:26px 18px 22px;display:flex;flex-direction:column;
   /* 스크롤해도 사이드바(다른 페이지로 넘어가는 메뉴)는 화면에 그대로 남아있고, 본문(.main)만
      스크롤되게 한다. 모바일은 이미 .m-drawer/.m-tabbar가 position:fixed라 따로 손댈 게 없다. */
   position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto}
+:root[data-theme="dark"] .side{background:var(--rail)}
 .brand .eb{font-size:9.5px;font-weight:300;letter-spacing:.1em;color:var(--faint)}
 .brand .nm{display:flex;align-items:center;gap:7px;
   font-size:18px;font-weight:900;letter-spacing:-.02em;margin-top:3px}
@@ -205,16 +206,16 @@ svg text{font-family:inherit}
    위에서 진하고 아래로 갈수록 투명해지는 TailAdmin 스타일 채우기. CSS가 SVG
    presentation attribute(fill)보다 우선 적용되므로, 그라데이션은 여기서 지정해야 한다. */
 .chart .area{fill:url(#trend-area-gradient)}
-.chart .line{fill:none;stroke:var(--green);stroke-width:1.8;
+.chart .line{fill:none;stroke:#86AABD;stroke-width:1.8;
   stroke-linejoin:round;stroke-linecap:round}
-.chart .dots circle{fill:var(--panel);stroke:var(--green);stroke-width:1.4}
-.chart .now-dot{fill:var(--green)}
-.chart text.now{font-size:11px;font-weight:900;fill:var(--green);text-anchor:end}
+.chart .dots circle{fill:var(--panel);stroke:#86AABD;stroke-width:1.4}
+.chart .now-dot{fill:#86AABD}
+.chart text.now{font-size:11px;font-weight:900;fill:#86AABD;text-anchor:end}
 .chart-legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;
   padding-top:12px;border-top:1px solid var(--hair-3);
   font-size:10.5px;font-weight:300;color:var(--muted)}
 .chart-legend b{font-weight:700;color:var(--ink-2)}
-.chart-legend .mk{display:inline-block;width:14px;height:2px;background:var(--green);
+.chart-legend .mk{display:inline-block;width:14px;height:2px;background:#86AABD;
   vertical-align:3px;margin-right:6px}
 .chart-legend .mk.bar{height:8px;width:8px;background:var(--track);vertical-align:0}
 
@@ -304,6 +305,16 @@ svg text{font-family:inherit}
 .dlbtn .ext{font-size:10px;font-weight:900;letter-spacing:.03em;
   padding:2px 5px;border-radius:4px;background:var(--tint);color:var(--muted)}
 .dlbtn:hover .ext{background:var(--green-tint);color:var(--green)}
+
+/* Word/PDF/PPT 다운로드 버튼 아이콘 배지 — 오피스 색상의 둥근 사각형 뱃지 + 흰 글자 */
+.dlbadge{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:20px;height:20px;border-radius:6px;color:#fff;font-size:9.5px;font-weight:800;
+  letter-spacing:-.01em}
+.dlbadge-word{background:#2B579A}
+.dlbadge-pdf{background:#D93831;font-size:7px}
+.dlbadge-ppt{background:#D24625}
+.rdl.wide .dlbadge{width:24px;height:24px;border-radius:7px;font-size:11px}
+.rdl.wide .dlbadge-pdf{font-size:8px}
 
 .arch{margin-top:14px}
 .arch-hd{display:flex;align-items:center;gap:12px;margin-bottom:4px}
@@ -1052,7 +1063,7 @@ a.fn:hover{text-decoration:underline}
     display:flex;align-items:center;gap:6px;
     font-size:17px;font-weight:900;letter-spacing:-.02em;color:var(--ink)
   }
-  .m-topbar .m-logo .logo-mark{height:18px;width:18px}
+  .m-topbar .m-logo .logo-mark{height:22px;width:22px}
   .m-topbar .m-right{margin-left:auto}
   .m-topbar .m-right .m-dot{
     position:absolute;top:9px;right:9px;width:6px;height:6px;border-radius:50%;
@@ -1243,7 +1254,7 @@ a.fn:hover{text-decoration:underline}
 /* TopBar.jsx (PC) — 시안 .deck 의 h1 과 같은 값 + 로고 아이콘(LogoMark). */
 .deck .brand2{display:flex;align-items:center;gap:6px;
   font-size:13px;font-weight:900;letter-spacing:.01em;color:var(--ink)}
-.deck .brand2 .logo-mark{height:17px;width:17px}
+.deck .brand2 .logo-mark{height:30px;width:30px}
 
 /* ---------- 위키: 좌측 문서 목록 · 연결된 문서 클릭 ---------- */
 .tree a{cursor:pointer;transition:color var(--dur-fast) var(--ease)}
@@ -1464,14 +1475,17 @@ a.fn:hover{text-decoration:underline}
 .rdl.wide {
   margin-top: 16px;
   padding-top: 16px;
-  gap: 10px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 .rdl.wide .dlbtn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px 14px;
+  gap: 10px;
+  min-width: 140px;
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 12px;
 }
 .rdl.wide .dlbtn svg {
   width: 16px;
@@ -1597,15 +1611,13 @@ a.fn:hover{text-decoration:underline}
 
 .sh.big .t { color: var(--green); }
 
-/* PC 상단바 브랜드 로고 (이미지) — 라이트/다크 두 버전 전환 */
+/* PC 상단바 브랜드 로고 — LogoMark(SVG) + "myWiki" 텍스트 */
 .brand2-logo-img{
   height:34px;
   width:auto;
   display:block;
 }
-.brand2 .logo-dark{display:none}
-:root[data-theme="dark"] .brand2 .logo-light{display:none}
-:root[data-theme="dark"] .brand2 .logo-dark{display:block}
+.brand2-logo-text{font-size:18px;font-weight:900;letter-spacing:-.02em;color:var(--ink)}
 
 /* 로그인/회원가입 화면 — 회원가입일 때만 보여주는 혜택 목록 + 로그인·회원가입 전환 링크 */
 .ob-perks{list-style:none;margin:2px 0 16px;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -1678,9 +1690,8 @@ a.fn:hover{text-decoration:underline}
 .kg-hub-glow{fill:var(--green);opacity:.07;animation:kg-pulse 2.6s var(--ease) infinite}
 .kg-hub-grad{fill:url(#kgHubGrad)}
 .kg-hub-logo-img{filter:drop-shadow(0 8px 16px rgba(21,120,80,.16))}
-.kg-hub-logo-img.logo-dark{display:none}
-:root[data-theme="dark"] .kg-hub-logo-img.logo-light{display:none}
-:root[data-theme="dark"] .kg-hub-logo-img.logo-dark{display:block}
+.kg-hub-logo-text{font-size:13px;font-weight:900;letter-spacing:-.02em;color:var(--green)}
+@media (min-width:640px){.kg-hub-logo-text{font-size:15px}}
 
 @keyframes kg-pulse{
   0%,100%{transform:scale(1);opacity:.07}
@@ -1707,23 +1718,18 @@ a.fn:hover{text-decoration:underline}
 .m-logo {
   display: inline-flex;
   align-items: center;
-  gap: 0;
+  gap: 6px;
 }
 .m-logo-img {
   height: 22px;
   width: auto;
   display: block;
 }
-
-/* 라이트/다크 전환 — PC(.brand2-logo-img)와 같은 규칙을 모바일에도 적용 */
-.m-logo-img.logo-dark {
-  display: none;
-}
-:root[data-theme="dark"] .m-logo-img.logo-light {
-  display: none;
-}
-:root[data-theme="dark"] .m-logo-img.logo-dark {
-  display: block;
+.m-logo-text {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -.02em;
+  color: var(--ink);
 }
 
 /* 화면이 아주 좁을 때는 조금 더 줄입니다. */
@@ -1830,9 +1836,9 @@ a.fn:hover{text-decoration:underline}
    이 블록은 .ob-stage-landing/.ob-landing에만 적용된다. */
 /* 참고 이미지처럼 순백색 대신 옅은 크림/베이지 배경 — 라이트 모드 전용 색이라 하드코딩하고,
    다크 모드는 기존 --panel(어두운 배경)을 그대로 쓴다. */
-.ob-stage-landing{display:block;min-height:100vh;padding:0;background:#faf8f3}
+.ob-stage-landing{display:flex;flex-direction:column;justify-content:center;min-height:100vh;padding:0;background:#EFF4F1}
 :root[data-theme="dark"] .ob-stage-landing{background:var(--panel)}
-.ob-screen.ob-landing{display:none;max-width:1180px;margin:0 auto;padding:0 24px 64px}
+.ob-screen.ob-landing{display:none;max-width:1180px;width:100%;margin:0 auto;padding:0 24px 64px}
 .ob-screen.ob-landing.on{display:block}
 
 .landing-nav{display:flex;align-items:center;gap:32px;padding:22px 0}
@@ -1846,7 +1852,7 @@ a.fn:hover{text-decoration:underline}
 :root[data-theme="dark"] .landing-nav-signup{color:#0d1512}
 .landing-nav-signup:hover{opacity:.88}
 
-.landing-hero{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;
+.landing-hero{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center;justify-items:center;
   padding:56px 0 40px}
 .landing-hero-left h1{font-size:44px;font-weight:900;letter-spacing:-.03em;line-height:1.22;
   margin-bottom:20px}
@@ -1876,10 +1882,7 @@ a.fn:hover{text-decoration:underline}
 .landing-mock-side{display:flex;flex-direction:column;gap:2px;padding:14px 9px;
   border-right:1px solid var(--hair);background:var(--rail, var(--tint))}
 .lm-side-brand{padding:2px 6px 12px}
-.lm-side-brand img{height:16px;width:auto;display:block}
-.lm-side-brand .logo-dark{display:none}
-:root[data-theme="dark"] .lm-side-brand .logo-light{display:none}
-:root[data-theme="dark"] .lm-side-brand .logo-dark{display:block}
+.lm-side-brand .logo-mark{height:16px;width:16px;display:block}
 .lm-side-item{font-size:9.5px;font-weight:500;color:var(--muted);padding:7px 8px;border-radius:6px}
 .lm-side-item.on{background:var(--green);color:#fff;font-weight:700}
 :root[data-theme="dark"] .lm-side-item.on{color:#0d1512}
@@ -1910,7 +1913,8 @@ a.fn:hover{text-decoration:underline}
 .lmc-svg{width:100%;height:44px;display:block}
 
 @media (max-width:900px){
-  .landing-hero{grid-template-columns:1fr;padding-top:36px}
+  .landing-hero{grid-template-columns:1fr;padding-top:36px;text-align:center}
+  .landing-hero-left{display:flex;flex-direction:column;align-items:center}
   .landing-hero-left h1{font-size:32px}
   .landing-mock-chart{position:static;width:auto;margin-top:14px}
 }

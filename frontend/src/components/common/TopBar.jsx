@@ -16,8 +16,7 @@
 //   있습니다. 처음엔 여기 뒀었는데, 접었다 폈다 하는 대상(SideNav)과 같은 자리에 있는 게
 //   더 자연스럽다는 피드백을 받아 옮겼습니다.
 
-import logo from '../../assets/logo.png';
-import logoDark from '../../assets/logo-dark.png';
+import LogoMark from './LogoMark';
 
 export default function TopBar({
   variant = 'mobile',
@@ -41,8 +40,8 @@ export default function TopBar({
         </button>
 
         <button className="m-logo" onClick={onLogoClick} title="myWiki — 처음 화면으로 새로고침">
-          <img src={logo} alt="myWiki" className="m-logo-img logo-light" />
-          <img src={logoDark} alt="myWiki" className="m-logo-img logo-dark" />
+          <LogoMark className="m-logo-img" />
+          <span className="m-logo-text">myWiki</span>
         </button>
 
         <div className="m-right">
@@ -61,8 +60,8 @@ export default function TopBar({
   return (
     <header className="deck">
       <button className="brand2" onClick={onLogoClick} title="myWiki — 처음 화면으로 새로고침">
-        <img src={logo} alt="myWiki" className="brand2-logo-img logo-light" />
-        <img src={logoDark} alt="myWiki" className="brand2-logo-img logo-dark" />
+        <LogoMark className="brand2-logo-img" />
+        <span className="brand2-logo-text">myWiki</span>
       </button>
 
       <div className="deck-right">

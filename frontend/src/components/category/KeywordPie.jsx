@@ -12,7 +12,7 @@
 //
 // 반응형: svg에 viewBox만 주고 CSS(.pie svg{width:100%;height:auto})가 폭을 맞춥니다.
 
-const PALETTE = ['#175243', '#2f7a63', '#4f9b80', '#79b8a0', '#a8d2c1', '#cde5db', '#e3efe9'];
+const PALETTE = ['#86AABD', '#6B93A8', '#A2C0CE', '#587C8F', '#BFD5DE', '#4A6A7A'];
 
 const R_OUT = 68;
 const R_IN = 40;

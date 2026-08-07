@@ -26,8 +26,7 @@
 import { useState } from 'react';
 import { signInWithProvider } from '../api/auth';
 import OnboardingPage from './OnboardingPage';
-import logo from '../assets/logo.png';
-import logoDark from '../assets/logo-dark.png';
+import LogoMark from '../components/common/LogoMark';
 
 // 우측 화면 시안 전용 — 실제 SideNav.jsx의 NAV_ITEMS와 같은 라벨(장식용, 아이콘은 생략).
 const MOCK_SIDE_ITEMS = ['대시보드', '일일 리포트', '카테고리 현황', '위키', '에이전트', '설정'];
@@ -169,8 +168,7 @@ export default function EntryFlow({ initialStep, onSurveyComplete, onGuestSkip }
                 <div className="landing-mock-body">
                   <div className="landing-mock-side">
                     <div className="lm-side-brand">
-                      <img src={logo} alt="" className="logo-light" />
-                      <img src={logoDark} alt="" className="logo-dark" />
+                      <LogoMark />
                     </div>
                     {MOCK_SIDE_ITEMS.map((label, i) => (
                       <span key={label} className={`lm-side-item${i === 0 ? ' on' : ''}`}>
