@@ -2225,8 +2225,8 @@ a.fn:hover{text-decoration:underline}
 }
 
 
-/* 오늘 리포트 카드 — 연한 그린 배경 + 진한 그린 테두리 */
+/* 오늘 리포트 카드 */
 .ritem.today {
-  background: #FAFBF5;             /* 노란끼 도는 연한 그린 */
-  border: 1px solid #3A3A3A;       /* 진한 그린 테두리 */
+  background:  #F5F9FA;      
+  border: 1px solid #3A3A3A;      
 }
