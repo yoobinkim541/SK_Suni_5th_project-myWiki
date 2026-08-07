@@ -102,6 +102,19 @@ def test_update_role_rejects_self(client_as, monkeypatch):
     assert calls == []
 
 
+def test_update_role_404_for_non_member_target(client_as, monkeypatch):
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "owner")
+    monkeypatch.setattr(db, "update_workspace_member_role", lambda wid, uid, role: None)
+    monkeypatch.setattr(
+        db, "list_workspace_members",
+        lambda wid: [{"user_id": OWNER_ID, "display_name": "오너", "role": "owner"}],
+    )
+
+    res = client_as(OWNER_ID).patch(f"/workspace/members/{TARGET_ID}/role", json={"role": "admin"})
+
+    assert res.status_code == 404
+
+
 def test_update_role_rejects_invalid_role_value(client_as, monkeypatch):
     monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "owner")
 

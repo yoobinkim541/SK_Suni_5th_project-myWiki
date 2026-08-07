@@ -504,7 +504,9 @@ def update_member_role(
 
     db.update_workspace_member_role(workspace_id, user_id, body.role)
     rows = db.list_workspace_members(workspace_id)
-    updated = next(r for r in rows if r["user_id"] == user_id)
+    updated = next((r for r in rows if r["user_id"] == user_id), None)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="워크스페이스 멤버가 아님")
     return WorkspaceMemberOut(
         user_id=updated["user_id"], display_name=updated.get("display_name"),
         email=updated.get("email"), role=updated.get("role"),

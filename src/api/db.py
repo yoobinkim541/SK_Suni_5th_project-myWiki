@@ -660,7 +660,11 @@ def list_workspace_sessions_for_admin(workspace_id: str, visibility: str) -> lis
 
 def get_chat_session_for_admin(session_id: str, workspace_id: str) -> Optional[dict]:
     """get_chat_session과 달리 참여자/소유자 여부를 확인하지 않는다 — workspace_id
-    일치만 확인한다(오너 전용 열람용)."""
+    일치만 확인한다(오너 전용 열람용).
+
+    삭제(soft-delete)된 세션도 조회된다 — list_workspace_sessions_for_admin과 달리
+    deleted_at 필터가 없다. 오너 감사 목적상 사용자가 세션을 지워도 오너의 조회
+    권한까지 사라지면 안 된다(의도적 설계, 누락 아님)."""
     res = (
         get_supabase()
         .table("chat_sessions")

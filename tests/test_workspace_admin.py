@@ -148,6 +148,11 @@ def fake_db(monkeypatch):
                 "visibility": "private", "title": "오너의 개인 세션", "updated_at": "2026-08-07T00:00:00Z",
                 "profiles": {"display_name": "오너"},
             },
+            {
+                "id": "sess-4", "workspace_id": WORKSPACE_ID, "user_id": TARGET_ID,
+                "visibility": "team", "title": "삭제된 팀 세션", "updated_at": "2026-08-07T00:00:00Z",
+                "deleted_at": "2026-08-06T00:00:00Z", "profiles": {"display_name": "박하늘"},
+            },
         ],
         "chat_session_participants": [
             {"session_id": "sess-1", "user_id": TARGET_ID},
@@ -213,3 +218,20 @@ def test_get_chat_session_for_admin_blocks_cross_workspace(fake_db):
     result = db.get_chat_session_for_admin("sess-2", WORKSPACE_ID)
 
     assert result is None
+
+
+def test_list_workspace_sessions_for_admin_excludes_deleted_sessions(fake_db):
+    """sess-4는 WORKSPACE_ID/team이지만 deleted_at이 설정돼 있어 목록에서 빠져야 한다."""
+    result = db.list_workspace_sessions_for_admin(WORKSPACE_ID, "team")
+
+    assert [r["id"] for r in result] == ["sess-1"]
+    assert "sess-4" not in [r["id"] for r in result]
+
+
+def test_get_chat_session_for_admin_includes_deleted_sessions(fake_db):
+    """list_workspace_sessions_for_admin과 달리 deleted_at 필터가 없다 — 오너 감사
+    목적상 사용자가 지운 세션도 오너는 직접 조회할 수 있어야 한다(의도적 설계)."""
+    result = db.get_chat_session_for_admin("sess-4", WORKSPACE_ID)
+
+    assert result is not None
+    assert result["id"] == "sess-4"
