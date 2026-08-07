@@ -38,6 +38,9 @@ class ShareToTeamRequest(BaseModel):
 class ParticipantOut(BaseModel):
     user_id: str
     display_name: Optional[str] = None
+    # 워크스페이스 역할(owner/admin/editor/viewer) — frontend/src/constants/roles.js가
+    # 이 값으로 역할 배지·권한별 버튼 표시를 가른다.
+    role: Optional[str] = None
 
 
 class AddParticipantRequest(BaseModel):
@@ -48,6 +51,7 @@ class WorkspaceMemberOut(BaseModel):
     user_id: str
     display_name: Optional[str] = None
     email: Optional[str] = None
+    role: Optional[str] = None
 
 
 class CitationOut(BaseModel):

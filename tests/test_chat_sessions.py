@@ -340,11 +340,30 @@ def test_list_chat_session_participants_flattens_display_name_key(fake_db):
     """FakeQuery는 PostgREST embed 조인을 실제로 흉내내지 않아서(profiles 서브셀렉트는
     항상 빈 값) display_name 값 자체는 여기서 검증 못 한다 — _flatten_display_name이
     profiles를 display_name 키로 펼치는 계약만 확인한다."""
-    result = db.list_chat_session_participants("sess-team")
+    result = db.list_chat_session_participants("sess-team", WORKSPACE_ID)
 
     assert result[0]["user_id"] == OWNER_ID
     assert "display_name" in result[0]
     assert "profiles" not in result[0]
+
+
+def test_list_chat_session_participants_attaches_workspace_role(fake_db):
+    """role은 chat_session_participants가 아니라 workspace_members에서 온다 —
+    참여자의 워크스페이스 소속 role을 따로 조회해 합쳐 주는지 확인한다."""
+    fake_db._data["workspace_members"] = [
+        {"workspace_id": WORKSPACE_ID, "user_id": OWNER_ID, "role": "owner"},
+    ]
+
+    result = db.list_chat_session_participants("sess-team", WORKSPACE_ID)
+
+    assert result[0]["user_id"] == OWNER_ID
+    assert result[0]["role"] == "owner"
+
+
+def test_get_workspace_role_returns_none_when_not_a_member(fake_db):
+    fake_db._data["workspace_members"] = []
+
+    assert db.get_workspace_role(WORKSPACE_ID, OWNER_ID) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1318,13 +1337,13 @@ def test_list_participants_endpoint(make_client, monkeypatch):
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
     monkeypatch.setattr(
         db, "list_chat_session_participants",
-        lambda sid: [{"user_id": OWNER_ID, "display_name": "김주현"}],
+        lambda sid, wid: [{"user_id": OWNER_ID, "display_name": "김주현", "role": "admin"}],
     )
 
     res = make_client(OWNER_ID).get(f"/chat/sessions/{TEAM_SESSION['id']}/participants")
 
     assert res.status_code == 200
-    assert res.json() == [{"user_id": OWNER_ID, "display_name": "김주현"}]
+    assert res.json() == [{"user_id": OWNER_ID, "display_name": "김주현", "role": "admin"}]
 
 
 def test_list_participants_blocked_for_non_participant(make_client, monkeypatch):
@@ -1338,6 +1357,7 @@ def test_list_participants_blocked_for_non_participant(make_client, monkeypatch)
 def test_add_participant_success(make_client, monkeypatch):
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
     monkeypatch.setattr(db, "get_default_workspace_id", lambda uid: WORKSPACE_ID)
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "editor" if uid == OWNER_ID else "member")
 
     calls = []
     monkeypatch.setattr(db, "add_chat_session_participant", lambda sid, uid: calls.append((sid, uid)))
@@ -1348,12 +1368,30 @@ def test_add_participant_success(make_client, monkeypatch):
     )
 
     assert res.status_code == 201
-    assert res.json() == {"user_id": OTHER_USER_ID, "display_name": "박하늘"}
+    assert res.json() == {"user_id": OTHER_USER_ID, "display_name": "박하늘", "role": "member"}
     assert calls == [(TEAM_SESSION["id"], OTHER_USER_ID)]
+
+
+def test_add_participant_rejected_for_guest_role(make_client, monkeypatch):
+    """frontend/src/constants/roles.js의 canInviteToSession은 viewer(게스트)를 뺀다 —
+    서버도 같은 규칙으로 막아야 한다."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "viewer")
+
+    calls = []
+    monkeypatch.setattr(db, "add_chat_session_participant", lambda sid, uid: calls.append((sid, uid)))
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{TEAM_SESSION['id']}/participants", json={"user_id": OTHER_USER_ID}
+    )
+
+    assert res.status_code == 403
+    assert calls == []
 
 
 def test_add_participant_rejects_different_workspace(make_client, monkeypatch):
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "editor")
 
     def fake_get_default_workspace_id(user_id):
         return WORKSPACE_ID if user_id == OWNER_ID else "other-workspace"
@@ -1393,8 +1431,10 @@ def test_remove_participant_self_allowed(make_client, monkeypatch):
 
 
 def test_remove_participant_others_blocked_for_non_creator(make_client, monkeypatch):
-    """TEAM_SESSION의 생성자는 OWNER_ID다 — 다른 참여자가 제3자를 빼려고 하면 막혀야 한다."""
+    """TEAM_SESSION의 생성자는 OWNER_ID다 — 세션 생성자도 아니고 워크스페이스
+    역할도 owner/admin이 아닌 참여자가 제3자를 빼려고 하면 막혀야 한다."""
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "editor")
     calls = []
     monkeypatch.setattr(db, "remove_chat_session_participant", lambda sid, uid: calls.append((sid, uid)))
 
@@ -1402,6 +1442,21 @@ def test_remove_participant_others_blocked_for_non_creator(make_client, monkeypa
 
     assert res.status_code == 403
     assert calls == []
+
+
+def test_remove_participant_allowed_for_workspace_admin_even_if_not_creator(make_client, monkeypatch):
+    """세션을 만들지 않았어도, 워크스페이스 역할이 owner/admin이면 다른 참여자를
+    뺄 수 있어야 한다 — frontend/src/constants/roles.js의 canRemoveFromSession과
+    서버 권한을 맞춘다(관리자·팀장에게 보여주는 제외 버튼이 실제로 동작해야 함)."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: TEAM_SESSION)
+    monkeypatch.setattr(db, "get_workspace_role", lambda wid, uid: "admin")
+    calls = []
+    monkeypatch.setattr(db, "remove_chat_session_participant", lambda sid, uid: calls.append((sid, uid)))
+
+    res = make_client(OTHER_USER_ID).delete(f"/chat/sessions/{TEAM_SESSION['id']}/participants/{OWNER_ID}")
+
+    assert res.status_code == 204
+    assert calls == [(TEAM_SESSION["id"], OWNER_ID)]
 
 
 def test_remove_participant_creator_can_remove_others(make_client, monkeypatch):
@@ -1418,15 +1473,18 @@ def test_remove_participant_creator_can_remove_others(make_client, monkeypatch):
 def test_list_workspace_members_endpoint(make_client, monkeypatch):
     monkeypatch.setattr(
         db, "list_workspace_members",
-        lambda wid: [{"user_id": OWNER_ID, "display_name": "김주현"}, {"user_id": OTHER_USER_ID, "display_name": "박하늘"}],
+        lambda wid: [
+            {"user_id": OWNER_ID, "display_name": "김주현", "role": "owner"},
+            {"user_id": OTHER_USER_ID, "display_name": "박하늘", "role": "editor"},
+        ],
     )
 
     res = make_client(OWNER_ID).get("/workspace/members")
 
     assert res.status_code == 200
     assert res.json() == [
-        {"user_id": OWNER_ID, "display_name": "김주현", "email": None},
-        {"user_id": OTHER_USER_ID, "display_name": "박하늘", "email": None},
+        {"user_id": OWNER_ID, "display_name": "김주현", "email": None, "role": "owner"},
+        {"user_id": OTHER_USER_ID, "display_name": "박하늘", "email": None, "role": "editor"},
     ]
 
 
@@ -1436,13 +1494,15 @@ def test_list_workspace_members_endpoint_passes_email_through(make_client, monke
     로직 자체는 db-레벨 테스트에서 확인)."""
     monkeypatch.setattr(
         db, "list_workspace_members",
-        lambda wid: [{"user_id": OWNER_ID, "display_name": "김유빈", "email": "yoobinkim541@gmail.com"}],
+        lambda wid: [{"user_id": OWNER_ID, "display_name": "김유빈", "email": "yoobinkim541@gmail.com", "role": "editor"}],
     )
 
     res = make_client(OWNER_ID).get("/workspace/members")
 
     assert res.status_code == 200
-    assert res.json() == [{"user_id": OWNER_ID, "display_name": "김유빈", "email": "yoobinkim541@gmail.com"}]
+    assert res.json() == [
+        {"user_id": OWNER_ID, "display_name": "김유빈", "email": "yoobinkim541@gmail.com", "role": "editor"}
+    ]
 
 
 def test_list_workspace_members_adds_email_only_for_duplicate_names(fake_db, monkeypatch):
