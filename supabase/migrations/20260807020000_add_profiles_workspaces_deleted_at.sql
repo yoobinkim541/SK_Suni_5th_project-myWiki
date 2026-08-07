@@ -1,0 +1,5 @@
+ALTER TABLE public.profiles
+ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+ALTER TABLE public.workspaces
+ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
