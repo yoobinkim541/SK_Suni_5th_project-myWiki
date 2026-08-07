@@ -108,7 +108,54 @@ def search_documents(
 def get_document_detail(
     workspace_id: str, document_version_id: str, *, supabase: Client | None = None
 ) -> DocumentDetail | None:
-    raise NotImplementedError  # Task 2에서 구현
+    db = supabase or get_supabase()
+
+    version_res = (
+        db.table("document_versions")
+        .select("id, document_id, markdown_object_key")
+        .eq("id", document_version_id)
+        .maybe_single()
+        .execute()
+    )
+    version = version_res.data if version_res else None
+    if not version:
+        return None
+
+    document_res = (
+        db.table("documents")
+        .select("id, title, canonical_url, published_at, source_id")
+        .eq("id", version["document_id"])
+        .eq("workspace_id", workspace_id)
+        .maybe_single()
+        .execute()
+    )
+    document = document_res.data if document_res else None
+    if not document:
+        return None
+
+    source_name = None
+    if document.get("source_id"):
+        source_res = (
+            db.table("sources")
+            .select("name")
+            .eq("id", document["source_id"])
+            .maybe_single()
+            .execute()
+        )
+        if source_res and source_res.data:
+            source_name = source_res.data.get("name")
+
+    bucket, path = storage.split_key(version["markdown_object_key"])
+    markdown_bytes = db.storage.from_(bucket).download(path)
+
+    return DocumentDetail(
+        document_version_id=str(version["id"]),
+        title=str(document["title"]),
+        markdown=markdown_bytes.decode("utf-8"),
+        canonical_url=document.get("canonical_url"),
+        source_name=source_name,
+        published_at=document.get("published_at"),
+    )
 
 
 def _score_document(*, title: str, content: str, query_token_set: set[str]) -> float | None:

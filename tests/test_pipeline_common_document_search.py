@@ -179,3 +179,50 @@ def test_search_documents_excludes_zero_overlap():
     results = document_search.search_documents(WORKSPACE_ID, "HBM 반도체", limit=5, supabase=supabase)
 
     assert results == []
+
+
+def test_get_document_detail_returns_full_content_and_metadata():
+    supabase = FakeSupabase(
+        tables={
+            "document_versions": [_version_row("ver-1", "doc-1", 1, "processed/ws-1/doc-1/1.md")],
+            "documents": [_document_row("doc-1", "SK하이닉스 ADR 상장", "2026-07-10T00:00:00+00:00")],
+            "sources": [{"id": "source-1", "name": "DART - SK하이닉스"}],
+        },
+        objects={"ws-1/doc-1/1.md": "SK하이닉스가 나스닥에 ADR을 상장했다.".encode("utf-8")},
+    )
+
+    detail = document_search.get_document_detail(WORKSPACE_ID, "ver-1", supabase=supabase)
+
+    assert detail is not None
+    assert detail.document_version_id == "ver-1"
+    assert detail.title == "SK하이닉스 ADR 상장"
+    assert detail.markdown == "SK하이닉스가 나스닥에 ADR을 상장했다."
+    assert detail.canonical_url == "https://example.com/doc-1"
+    assert detail.source_name == "DART - SK하이닉스"
+    assert detail.published_at == "2026-07-10T00:00:00+00:00"
+
+
+def test_get_document_detail_returns_none_when_version_not_found():
+    supabase = FakeSupabase(tables={"document_versions": [], "documents": [], "sources": []})
+
+    detail = document_search.get_document_detail(WORKSPACE_ID, "missing-ver", supabase=supabase)
+
+    assert detail is None
+
+
+def test_get_document_detail_returns_none_when_workspace_mismatch():
+    """다른 workspace의 문서는 조회되면 안 된다 — workspace 격리."""
+    supabase = FakeSupabase(
+        tables={
+            "document_versions": [_version_row("ver-1", "doc-1", 1, "processed/other-ws/doc-1/1.md")],
+            "documents": [
+                {**_document_row("doc-1", "다른 워크스페이스 문서", "2026-07-10T00:00:00+00:00"), "workspace_id": "other-ws"}
+            ],
+            "sources": [],
+        },
+        objects={},
+    )
+
+    detail = document_search.get_document_detail(WORKSPACE_ID, "ver-1", supabase=supabase)
+
+    assert detail is None
