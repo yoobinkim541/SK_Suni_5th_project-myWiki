@@ -22,8 +22,19 @@ ADOPTED_RANKING_STATUS = "completed"
 NEWS_SOURCE_TYPES = frozenset({"news", "rss"})
 DISCLOSURE_SOURCE_TYPES = frozenset({"disclosure"})
 
-# .in_() 한 번에 넣을 id 개수. URL 길이 제한에 걸리지 않게 나눠 부른다.
-_IN_CHUNK = 200
+_IN_CLAUSE_CHUNK_SIZE = 150
+"""
+.in_() 한 번에 넣을 id 개수 상한. id 목록이 수백 개가 되면 전부 한 URL의 .in_(...)에
+담을 때 PostgREST가 400 Bad Request로 거부한다.
+
+src/analysis/repository.py, src/pipeline_common/repository.py,
+src/categories/service.py의 동일 상수와 같은 값이다. 값이 갈리면 안 되는 이유는
+한도가 특정 테이블이 아니라 요청 URL 길이라는 서버 쪽 제약이기 때문이다.
+
+2026-08-07 실측: 코드에 있는 네 가지 쿼리 모양이 전부 632~635개에서 깨진다
+(UUID 39자 × 약 632개 ≈ 24,600자). select 컬럼이나 필터가 늘어도 편차가 3개뿐이라
+쿼리별로 값을 달리 잡을 이유가 없다. 150이면 약 4.2배 여유다.
+"""
 
 
 def _reliability_label(avg_score: float | None) -> str:
@@ -171,11 +182,11 @@ def _adopted_document_ids(db: Client, workspace_id: str) -> set[str]:
     # document_versions에는 workspace_id 컬럼이 없다. 위 분석 행을 이미 workspace로
     # 걸렀으므로 여기서 나오는 document_id는 전부 그 workspace 것이다.
     document_ids: set[str] = set()
-    for start in range(0, len(version_ids), _IN_CHUNK):
+    for start in range(0, len(version_ids), _IN_CLAUSE_CHUNK_SIZE):
         rows = (
             db.table("document_versions")
             .select("id, document_id")
-            .in_("id", version_ids[start : start + _IN_CHUNK])
+            .in_("id", version_ids[start : start + _IN_CLAUSE_CHUNK_SIZE])
             .execute()
             .data
         )
