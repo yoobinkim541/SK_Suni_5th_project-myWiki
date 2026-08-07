@@ -1,3 +1,4 @@
+import { extractCatalogKeywords } from '../data/wikiKeywords';
 import {
   downloadDailyReport as downloadDailyReportApi,
   fetchDailyReport as fetchDailyReportApi,
@@ -8,6 +9,8 @@ const reportCache = new Map();
 const reportGenerationCache = new Map();
 
 const LEVEL_ORDER = { low: 1, mid: 2, high: 3 };
+const KEYWORD_LIMIT = 6; // 오늘의 키워드 노출 개수
+
 const LEVEL_BY_SCORE = [
   { min: 80, level: 'high' },
   { min: 50, level: 'mid' },
@@ -44,23 +47,33 @@ function getOverallLevel(sections) {
   }, 'low');
 }
 
+// 오늘의 키워드.
+//
+// 위키 연동 키워드 카탈로그(data/wikiKeywords.js, 분류 6종)를 그대로 사전으로 씁니다.
+// 리포트와 위키가 같은 키워드 체계를 쓰게 하려는 목적입니다.
+//
+// 이전에는 key_facts 문장을 잘라 그대로 노출했는데, 문장이라 칩으로 길고 화면마다
+// 표기가 달라졌습니다. 이제 이슈 제목·요약·key_facts를 합친 텍스트에서 카탈로그
+// 키워드만 뽑고, 등장 횟수 순으로 상위 KEYWORD_LIMIT개를 씁니다.
+//
+// 카탈로그 키워드가 하나도 안 잡히면 이슈 제목으로 대체합니다 — 없는 키워드를
+// 지어내지 않으면서 화면이 비지 않게 하려는 처리입니다.
 function pickKeywords(sections) {
-  const values = [];
-  for (const section of sections) {
-    const facts = Array.isArray(section.content?.key_facts) ? section.content.key_facts : [];
-    for (const fact of facts) {
-      if (!fact) continue;
-      values.push(String(fact).trim());
-      if (values.length >= 6) return values;
-    }
-  }
+  const text = sections
+    .map((section) => {
+      const content = section.content && typeof section.content === 'object' ? section.content : {};
+      const facts = Array.isArray(content.key_facts) ? content.key_facts : [];
+      return [section.title, content.current_summary, ...facts].filter(Boolean).join(' ');
+    })
+    .join(' ');
 
-  for (const section of sections) {
-    if (section.title) values.push(section.title);
-    if (values.length >= 6) break;
-  }
+  const found = extractCatalogKeywords(text)
+    .slice(0, KEYWORD_LIMIT)
+    .map((k) => k.word);
 
-  return [...new Set(values)].slice(0, 6);
+  if (found.length > 0) return found;
+
+  return [...new Set(sections.map((s) => s.title).filter(Boolean))].slice(0, KEYWORD_LIMIT);
 }
 
 function normalizeIssue(section) {

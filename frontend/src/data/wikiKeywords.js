@@ -119,6 +119,38 @@ export function getCategoryWords(cat) {
 }
 
 /**
+ * 임의의 텍스트에서 카탈로그 키워드를 뽑아 등장 횟수 내림차순으로 돌려줍니다.
+ * 위키 문서뿐 아니라 리포트 이슈 요약에도 씁니다 — 두 화면이 같은 키워드 사전을 보게 하려는
+ * 목적입니다. 텍스트에 없는 키워드는 넣지 않습니다.
+ *
+ * 짧은 키워드가 긴 키워드에 포함되면(예: 'HBM' ⊂ 'HBM4') 긴 쪽만 남깁니다.
+ *
+ * @param {string} text 검사할 텍스트
+ * @param {string[]} extraWords 카탈로그 외에 함께 볼 키워드(선택)
+ * @returns {{ word: string, count: number, cat: string|null }[]}
+ */
+export function extractCatalogKeywords(text, extraWords = []) {
+  if (!text) return [];
+
+  const words = new Set([
+    ...WIKI_KEYWORD_CATALOG.flatMap((g) => g.words),
+    ...extraWords,
+  ]);
+
+  const rows = [...words]
+    .map((word) => ({
+      word,
+      count: text.split(word).length - 1,
+      cat: getKeywordCategory(word),
+    }))
+    .filter((k) => k.count > 0);
+
+  return rows
+    .filter((k) => !rows.some((o) => o.word !== k.word && o.word.includes(k.word)))
+    .sort((a, b) => b.count - a.count || b.word.length - a.word.length);
+}
+
+/**
  * 이 문서의 핵심 키워드. 두 소스를 합칩니다.
  *   1) 분류 카탈로그(WIKI_KEYWORD_CATALOG) 중 본문에 등장한 키워드
  *   2) 원문 연동 키워드(WIKI_KEYWORD_LINKS) 중 본문에 등장한 키워드
@@ -129,29 +161,14 @@ export function getDocCoreKeywords(doc) {
   const body = docBody(doc);
   if (!body) return [];
 
-  const words = new Set([
-    ...WIKI_KEYWORD_CATALOG.flatMap((g) => g.words),
-    ...Object.keys(WIKI_KEYWORD_LINKS),
-  ]);
+  const rows = extractCatalogKeywords(body, Object.keys(WIKI_KEYWORD_LINKS));
 
-  const rows = [...words]
-    .map((word) => ({
-      word,
-      count: body.split(word).length - 1,
-      cat: getKeywordCategory(word),
-    }))
-    .filter((k) => k.count > 0);
-
-  // 짧은 키워드가 긴 키워드에 포함되면(예: 'HBM' ⊂ 'HBM4') 긴 쪽만 남깁니다.
-  const kept = rows.filter(
-    (k) => !rows.some((o) => o.word !== k.word && o.word.includes(k.word))
-  );
-
+  // 이 문서 분류와 같은 키워드를 앞으로 올립니다.
   const cat = doc?.category;
-  return kept.sort((a, b) => {
+  return rows.sort((a, b) => {
     const am = a.cat === cat ? 0 : 1;
     const bm = b.cat === cat ? 0 : 1;
-    return am - bm || b.count - a.count || b.word.length - a.word.length;
+    return am - bm;
   });
 }
 
