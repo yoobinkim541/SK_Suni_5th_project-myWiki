@@ -27,6 +27,7 @@ import { useState } from 'react';
 import { signInWithProvider } from '../api/auth';
 import OnboardingPage from './OnboardingPage';
 import LogoMark from '../components/common/LogoMark';
+import myWikiLogoFull from '../assets/mywiki-logo-full.png';
 
 // 우측 화면 시안 전용 — 실제 SideNav.jsx의 NAV_ITEMS와 같은 라벨(장식용, 아이콘은 생략).
 const MOCK_SIDE_ITEMS = ['대시보드', '일일 리포트', '카테고리 현황', '위키', '에이전트', '설정'];
@@ -121,7 +122,7 @@ export default function EntryFlow({ initialStep, onSurveyComplete, onGuestSkip }
       {step === 'landing' && (
         <div className="ob-screen ob-landing on">
           <header className="landing-nav">
-            <div className="landing-nav-logo">myWiki</div>
+            <img src={myWikiLogoFull} alt="my Wiki" className="landing-nav-logo-img" />
             <div className="landing-nav-auth">
               <button type="button" className="landing-nav-login" onClick={() => startAuth('login')}>
                 로그인
@@ -189,6 +190,7 @@ export default function EntryFlow({ initialStep, onSurveyComplete, onGuestSkip }
                       <span className="lm-graph-label">지식 축적화</span>
                       <div className="lm-graph-canvas">
                         <span className="lm-hub" />
+                        <img src={myWikiLogoFull} alt="" className="lm-hub-logo" aria-hidden="true" />
                         {MOCK_GRAPH_NODES.map((node) => (
                           <span
                             key={node.deg}

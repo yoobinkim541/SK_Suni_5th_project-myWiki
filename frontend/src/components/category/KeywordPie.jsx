@@ -12,7 +12,8 @@
 //
 // 반응형: svg에 viewBox만 주고 CSS(.pie svg{width:100%;height:auto})가 폭을 맞춥니다.
 
-const PALETTE = ['#86AABD', '#6B93A8', '#A2C0CE', '#587C8F', '#BFD5DE', '#4A6A7A'];
+// 진한 색 → 밝은 색 순. 비중이 큰 조각일수록 앞쪽(진한 색)을 씁니다.
+const PALETTE = ['#347FA3', '#4B94B5', '#63A9C4', '#86AABD', '#A7CBD8', '#C8E0E7'];
 
 const R_OUT = 68;
 const R_IN = 40;
@@ -48,6 +49,16 @@ export default function KeywordPie({ items = [], title, total, onSlice, activeWo
     return <div className="pie-empty">표시할 키워드가 없습니다.</div>;
   }
 
+  // 비중이 큰 조각일수록 진한 색을 쓰도록, count 내림차순 순위로 팔레트를 배정합니다.
+  // (조각이 그려지는 순서·위치는 items 원래 순서를 그대로 따릅니다)
+  const rankByIndex = items
+    .map((item, idx) => idx)
+    .sort((a, b) => items[b].count - items[a].count);
+  const colorByIndex = {};
+  rankByIndex.forEach((origIdx, rank) => {
+    colorByIndex[origIdx] = PALETTE[rank % PALETTE.length];
+  });
+
   let cursor = 0;
   const slices = items.map((item, idx) => {
     const share = item.count / sum;
@@ -57,7 +68,7 @@ export default function KeywordPie({ items = [], title, total, onSlice, activeWo
     return {
       ...item,
       share,
-      color: PALETTE[idx % PALETTE.length],
+      color: colorByIndex[idx],
       d: arcPath(start, Math.min(end, 359.99)),
     };
   });
