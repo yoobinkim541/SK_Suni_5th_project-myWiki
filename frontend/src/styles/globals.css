@@ -2230,3 +2230,11 @@ a.fn:hover{text-decoration:underline}
   background:  #F5F9FA;      
   border: 1px solid #3A3A3A;      
 }
+
+
+/* 오늘 리포트 요약 — 분류/카테고리/키워드 글씨 키우기 */
+.sh:has(+ .rep-cats) .t { font-size: 11px; }
+.sh:has(+ .rep-cats) .s { font-size: 12px; }
+.rep-cats { font-size: 13px; }
+.rep-kw { font-size: 13px; }
+.rep-kw .lb { font-size: 11px; }
