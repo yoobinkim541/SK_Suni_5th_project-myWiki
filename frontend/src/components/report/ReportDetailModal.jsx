@@ -116,7 +116,7 @@ export default function ReportDetailModal({
                     <div className="rdm-item" key={issue.id}>
                       <p className={`rdm-p${highlightId === issue.id ? ' on' : ''}`}>
                         <span className="ct">{issue.category} · 신뢰도 : {LEVEL_LABEL[issue.level]}</span>
-                        <b>{issue.title}</b> {issue.summary}
+                        <b className="rdm-title">{issue.title}</b>{issue.summary}
                         {' '}
                         <a
                           className={`s${issue.sourceIsDoc ? ' doc' : ''}`}

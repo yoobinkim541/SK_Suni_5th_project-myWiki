@@ -2238,3 +2238,15 @@ a.fn:hover{text-decoration:underline}
 .rep-cats { font-size: 13px; }
 .rep-kw { font-size: 13px; }
 .rep-kw .lb { font-size: 11px; }
+
+
+
+
+/* 리포트 모달 이슈 제목 — 키우고 블록으로 만들어 본문과 줄바꿈 */
+.rdm-p .rdm-title {
+  display: block;
+  font-size: 16px;        /* 제목 크기 — 본문보다 크게 */
+  font-weight: 700;
+  line-height: 1.4;
+  margin-bottom: 6px;     /* 제목 ↔ 본문 간격 */
+}
