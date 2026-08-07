@@ -9,6 +9,46 @@ load_dotenv()
 from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version, publish_wiki_version, request_wiki_index
 from src.wiki.query import get_published_wiki_page
 from src.wiki.query import _get_client
+from src.wiki.service import _build_source_rows
+
+
+def test_build_source_rows_merges_claims_for_same_document():
+    """create_wiki_version()의 실제 삽입 직전 단계. 같은 document_version_id를 근거로
+    삼는 서로 다른 claim이 여러 개 들어와도(위키 중복 병합 배치가 두 원본 페이지의
+    claim을 그대로 이어붙이는 경우) 프론트 "근거 문서" 목록에 같은 출처가 여러 장
+    뜨지 않도록 한 문서당 한 행으로 합쳐야 한다. claim_text는 버리지 않고 이어붙인다."""
+    rows = _build_source_rows(
+        "version-1",
+        [
+            WikiSourceInput(document_version_id="doc-1", claim_text="주장 A", citation_order=1),
+            WikiSourceInput(document_version_id="doc-1", claim_text="주장 B", citation_order=1),
+            WikiSourceInput(document_version_id="doc-1", claim_text="주장 C", citation_order=2),
+            WikiSourceInput(document_version_id="doc-2", claim_text="주장 D", citation_order=3),
+        ],
+    )
+
+    assert len(rows) == 2
+    doc1_row = next(r for r in rows if r["document_version_id"] == "doc-1")
+    doc2_row = next(r for r in rows if r["document_version_id"] == "doc-2")
+    assert doc1_row["citation_order"] == 1
+    assert "주장 A" in doc1_row["claim_text"]
+    assert "주장 B" in doc1_row["claim_text"]
+    assert "주장 C" in doc1_row["claim_text"]
+    assert doc2_row["citation_order"] == 3
+    assert doc2_row["claim_text"] == "주장 D"
+
+
+def test_build_source_rows_still_dedupes_identical_repeats():
+    """기존 동작(같은 claim_text가 그대로 반복 전송되는 경우 1건으로) 회귀 방지."""
+    rows = _build_source_rows(
+        "version-1",
+        [
+            WikiSourceInput(document_version_id="doc-1", claim_text="같은 주장"),
+            WikiSourceInput(document_version_id="doc-1", claim_text="같은 주장"),
+        ],
+    )
+    assert len(rows) == 1
+    assert rows[0]["claim_text"] == "같은 주장"
 
 
 @pytest.fixture(scope="module")
@@ -95,6 +135,50 @@ def test_create_wiki_version_deduplicates_identical_sources(workspace_id):
     sources = db.table("wiki_page_sources").select("*").eq("wiki_version_id", version_id).execute()
     assert len(sources.data) == 1
 
+    ver = db.table("wiki_page_versions").select("markdown_object_key").eq("id", version_id).single().execute()
+    obj_key = ver.data["markdown_object_key"]
+    db.storage.from_("wiki").remove([obj_key])
+    db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
+    db.table("wiki_page_versions").delete().eq("id", version_id).execute()
+    db.table("wiki_pages").delete().eq("slug", slug).eq("workspace_id", workspace_id).execute()
+
+
+def test_create_wiki_version_merges_multiple_claims_for_same_document(workspace_id):
+    """같은 document_version_id를 근거로 삼는 서로 다른 claim이 여러 개 들어와도
+    (예: 위키 중복 병합 배치가 두 원본 페이지의 claim을 그대로 이어붙이는 경우),
+    프론트 "근거 문서" 목록에 같은 출처가 여러 장 뜨지 않도록 한 문서당 한 행으로
+    합쳐 저장해야 한다. 개별 claim_text는 버리지 않고 한 행에 이어붙인다."""
+    slug = f"test-src-merge-{uuid.uuid4().hex[:8]}"
+    db = _get_client()
+    doc_ver = db.table("document_versions").select("id").limit(1).execute()
+    if not doc_ver.data:
+        pytest.skip("document_versions 데이터 없음")
+    doc_ver_id = doc_ver.data[0]["id"]
+
+    draft = WikiDraftInput(
+        workspace_id=workspace_id,
+        slug=slug,
+        title="같은 출처 다중 claim 테스트",
+        page_type="term",
+        markdown="내용",
+        sources=[
+            WikiSourceInput(document_version_id=doc_ver_id, claim_text="주장 A", citation_order=1),
+            WikiSourceInput(document_version_id=doc_ver_id, claim_text="주장 B", citation_order=1),
+            WikiSourceInput(document_version_id=doc_ver_id, claim_text="주장 C", citation_order=2),
+        ],
+    )
+    version_id = create_wiki_version(draft)
+
+    sources = db.table("wiki_page_sources").select("*").eq("wiki_version_id", version_id).execute()
+    assert len(sources.data) == 1
+    row = sources.data[0]
+    assert row["document_version_id"] == doc_ver_id
+    assert row["citation_order"] == 1
+    assert "주장 A" in row["claim_text"]
+    assert "주장 B" in row["claim_text"]
+    assert "주장 C" in row["claim_text"]
+
+    # teardown
     ver = db.table("wiki_page_versions").select("markdown_object_key").eq("id", version_id).single().execute()
     obj_key = ver.data["markdown_object_key"]
     db.storage.from_("wiki").remove([obj_key])

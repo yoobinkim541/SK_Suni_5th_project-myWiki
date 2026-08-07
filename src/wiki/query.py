@@ -16,6 +16,7 @@ from typing import Optional
 
 from supabase import Client, create_client
 
+from ..categories.keywords import CATEGORY_KEYWORDS
 from .interface import (
     PageType,
     WikiPageContent,
@@ -40,6 +41,7 @@ def list_published_wiki_pages(
     workspace_id: str,
     page_type: Optional[PageType] = None,
     query: Optional[str] = None,
+    keyword: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[WikiPageSummary]:
@@ -54,8 +56,27 @@ def list_published_wiki_pages(
         q = q.eq("page_type", page_type)
     if query:
         q = q.ilike("title", f"%{query}%")
+    if keyword:
+        keyword_res = db.table("wiki_page_keywords").select("page_id").eq("keyword", keyword).execute()
+        matching_page_ids = [row["page_id"] for row in keyword_res.data]
+        if not matching_page_ids:
+            return []
+        q = q.in_("id", matching_page_ids)
     res = q.order("published_at", desc=True).limit(limit).offset(offset).execute()
     return [WikiPageSummary(**row) for row in res.data]
+
+
+def list_keyword_catalog() -> list[dict]:
+    """카테고리 키워드 사전 전체를 {word, category} 형태로 평탄화한다.
+
+    실사용 여부와 무관한 고정 카탈로그 — 프론트가 본문 키워드 하이라이트/집계에 쓴다.
+    DB 조회 없음(워크스페이스 무관, 항상 같은 값).
+    """
+    return [
+        {"word": word, "category": category}
+        for category, words in CATEGORY_KEYWORDS.items()
+        for word in words
+    ]
 
 
 def _enrich_sources(db: Client, workspace_id: str, rows: list[dict]) -> tuple[WikiSource, ...]:

@@ -1,0 +1,27 @@
+name: Wiki Keyword Batch
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # 매일 1회(한국시간 새벽 3시 30분) — wiki-dedup-batch와 겹치지 않게 30분 뒤
+  workflow_dispatch: {}
+
+jobs:
+  keyword-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run wiki keyword batch
+        run: python scripts/wiki_keyword_batch_scheduled.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

@@ -10,6 +10,7 @@ from supabase import Client
 from ..analysis.importance_models import AnalysisResultForReport
 from ..analysis.models import DOCUMENT_ANALYSIS_RESULTS_TABLE
 from ..analysis.repository import (
+    _chunked,
     _row_has_report_summary,
     _row_is_ranking_candidate_ready,
     _select_analysis_row_for_ranking,
@@ -54,13 +55,11 @@ def get_report_candidates(
         fixed_version_ids = list(dict.fromkeys(str(value) for value in document_version_ids if str(value).strip()))
         if not fixed_version_ids:
             return []
-        version_rows = (
-            db.table("document_versions")
-            .select("id, document_id")
-            .in_("id", fixed_version_ids)
-            .execute()
-            .data
-        )
+        version_rows = []
+        for chunk in _chunked(fixed_version_ids):
+            version_rows.extend(
+                db.table("document_versions").select("id, document_id").in_("id", chunk).execute().data
+            )
     else:
         window_start, window_end = (
             (published_from, published_to)
@@ -79,25 +78,25 @@ def get_report_candidates(
         if not document_rows:
             return []
         document_ids = [row["id"] for row in document_rows]
-        version_rows = (
-            db.table("document_versions")
-            .select("id, document_id")
-            .in_("document_id", document_ids)
-            .execute()
-            .data
-        )
+        version_rows = []
+        for chunk in _chunked(document_ids):
+            version_rows.extend(
+                db.table("document_versions").select("id, document_id").in_("document_id", chunk).execute().data
+            )
 
     if published_from is not None and published_to is not None:
         batch_document_ids = list({row["document_id"] for row in version_rows})
-        published_document_rows = (
-            db.table("documents")
-            .select("id")
-            .in_("id", batch_document_ids)
-            .gte("published_at", published_from.isoformat())
-            .lt("published_at", published_to.isoformat())
-            .execute()
-            .data
-        )
+        published_document_rows = []
+        for chunk in _chunked(batch_document_ids):
+            published_document_rows.extend(
+                db.table("documents")
+                .select("id")
+                .in_("id", chunk)
+                .gte("published_at", published_from.isoformat())
+                .lt("published_at", published_to.isoformat())
+                .execute()
+                .data
+            )
         published_document_ids = {row["id"] for row in published_document_rows}
         version_rows = [
             row for row in version_rows if row["document_id"] in published_document_ids
@@ -109,23 +108,26 @@ def get_report_candidates(
         return []
 
     version_to_document = {row["id"]: row["document_id"] for row in version_rows}
-    analysis_rows = (
-        db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
-        .select("*")
-        .eq("workspace_id", workspace_id)
-        .in_("document_version_id", list(version_to_document))
-        .eq("status", "completed")
-        .eq("reliability_status", "completed")
-        .eq("importance_status", "completed")
-        .eq("ranking_status", "completed")
-        .eq("selected_for_report", True)
-        .order("importance_evaluated_at", desc=True)
-        .order("reliability_evaluated_at", desc=True)
-        .order("classified_at", desc=True)
-        .order("id")
-        .execute()
-        .data
-    )
+    analysis_rows = []
+    for chunk in _chunked(list(version_to_document)):
+        analysis_rows.extend(
+            db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+            .select("*")
+            .eq("workspace_id", workspace_id)
+            .in_("document_version_id", chunk)
+            .eq("status", "completed")
+            .eq("reliability_status", "completed")
+            .eq("importance_status", "completed")
+            .eq("ranking_status", "completed")
+            .eq("selected_for_report", True)
+            .execute()
+            .data
+        )
+    # 청크별로 실행해서 order가 못 걸리므로 합친 뒤 여기서 정렬한다.
+    analysis_rows.sort(key=lambda row: row.get("id") or "")
+    analysis_rows.sort(key=lambda row: row.get("classified_at") or "", reverse=True)
+    analysis_rows.sort(key=lambda row: row.get("reliability_evaluated_at") or "", reverse=True)
+    analysis_rows.sort(key=lambda row: row.get("importance_evaluated_at") or "", reverse=True)
     if not analysis_rows:
         return []
 
@@ -225,35 +227,33 @@ def _build_candidates_from_analysis_rows(
     "어떤 문서/분석 행이 대상인지" 결정 로직은 각자 다르므로 이 함수에 들어오지 않는다.
     """
     document_version_ids = list({row["document_version_id"] for row in analysis_rows if row.get("document_version_id")})
-    version_rows = (
-        db.table("document_versions")
-        .select("id, document_id")
-        .in_("id", document_version_ids)
-        .execute()
-        .data
-    )
+    version_rows = []
+    for chunk in _chunked(document_version_ids):
+        version_rows.extend(
+            db.table("document_versions").select("id, document_id").in_("id", chunk).execute().data
+        )
     if not version_rows:
         return []
     version_to_document = {row["id"]: row["document_id"] for row in version_rows}
 
     document_ids = list(set(version_to_document.values()))
-    document_rows = (
-        db.table("documents")
-        .select("id, title, canonical_url, published_at, source_id")
-        .in_("id", document_ids)
-        .execute()
-        .data
-    )
+    document_rows = []
+    for chunk in _chunked(document_ids):
+        document_rows.extend(
+            db.table("documents")
+            .select("id, title, canonical_url, published_at, source_id")
+            .in_("id", chunk)
+            .execute()
+            .data
+        )
     documents_by_id = {row["id"]: row for row in document_rows}
 
-    source_ids = [row.get("source_id") for row in document_rows if row.get("source_id")]
-    source_rows = (
-        db.table("sources")
-        .select("id, name, source_type")
-        .in_("id", list(set(source_ids)) or [""])
-        .execute()
-        .data
-    ) if source_ids else []
+    source_ids = list({row.get("source_id") for row in document_rows if row.get("source_id")})
+    source_rows = []
+    for chunk in _chunked(source_ids):
+        source_rows.extend(
+            db.table("sources").select("id, name, source_type").in_("id", chunk).execute().data
+        )
     sources_by_id = {row["id"]: row for row in source_rows}
 
     rows_by_document_version: dict[str, list[dict[str, Any]]] = {}
