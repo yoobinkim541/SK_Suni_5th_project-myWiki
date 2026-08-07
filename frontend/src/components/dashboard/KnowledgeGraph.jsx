@@ -21,8 +21,7 @@
 
 import { useEffect, useState } from 'react';
 import { INTEREST_KEYWORD_GROUPS } from '../../data/mockOnboarding';
-import logo from '../../assets/logo.png';
-import logoDark from '../../assets/logo-dark.png';
+import LogoMark from '../common/LogoMark';
 
 const CX = 500;
 const CY = 390; // viewBox 높이(780)의 정확히 절반
@@ -35,12 +34,13 @@ const LEAF_R_BASE = 320; // 중심에서 리프(키워드 점)까지 기본 거�
 // 안 건드리고, 라벨 없는 "빈 가지"는 반지름을 훨씬 크게 들쭉날쭉하게 벌려서 전체 윤곽이
 // 매끈한 원이 아니라 나뭇가지처럼 삐죽삐죽하게 뻗어나가 보이게 한다(직선으로 뻗기만 하면
 // 되고, 끝까지 둥글게 모일 필요는 없다).
-const LEAF_ANGLES = [-42, -32, -22, -12, -3, 6, 15, 25, 35, 45, -52, 53, 62];
+// 가지 수를 13개에서 11개로 줄여(-42/+62 양 끝단 제거) 더 정돈되어 보이게 함.
+const LEAF_ANGLES = [-32, -22, -12, -3, 6, 15, 25, 35, 45, -52, 53];
 // ⚠ 리프 각도는 카테고리 각도(0/60/120/180/240/300)에 그대로 더해지기 때문에, 어떤 카테고리는
 // 특정 리프의 최종 각도가 0°/180°(정확히 위/아래)에 가까워진다 — 그 방향은 viewBox 세로
 // 여백이 가장 좁아서(중심에서 위/아래 끝까지 390px), 지터를 너무 키우면 밖으로 잘린다.
 // 그래서 최대치를 370(기본 반지름+지터 합)선에서 묶었다.
-const LEAF_JITTER = [8, 22, 40, 30, 14, 48, 24, 34, 32, 44, 50, 18, 46];
+const LEAF_JITTER = [22, 40, 30, 14, 48, 24, 34, 32, 44, 50, 18];
 // 라벨을 붙일 리프 인덱스 — 10개 중 5개(퍼짐 양 끝은 피해서 텍스트가 잘리지 않게 함).
 const LABELED_LEAF_INDEXES = new Set([1, 3, 4, 6, 8]);
 
@@ -172,9 +172,9 @@ export default function KnowledgeGraph() {
 
       {/* 허브 로고 오버레이 — viewBox 정중앙(CX=500/1000, CY=390/780 → 50%/50%)에 항상 겹친다.
           로고는 SVG 안에 직접 넣는 것보다 <img>로 얹는 쪽이 다크모드 전환에 더 간단하다. */}
-      <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
-        <img src={logo} alt="myWiki" className="kg-hub-logo-img logo-light h-10 w-auto sm:h-12" />
-        <img src={logoDark} alt="myWiki" className="kg-hub-logo-img logo-dark h-10 w-auto sm:h-12" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-1">
+        <LogoMark className="kg-hub-logo-img h-10 w-auto sm:h-12" />
+        <span className="kg-hub-logo-text">myWiki</span>
       </div>
     </div>
   );

@@ -93,8 +93,8 @@ export default function TrendChart({ data = [] }) {
             (CSS가 presentation attribute보다 우선하므로 여기 attribute만으론 안 먹는다). */}
         <defs>
           <linearGradient id="trend-area-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--green)" stopOpacity="0.6" />
-            <stop offset="100%" stopColor="var(--green)" stopOpacity="0.04" />
+            <stop offset="0%" stopColor="#86AABD" stopOpacity="0.6" />
+            <stop offset="100%" stopColor="#86AABD" stopOpacity="0.04" />
           </linearGradient>
         </defs>
         <g className="grid">

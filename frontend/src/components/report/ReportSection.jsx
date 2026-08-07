@@ -30,13 +30,14 @@ const LEVEL_CLASS = { high: '', mid: 'mid', low: 'low' };
 // 히스토리 한 페이지에 보여줄 개수 (2열 × 3줄). 숫자만 바꾸면 됩니다.
 const PAGE_SIZE = 6;
 
-function DownloadIcon() {
+// 아이콘 배지 — Word/PDF/PPT 각각 오피스 색상의 둥근 사각 배지에 짧은 라벨을 넣는다.
+const BADGE_TEXT = { word: 'W', pdf: 'PDF', ppt: 'P' };
+
+export function DownloadBadge({ formatKey }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path>
-      <path d="M14 3v5h5"></path>
-      <path d="M12 12v6M9 15l3 3 3-3"></path>
-    </svg>
+    <span className={`dlbadge dlbadge-${formatKey}`} aria-hidden="true">
+      {BADGE_TEXT[formatKey] || ''}
+    </span>
   );
 }
 
@@ -145,7 +146,7 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
                 key={f.key}
                 onClick={() => handleDownload(today.date, f.key, `전체 ${f.label}${f.ext}`)}
               >
-                <DownloadIcon />
+                <DownloadBadge formatKey={f.key} />
                 {f.label} <span className="ext">{f.ext}</span>
               </button>
             ))}
@@ -196,6 +197,7 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
                       key={f.key}
                       onClick={() => handleDownload(r.date, f.key, `${r.label} ${f.label}${f.ext}`)}
                     >
+                      <DownloadBadge formatKey={f.key} />
                       {f.label}
                     </button>
                   ))}

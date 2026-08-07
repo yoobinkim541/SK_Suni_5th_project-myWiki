@@ -11,12 +11,27 @@ export default function LogoMark({ className = '' }) {
       viewBox="0 0 28 28"
       aria-hidden="true"
     >
-      <rect x="5" y="9" width="15" height="17" rx="4" fill="var(--green)" opacity="0.45" />
-      <rect x="9" y="4" width="15" height="17" rx="4" fill="var(--green)" />
-      <rect x="13" y="9" width="7" height="2" rx="1" fill="var(--panel)" />
-      <rect x="13" y="13" width="7" height="2" rx="1" fill="var(--panel)" />
-      <rect x="13" y="17" width="7" height="2" rx="1" fill="var(--panel)" />
-      <rect x="13" y="21" width="3.5" height="2" rx="1" fill="#e8c46c" />
+      {/* 왼쪽: 접힌 모서리 문서 + 가로줄 3개 */}
+      <path
+        d="M4 3.5C4 2.67 4.67 2 5.5 2H13l4 4v16.5c0 .83-.67 1.5-1.5 1.5h-11
+           c-.83 0-1.5-.67-1.5-1.5v-19z"
+        fill="var(--green)"
+      />
+      <path d="M13 2 17 6h-3.3c-.39 0-.7-.31-.7-.7V2z" fill="var(--panel)" opacity="0.55" />
+      <rect x="6.5" y="11" width="8" height="1.8" rx="0.9" fill="var(--panel)" />
+      <rect x="6.5" y="15" width="8" height="1.8" rx="0.9" fill="var(--panel)" />
+      <rect x="6.5" y="19" width="5.5" height="1.8" rx="0.9" fill="var(--panel)" />
+
+      {/* 오른쪽: 노드 네트워크(그래프) 아이콘 — 허브(짙은 그린) + 리프 3개(진한 1 · 연한 민트 2) */}
+      <g stroke="var(--green)" strokeWidth="1.4" fill="none">
+        <line x1="16.5" y1="14" x2="20.5" y2="8" />
+        <line x1="16.5" y1="14" x2="24" y2="12.5" />
+        <line x1="16.5" y1="14" x2="14" y2="20.5" />
+      </g>
+      <circle cx="20.5" cy="8" r="1.9" fill="var(--green)" />
+      <circle cx="16.5" cy="14" r="2.3" fill="var(--green)" />
+      <circle cx="24" cy="12.5" r="2" fill="#6fa79d" />
+      <circle cx="14" cy="20.5" r="2" fill="#6fa79d" />
     </svg>
   );
 }

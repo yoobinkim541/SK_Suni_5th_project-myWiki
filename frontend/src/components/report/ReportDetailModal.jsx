@@ -21,6 +21,7 @@
 // 하단 "출처" 목록은 별도 데이터가 아니라 issues[]의 sourceUrl을 중복 제거해서 만듭니다.
 
 import { useEffect } from 'react';
+import { DownloadBadge } from './ReportSection';
 
 const LEVEL_LABEL = { high: '높음', mid: '보통', low: '낮음' };
 
@@ -98,6 +99,7 @@ export default function ReportDetailModal({
                       key={f.key}
                       onClick={() => onDownload(null, f)}
                     >
+                      <DownloadBadge formatKey={f.key} />
                       {f.label} <span className="ext">{f.ext}</span>
                     </button>
                   ))}
@@ -148,6 +150,7 @@ export default function ReportDetailModal({
                               key={f.key}
                               onClick={() => onDownload(issue, f)}
                             >
+                              <DownloadBadge formatKey={f.key} />
                               {f.label}
                             </button>
                           ))}
