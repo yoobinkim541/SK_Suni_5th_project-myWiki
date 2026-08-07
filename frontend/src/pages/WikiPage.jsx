@@ -16,7 +16,7 @@
 //
 // 데이터는 services/wikiApi.js를 통해서만 가져옵니다.
 // VITE_USE_MOCK=true면 목업, false면 실제 백엔드(api/wiki.js)를 호출합니다.
-
+import Spinner from '../components/common/Spinner';
 import { useEffect, useState } from 'react';
 import { WIKI_KEYWORD_LINKS } from '../data/mockWiki';
 import { findDocsWithKeyword, getKeywordCategory } from '../data/wikiKeywords';
@@ -81,7 +81,7 @@ export default function WikiPage({ docId }) {
   if (tree && tree.every((group) => group.items.length === 0)) {
     return (
       <section className="view on" id="v-wiki">
-        <div className="ph"><h2>위키</h2></div>
+        <Spinner />
         <p>아직 게시된 위키 문서가 없습니다.</p>
       </section>
     );

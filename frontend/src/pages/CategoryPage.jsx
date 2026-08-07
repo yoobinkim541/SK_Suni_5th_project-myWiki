@@ -2,7 +2,7 @@
 //
 // 데이터는 services/categoryApi.js를 거쳐 받습니다. 카드·상단 요약·원그래프·관련 뉴스가
 // 전부 GET /categories/stats 한 번의 응답에서 나옵니다.
-
+import Spinner from '../components/common/Spinner';
 import { useState, useEffect } from 'react';
 import CategoryDetail from '../components/category/CategoryDetail';
 import { fetchCategories, fetchCategorySummary } from '../services/categoryApi';
@@ -38,7 +38,7 @@ export default function CategoryPage() {
     return (
       <section className="view on" id="v-cat">
         <div className="ph"><h2>카테고리 현황</h2></div>
-        <div className="loading">불러오는 중…</div>
+        <Spinner />
       </section>
     );
   }

@@ -7,7 +7,7 @@
 //   (1) 오늘 리포트 큰 카드     ← ReportSection (누르면 전체 리포트 모달)
 //   (2) 분류 + 오늘의 키워드   ← ReportSummary (오늘 리포트 아래로 이동)
 //   (3) 리포트 히스토리 2열     ← ReportSection (페이지 넘김)
-
+import Spinner from '../components/common/Spinner';
 import { useState, useEffect } from 'react';
 import {
   fetchReportSummary,
@@ -55,7 +55,7 @@ export default function ReportPage({ onNavigate }) {
     return (
       <section className="view on" id="v-report">
         <div className="ph"><h2>일일 동향 보고서</h2></div>
-        <div className="loading">불러오는 중…</div>
+        <Spinner />
       </section>
     );
   }
