@@ -1,13 +1,9 @@
-"""분류 -> 신뢰도 -> 중요도 -> 랭킹 4단계를 순서대로 도는 배치 진입점.
+"""분류 -> 신뢰도 -> 중요도 -> 랭킹 4단계를 순차 실행하는 배치 진입점.
 
-scripts/run_pipeline.py(수집·정제)와 짝을 이룬다 — 그동안 이 4단계는 각 단계별
-스크립트(classify_document.py 등)로 문서 1건씩만 수동 호출할 수 있었고, 이걸 도는
-스케줄 배치가 없어서 수집만 계속 쌓이고 분석은 멈춰 있었다(위키/리포트 후보가
-0건으로 나오던 원인 중 하나 — 2026-08-04 wiki-page-type-expansion 검증 중 발견).
-
-각 단계는 앞 단계가 끝난 결과를 보고 "아직 이 단계를 안 거친 문서"만 찾아서 처리한다
-(get_documents_ready_for_*). 한 번 실행에서 뒷 단계까지 이어지도록 순서대로 돈다 —
-분류가 막 끝난 문서가 같은 실행 안에서 신뢰도까지 갈 수 있다.
+scripts/run_pipeline.py(수집·정제) 다음에 붙여 돌릴 수 있도록 만든 분석 배치다.
+중요도/랭킹 backlog가 길어지면 새 문서 유입보다 리포트 후보 복구가 우선이므로,
+하류 단계를 먼저 한 번 처리한 뒤 새 문서를 분류하고 마지막에 다시 하류 단계를
+재시도하는 방식으로 구성한다.
 
 사용법:
     python scripts/run_analysis_pipeline.py
@@ -15,6 +11,7 @@ scripts/run_pipeline.py(수집·정제)와 짝을 이룬다 — 그동안 이 4�
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import argparse
 import sys
 from pathlib import Path
@@ -25,6 +22,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from src.analysis.interface import get_document_refs
 from src.analysis.interface import classify_document_versions, evaluate_reliability_for_documents
 from src.analysis.importance import evaluate_and_save_importances
 from src.analysis.ranking import rank_analysis_results
@@ -36,13 +34,107 @@ from src.analysis.repository import (
 )
 from src.pipeline_common.db import get_client
 
+MAX_ANALYSIS_CANDIDATES = 50
+
+
+def select_analysis_candidates(workspace_id: str, *, limit: int) -> list[str]:
+    """Choose one bounded set of documents for this analysis run."""
+    cap = min(max(limit, 0), MAX_ANALYSIS_CANDIDATES)
+    if cap == 0:
+        return []
+
+    # Finish documents already near report readiness before adding newly
+    # collected documents. The selected list is reused for every stage in
+    # this single run.
+    resumable_ids = list(
+        dict.fromkeys(
+            document_id
+            for ready in (
+                get_documents_ready_for_ranking(workspace_id=workspace_id, limit=cap * 5),
+                get_documents_ready_for_importance(workspace_id=workspace_id, limit=cap * 5),
+                get_documents_ready_for_reliability(workspace_id=workspace_id, limit=cap * 5),
+            )
+            for document_id in ready
+        )
+    )
+    new_ids = get_documents_ready_for_classification(workspace_id=workspace_id, limit=cap)
+    ready_ids = list(dict.fromkeys([*resumable_ids, *new_ids]))
+    if not ready_ids:
+        return []
+    try:
+        refs = get_document_refs(workspace_id=workspace_id, document_version_ids=ready_ids)
+    except Exception:
+        return ready_ids[:cap]
+    scores = {ref.document_version_id: _analysis_candidate_score(ref) for ref in refs}
+    # A retry must not be pushed out by newly collected articles. Within each
+    # class, use the same freshness/source/relevance ranking.
+    resumable_set = set(resumable_ids)
+    return sorted(
+        ready_ids,
+        key=lambda document_id: (
+            document_id not in resumable_set,
+            -scores.get(document_id, 0),
+            document_id,
+        ),
+    )[:cap]
+def _analysis_candidate_score(ref) -> float:
+    text = (ref.title or "").lower()
+    relevance = 25.0 if any(token in text for token in ("sk????", "sk hynix", "????")) else 0.0
+    if not relevance and any(token in text for token in ("hbm", "dram", "nand", "semiconductor", "???")):
+        relevance = 12.0
+    source_value = ref.source_reliability_score
+    if source_value is None:
+        source_value = {
+            "disclosure": 100,
+            "official_press": 85,
+            "news": 60,
+            "rss": 60,
+        }.get((ref.source_type or "").lower(), 40)
+    source_score = min(max(float(source_value), 0.0), 100.0) * 0.30
+    return _recency_candidate_score(ref.published_at) + source_score + relevance
+
+
+def _recency_candidate_score(published_at: str | None) -> float:
+    if not published_at:
+        return 0.0
+    try:
+        published = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=timezone.utc)
+    age_hours = max(0.0, (datetime.now(timezone.utc) - published.astimezone(timezone.utc)).total_seconds() / 3600)
+    return max(0.0, 45.0 - min(45.0, age_hours / 8.0))
+
+
 DEFAULT_LIMIT = 20
+
+
+def get_analysis_backlog_count(workspace_id: str) -> int:
+    """Return the number of runnable analysis items, capped at one burst."""
+    ready_ids = {
+        document_id
+        for ready in (
+            get_documents_ready_for_ranking(workspace_id=workspace_id, limit=MAX_ANALYSIS_CANDIDATES),
+            get_documents_ready_for_importance(workspace_id=workspace_id, limit=MAX_ANALYSIS_CANDIDATES),
+            get_documents_ready_for_reliability(workspace_id=workspace_id, limit=MAX_ANALYSIS_CANDIDATES),
+            get_documents_ready_for_classification(workspace_id=workspace_id, limit=MAX_ANALYSIS_CANDIDATES),
+        )
+        for document_id in ready
+    }
+    return min(len(ready_ids), MAX_ANALYSIS_CANDIDATES)
+
+
+def get_adaptive_analysis_limit(workspace_id: str) -> int:
+    """Keep normal runs small, then drain a growing backlog in one burst."""
+    backlog_count = get_analysis_backlog_count(workspace_id)
+    return DEFAULT_LIMIT if backlog_count <= DEFAULT_LIMIT else backlog_count
 
 
 def get_workspace_id() -> str:
     rows = get_client().table("workspaces").select("id, name").limit(2).execute().data
     if len(rows) != 1:
-        raise SystemExit(f"workspace_id를 자동으로 하나로 못 정했다 (workspaces 행 {len(rows)}개).")
+        raise SystemExit(f"workspace_id를 자동으로 하나로 정할 수 없음(workspaces 총 {len(rows)}개).")
     return str(rows[0]["id"])
 
 
@@ -50,43 +142,95 @@ def log(msg: str) -> None:
     print(f"[run_analysis_pipeline] {msg}", flush=True)
 
 
-def run_analysis_pipeline(workspace_id: str, *, limit: int = DEFAULT_LIMIT) -> None:
-    """분류->신뢰도->중요도->랭킹 4단계를 순서대로 실행한다.
-
-    scripts/refresh_data_scheduled.py(게이트)가 수집 직후 이 함수를 그대로 가져다 쓴다 —
-    CLI(main())와 게이트 양쪽에서 로직이 갈라지지 않도록 함수로 분리해뒀다.
-
-    collect()·preprocess()와 같은 계약: 문서 1건 실패는 로그로만 남기고 배치 자체는
-    예외를 던지지 않는다 — run_pipeline.py/refresh_wiki_scheduled.py와 동일한 관례.
-    그렇지 않으면 10건 중 1건만 실패해도 매번 호출부가 실패로 취급해 신호가 무뎌진다.
-    """
-    pending_classify = get_documents_ready_for_classification(workspace_id=workspace_id, limit=limit)
-    log(f"분류 대상 {len(pending_classify)}건")
-    if pending_classify:
-        results = classify_document_versions(workspace_id=workspace_id, document_version_ids=pending_classify)
-        failed = [r for r in results if r.status != "completed"]
-        log(f"분류 완료 {len(results) - len(failed)}건, 실패 {len(failed)}건")
-
-    pending_reliability = get_documents_ready_for_reliability(workspace_id=workspace_id, limit=limit)
-    log(f"신뢰도 평가 대상 {len(pending_reliability)}건")
-    if pending_reliability:
-        results = evaluate_reliability_for_documents(workspace_id=workspace_id, document_version_ids=pending_reliability)
-        failed = [r for r in results if r.reliability_status != "completed"]
-        log(f"신뢰도 평가 완료 {len(results) - len(failed)}건, 실패 {len(failed)}건")
-
-    pending_importance = get_documents_ready_for_importance(workspace_id=workspace_id, limit=limit)
-    log(f"중요도 평가 대상 {len(pending_importance)}건")
-    if pending_importance:
-        results = evaluate_and_save_importances(workspace_id=workspace_id, document_version_ids=pending_importance)
-        failed = [r for r in results if r.importance_status != "completed"]
-        log(f"중요도 평가 완료 {len(results) - len(failed)}건, 실패 {len(failed)}건")
-
-    pending_ranking = get_documents_ready_for_ranking(workspace_id=workspace_id, limit=limit)
+def _run_ranking_stage(*, workspace_id: str, document_version_ids: list[str]) -> list:
+    pending_ranking = document_version_ids
     log(f"랭킹 대상 {len(pending_ranking)}건")
     if pending_ranking:
         results = rank_analysis_results(workspace_id=workspace_id, document_version_ids=pending_ranking)
         selected = [r for r in results if r.selected_for_report]
-        log(f"랭킹 완료 {len(results)}건, 리포트 선정 {len(selected)}건")
+        log(f"랭킹 완료 {len(results)}건 리포트 선정 {len(selected)}건")
+        return results
+    return []
+
+
+def _run_importance_stage(*, workspace_id: str, document_version_ids: list[str]) -> list:
+    pending_importance = document_version_ids
+    log(f"중요도 평가 대상 {len(pending_importance)}건")
+    if pending_importance:
+        results = evaluate_and_save_importances(workspace_id=workspace_id, document_version_ids=pending_importance)
+        failed = [r for r in results if r.importance_status != "completed"]
+        log(f"중요도 평가 완료 {len(results) - len(failed)}건 실패 {len(failed)}건")
+        return results
+    return []
+
+
+def _run_reliability_stage(*, workspace_id: str, document_version_ids: list[str]) -> list:
+    pending_reliability = document_version_ids
+    log(f"신뢰도 평가 대상 {len(pending_reliability)}건")
+    if pending_reliability:
+        results = evaluate_reliability_for_documents(workspace_id=workspace_id, document_version_ids=pending_reliability)
+        failed = [r for r in results if r.reliability_status != "completed"]
+        log(f"신뢰도 평가 완료 {len(results) - len(failed)}건 실패 {len(failed)}건")
+        return results
+    return []
+
+
+def _run_classification_stage(*, workspace_id: str, document_version_ids: list[str]) -> list:
+    pending_classify = document_version_ids
+    log(f"분류 대상 {len(pending_classify)}건")
+    if pending_classify:
+        results = classify_document_versions(workspace_id=workspace_id, document_version_ids=pending_classify)
+        failed = [r for r in results if r.status != "completed"]
+        log(f"분류 완료 {len(results) - len(failed)}건 실패 {len(failed)}건")
+        return results
+    return []
+
+
+def _has_failed_results(results: list, status_field: str) -> bool:
+    return any(getattr(result, status_field, "completed") == "failed" for result in results)
+
+
+def run_analysis_pipeline(workspace_id: str, *, limit: int = DEFAULT_LIMIT) -> list[str] | None:
+    """분류->신뢰도->중요도->랭킹 4단계를 실행한다.
+
+    스케줄 배치에서는 실행 시간 예산이 빠듯하므로, 이미 중요도/랭킹 직전까지 온 문서가
+    새 유입 문서 뒤로 밀려 리포트가 비는 현상을 막기 위해 다음 순서를 사용한다.
+
+    1. 하류 backlog 우선 처리: 랭킹 -> 중요도 -> 신뢰도
+    2. 신규 문서 진입: 분류
+    3. 같은 실행 안에서 한 번 더 하류 단계 재시도: 신뢰도 -> 중요도 -> 랭킹
+    """
+    effective_limit = min(max(limit, 0), MAX_ANALYSIS_CANDIDATES)
+    candidate_ids = select_analysis_candidates(workspace_id, limit=effective_limit)
+    if not candidate_ids:
+        log("analysis candidates selected: 0")
+        return None
+    log(f"analysis candidates selected: {len(candidate_ids)}")
+    try:
+        classification_results = _run_classification_stage(
+            workspace_id=workspace_id, document_version_ids=candidate_ids
+        )
+        reliability_results = _run_reliability_stage(
+            workspace_id=workspace_id, document_version_ids=candidate_ids
+        )
+        importance_results = _run_importance_stage(
+            workspace_id=workspace_id, document_version_ids=candidate_ids
+        )
+        ranking_results = _run_ranking_stage(
+            workspace_id=workspace_id, document_version_ids=candidate_ids
+        )
+    except Exception:
+        raise
+    if any((
+        _has_failed_results(classification_results, "status"),
+        _has_failed_results(reliability_results, "reliability_status"),
+        _has_failed_results(importance_results, "importance_status"),
+        _has_failed_results(ranking_results, "ranking_status"),
+    )):
+        log("analysis did not complete for every selected candidate")
+        return None
+    log("analysis completed")
+    return candidate_ids
 
 
 def main() -> int:

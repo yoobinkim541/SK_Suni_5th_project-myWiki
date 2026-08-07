@@ -33,45 +33,74 @@ def get_report_candidates(
     *,
     workspace_id: str,
     report_date: date,
+    document_version_ids: Sequence[str] | None = None,
+    published_from: datetime | None = None,
+    published_to: datetime | None = None,
     supabase: Client | None = None,
 ) -> list[ReportCandidate]:
-    db = supabase or get_supabase()
-    published_from, published_to = get_report_time_range(report_date)
-    document_rows = (
-        db.table("documents")
-        .select("id, title, canonical_url, published_at, source_id")
-        .eq("workspace_id", workspace_id)
-        .gte("published_at", published_from.isoformat())
-        .lt("published_at", published_to.isoformat())
-        .execute()
-        .data
-    )
-    if not document_rows:
-        return []
+    """Load report-ready results from an explicit batch or publication window.
 
-    documents_by_id = {row["id"]: row for row in document_rows}
-    document_ids = list(documents_by_id.keys())
-    version_rows = (
-        db.table("document_versions")
-        .select("id, document_id")
-        .in_("document_id", document_ids)
-        .execute()
-        .data
-    )
+    The date-based path remains for manual/API reports. Supplying a publication
+    window lets scheduled reports use an operational day that does not begin at
+    midnight. Supplying document IDs pins a report to one exact analysis batch.
+    """
+    db = supabase or get_supabase()
+    if (published_from is None) != (published_to is None):
+        raise ValueError("published_from and published_to must be supplied together.")
+    if published_from is not None and published_to is not None and published_from >= published_to:
+        raise ValueError("published_from must be earlier than published_to.")
+
+    if document_version_ids is not None:
+        fixed_version_ids = list(dict.fromkeys(str(value) for value in document_version_ids if str(value).strip()))
+        if not fixed_version_ids:
+            return []
+        version_rows = (
+            db.table("document_versions")
+            .select("id, document_id")
+            .in_("id", fixed_version_ids)
+            .execute()
+            .data
+        )
+    else:
+        window_start, window_end = (
+            (published_from, published_to)
+            if published_from is not None and published_to is not None
+            else get_report_time_range(report_date)
+        )
+        document_rows = (
+            db.table("documents")
+            .select("id, title, canonical_url, published_at, source_id")
+            .eq("workspace_id", workspace_id)
+            .gte("published_at", window_start.isoformat())
+            .lt("published_at", window_end.isoformat())
+            .execute()
+            .data
+        )
+        if not document_rows:
+            return []
+        document_ids = [row["id"] for row in document_rows]
+        version_rows = (
+            db.table("document_versions")
+            .select("id, document_id")
+            .in_("document_id", document_ids)
+            .execute()
+            .data
+        )
+
     if not version_rows:
         return []
 
     version_to_document = {row["id"]: row["document_id"] for row in version_rows}
-    document_version_ids = list(version_to_document.keys())
     analysis_rows = (
         db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
         .select("*")
         .eq("workspace_id", workspace_id)
-        .in_("document_version_id", document_version_ids)
+        .in_("document_version_id", list(version_to_document))
         .eq("status", "completed")
         .eq("reliability_status", "completed")
         .eq("importance_status", "completed")
         .eq("ranking_status", "completed")
+        .eq("selected_for_report", True)
         .order("importance_evaluated_at", desc=True)
         .order("reliability_evaluated_at", desc=True)
         .order("classified_at", desc=True)
@@ -125,6 +154,7 @@ def build_report_candidates(candidates: Sequence[ReportCandidate]) -> list[Repor
 def _row_is_report_candidate_ready(row: dict[str, Any]) -> bool:
     return bool(
         row.get("ranking_status") == "completed"
+        and row.get("selected_for_report") is True
         and row.get("ranking_score") is not None
         and _row_is_ranking_candidate_ready(row)
         and _row_has_report_summary(row)
@@ -148,6 +178,7 @@ def get_recently_analyzed_candidates(
         .eq("reliability_status", "completed")
         .eq("importance_status", "completed")
         .eq("ranking_status", "completed")
+        .eq("selected_for_report", True)
         .gte("importance_evaluated_at", since.isoformat())
         .order("importance_evaluated_at", desc=True)
         .execute()
