@@ -107,6 +107,34 @@ class StripReport:
         return self.removed_chars / total
 
 
+def replace_images_with_alt(node: "Tag") -> int:
+    """
+    <img>를 alt 텍스트로 바꾼다(alt가 없으면 지운다). 바꾼 개수를 돌려준다.
+
+    왜 필요한가: markdownify가 이미지를 `![alt](url)`로 남기는데, 언론사 CDN은
+    같은 사진에도 매번 다른 URL을 준다(썸네일 크기·캐시 파라미터·배너 로테이션).
+    2026-08-07 접힘 측정에서 안 접힌 108건의 잔여 diff 중 가장 흔한 패턴이 이거였다.
+        ![](https://img2.daumcdn.net/thumb/R658x0.q70/?fname=...)   v.daum.net 24건
+        ![](https://img.newspim.com//mynews/mynews_banner1.jpg)     newspim 6건
+    본문은 한 글자도 안 바뀌었는데 URL만 달라져 새 버전이 생긴다.
+
+    URL을 버리고 alt를 남기는 이유: 분석 LLM에게 이미지 URL은 아무 정보도 아니지만
+    alt는 사진 설명이라 뜻이 있다. 이미지를 통째로 지우면 그것까지 잃는다.
+    이 단계는 되돌리지 않는다 — 상용구 판정과 달리 본문을 지울 위험이 없다.
+    """
+    from bs4.element import NavigableString
+
+    replaced = 0
+    for image in node.find_all("img"):
+        alt = (image.get("alt") or "").strip()
+        if alt:
+            image.replace_with(NavigableString(alt))
+        else:
+            image.decompose()
+        replaced += 1
+    return replaced
+
+
 def strip_boilerplate(node: "Tag") -> tuple["Tag", StripReport]:
     """
     본문 노드에서 상용구 블록을 제거한 사본과 그 근거를 돌려준다.

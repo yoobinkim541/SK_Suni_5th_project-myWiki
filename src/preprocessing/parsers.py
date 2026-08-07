@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 
 from ..pipeline_common.models import ParsedContent
 from ..pipeline_common.timeutil import parse_datetime  # noqa: F401 - 하위 호환 re-export
-from .boilerplate import strip_boilerplate
+from .boilerplate import replace_images_with_alt, strip_boilerplate
 
 # '{parser}-v{major}.{minor}' (명세 §8 확정)
 PARSER_VERSIONS = {
@@ -209,6 +209,10 @@ def _parse_html(body: bytes, content_type: str) -> tuple[str, str | None, str | 
     # 관련기사·추천기사 블록을 걷어낸다. markdownify 이전이어야 한다 —
     # strip=["a"]가 앵커를 텍스트로 만들어버려서 Markdown에는 링크 정보가 없다.
     node, _ = strip_boilerplate(node)
+
+    # 이미지는 alt만 남기고 URL을 버린다. 같은 사진에도 CDN이 매번 다른 URL을 줘서
+    # 본문이 그대로여도 해시가 달라진다 (replace_images_with_alt 참조).
+    replace_images_with_alt(node)
 
     markdown = markdownify(str(node), heading_style="ATX", strip=["a"])
     return markdown, title, published_raw

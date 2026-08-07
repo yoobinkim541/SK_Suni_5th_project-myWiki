@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from src.preprocessing.boilerplate import strip_boilerplate
+from src.preprocessing.boilerplate import replace_images_with_alt, strip_boilerplate
 
 BODY = (
     "SK하이닉스가 HBM4 양산을 시작했다고 밝혔다. 회사는 이번 양산으로 고대역폭 메모리 "
@@ -237,3 +237,50 @@ def test_리포트가_제거량과_잔존량을_기록한다() -> None:
     assert report.kept_chars >= len(BODY)
     assert 0.0 < report.shrink_ratio < 0.4
     assert report.removed[0].excerpt.startswith("관련기사 하나")
+
+
+def test_이미지는_alt만_남기고_URL을_버린다() -> None:
+    """
+    같은 사진에도 언론사 CDN이 매번 다른 URL을 준다(썸네일 크기·캐시 파라미터).
+    URL이 해시에 들어가면 본문이 그대로여도 새 버전이 생긴다.
+    """
+    node = _node(
+        '<div><p>본문</p>'
+        '<img src="https://cdn.example.com/a.jpg?w=658&v=1" alt="SK하이닉스 공장 전경">'
+        '</div>'
+    )
+
+    replaced = replace_images_with_alt(node)
+    html = str(node)
+
+    assert replaced == 1
+    assert "SK하이닉스 공장 전경" in node.get_text(" ", strip=True)
+    assert "cdn.example.com" not in html
+
+
+def test_alt가_없는_이미지는_지운다() -> None:
+    """alt 없는 이미지는 URL 말고 남길 것이 없다."""
+    node = _node('<div><p>본문</p><img src="https://cdn.example.com/banner.jpg"></div>')
+
+    replaced = replace_images_with_alt(node)
+
+    assert replaced == 1
+    assert "cdn.example.com" not in str(node)
+    assert "본문" in node.get_text(" ", strip=True)
+
+
+def test_URL만_다른_두_문서는_같은_해시가_된다() -> None:
+    """v.daum.net 24건이 이 패턴으로 안 접히고 있었다 (2026-08-07 접힘 측정)."""
+    from src.preprocessing.parsers import parse
+
+    template = (
+        "<html><head><title>기사</title></head><body><article>"
+        '<img src="https://img2.daumcdn.net/thumb/R658x0.q70/?fname={v}" alt="사진">'
+        f"<p>{BODY}</p>"
+        "</article></body></html>"
+    )
+
+    first = parse(template.format(v="aaa").encode("utf-8"), "text/html")
+    second = parse(template.format(v="bbb").encode("utf-8"), "text/html")
+
+    assert first.content_hash == second.content_hash
