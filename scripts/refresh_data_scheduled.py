@@ -15,7 +15,7 @@ refresh_wiki_scheduled.py와 같은 구조다 — GitHub Actions는 30분(가장
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -32,6 +32,19 @@ from src.pipeline_common.db import get_client
 from src.settings.service import get_workspace_settings, mark_data_refreshed
 
 GRACE_MINUTES = 15
+
+KST = timezone(timedelta(hours=9))
+NIGHTLY_ANALYSIS_WINDOW_KST = (time(0, 0), time(6, 0))
+"""scripts/run_nightly_analysis.py가 이 시간대(KST)에 분류~랭킹을 전담해서 돈다.
+같은 시간에 이 스크립트도 분석 단계를 돌리면 두 프로세스가 같은 "아직 안 된 문서"를
+동시에 집어서 LLM 호출을 중복으로 쓰게 되므로, 이 창 안에서는 분석 단계를 건너뛰고
+수집·정제만 한다 (야간 배치가 못 도는 예외 상황 대비, 수집·정제는 계속 살려둔다)."""
+
+
+def is_within_nightly_analysis_window(now_utc: datetime) -> bool:
+    now_kst_time = now_utc.astimezone(KST).time()
+    start, end = NIGHTLY_ANALYSIS_WINDOW_KST
+    return start <= now_kst_time < end
 
 
 def log(msg: str) -> None:
@@ -76,8 +89,11 @@ if __name__ == "__main__":
     preprocess_summary = run_preprocess(UUID(workspace_id))
     log(f"정제 완료: {preprocess_summary}")
 
-    log("분석 단계 시작 (분류->신뢰도->중요도->랭킹)")
-    run_analysis_pipeline(workspace_id, limit=50)
+    if is_within_nightly_analysis_window(now):
+        log("야간 분석 배치(run_nightly_analysis.py) 전담 시간대라 분석 단계 건너뜀")
+    else:
+        log("분석 단계 시작 (분류->신뢰도->중요도->랭킹)")
+        run_analysis_pipeline(workspace_id, limit=50)
 
     mark_data_refreshed(workspace_id, at=gate_now)
     log("완료")
