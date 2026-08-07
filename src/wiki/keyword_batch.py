@@ -21,6 +21,7 @@ from .query import get_published_wiki_page
 logger = logging.getLogger(__name__)
 
 MAX_KEYWORDS_PER_PAGE = 8
+MAX_CANDIDATES_PER_RUN = 100
 
 _ALLOWED_KEYWORDS = frozenset(
     keyword for keywords in CATEGORY_KEYWORDS.values() for keyword in keywords
@@ -52,7 +53,7 @@ def extract_keywords_for_page(markdown: str, *, llm_client=None) -> list[str]:
     payload = parse_json_response(response_text)
     result = WikiKeywordLLMResult.model_validate(payload)
 
-    in_dictionary = [kw for kw in result.keywords if kw in _ALLOWED_KEYWORDS]
+    in_dictionary = [kw for kw in dict.fromkeys(result.keywords) if kw in _ALLOWED_KEYWORDS]
     return in_dictionary[:MAX_KEYWORDS_PER_PAGE]
 
 
@@ -92,7 +93,8 @@ def find_pages_missing_keywords(workspace_id: str, *, supabase: Client | None = 
     )
     tagged_page_ids = {row["page_id"] for row in tagged_res.data}
 
-    return [{"id": row["id"], "slug": row["slug"]} for row in pages if row["id"] not in tagged_page_ids]
+    missing = [{"id": row["id"], "slug": row["slug"]} for row in pages if row["id"] not in tagged_page_ids]
+    return missing[:MAX_CANDIDATES_PER_RUN]
 
 
 def _insert_page_keywords(page_id: str, keywords: list[str], *, supabase: Client) -> None:

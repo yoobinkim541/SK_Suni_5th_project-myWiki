@@ -227,3 +227,24 @@ def test_run_wiki_keyword_batch_continues_after_one_page_fails(monkeypatch):
     assert by_slug["fails"].status == "failed"
     assert "timeout" in by_slug["fails"].error_message
     assert by_slug["ok"].status == "tagged"
+
+
+def test_run_wiki_keyword_batch_dedupes_llm_duplicate_keywords(monkeypatch):
+    db = FakeSupabase({
+        "wiki_pages": [{"id": "page-1", "slug": "hbm4", "status": "published", "workspace_id": "ws-1"}],
+        "wiki_page_keywords": [],
+    })
+    monkeypatch.setattr(keyword_batch, "get_published_wiki_page", lambda ws, slug: _content("page-1", "hbm4", "HBM4 본문"))
+    monkeypatch.setattr(
+        keyword_batch, "create_json_completion",
+        lambda **kwargs: json.dumps({"keywords": ["HBM", "HBM", "삼성전자"]}),
+    )
+
+    inserted = []
+    monkeypatch.setattr(keyword_batch, "_insert_page_keywords", lambda page_id, keywords, *, supabase: inserted.append((page_id, keywords)))
+
+    results = keyword_batch.run_wiki_keyword_batch("ws-1", supabase=db)
+
+    assert results[0].status == "tagged"
+    assert results[0].keywords == ["HBM", "삼성전자"]
+    assert inserted == [("page-1", ["HBM", "삼성전자"])]
