@@ -19,6 +19,18 @@
 import { useState } from 'react';
 import KeywordPie from './KeywordPie';
 
+// 카테고리별 고정 색상 — 원그래프 팔레트와 동일한 체계를 버튼에도 연결합니다.
+const CATEGORY_COLORS = {
+  '제품·기술': '#347FA3',
+  '경쟁사': '#4B94B5',
+  '고객·수요산업': '#63A9C4',
+  '공급망·생산': '#86AABD',
+  '정책·규제': '#A7CBD8',
+  '시장·경영': '#C8E0E7',
+};
+// 밝은 블루 배경에서는 어두운 텍스트를 써야 대비가 충분합니다.
+const LIGHT_BG = new Set(['#86AABD', '#A7CBD8', '#C8E0E7']);
+
 export default function CategoryKeywordChart({ categories }) {
   const [activeId, setActiveId] = useState(categories[0]?.id);
 
@@ -43,16 +55,24 @@ export default function CategoryKeywordChart({ categories }) {
       </div>
 
       <div className="pie-tabs">
-        {categories.map((c) => (
-          <button
-            type="button"
-            key={c.id}
-            className={`pie-tab${c.id === activeId ? ' on' : ''}`}
-            onClick={() => setActiveId(c.id)}
-          >
-            {c.name}
-          </button>
-        ))}
+        {categories.map((c) => {
+          const on = c.id === activeId;
+          const color = CATEGORY_COLORS[c.name];
+          const style = on && color
+            ? { background: color, borderColor: color, color: LIGHT_BG.has(color) ? '#16324a' : '#fff' }
+            : undefined;
+          return (
+            <button
+              type="button"
+              key={c.id}
+              className={`pie-tab${on ? ' on' : ''}`}
+              style={style}
+              onClick={() => setActiveId(c.id)}
+            >
+              {c.name}
+            </button>
+          );
+        })}
       </div>
 
       <div className="pie-grid">

@@ -310,9 +310,9 @@ svg text{font-family:inherit}
 .dlbadge{display:inline-flex;align-items:center;justify-content:center;flex:none;
   width:20px;height:20px;border-radius:6px;color:#fff;font-size:9.5px;font-weight:800;
   letter-spacing:-.01em}
-.dlbadge-word{background:#5B7BA8}
-.dlbadge-pdf{background:#C46A63;font-size:7px}
-.dlbadge-ppt{background:#C67A4E}
+.dlbadge-word{background:#3F7FBF}
+.dlbadge-pdf{background:#D95757;font-size:7px}
+.dlbadge-ppt{background:#E87941}
 .rdl.wide .dlbadge{width:24px;height:24px;border-radius:7px;font-size:11px}
 .rdl.wide .dlbadge-pdf{font-size:8px}
 
@@ -1590,8 +1590,8 @@ a.fn:hover{text-decoration:underline}
   padding-left: 2px;
 }
 .rdm-dl .dlbtn {
-  padding: 8px 14px;    /* 버튼도 살짝 키움 */
-  font-size: 15px;
+  padding: 6px 12px;
+  font-size: 13px;
 }
 .rdm-dl.whole {
   margin: 14px 0 18px;
@@ -1611,13 +1611,14 @@ a.fn:hover{text-decoration:underline}
 
 .sh.big .t { color: var(--green); }
 
-/* PC 상단바 브랜드 로고 — LogoMark(SVG) + "myWiki" 텍스트 */
-.brand2-logo-img{
-  height:34px;
+/* PC 상단바 브랜드 로고 — my Wiki 로고 이미지(아이콘+텍스트, 투명 PNG) 전체 사용 */
+.brand2-logo-full{
+  height:38px;
   width:auto;
+  max-width:170px;
+  object-fit:contain;
   display:block;
 }
-.brand2-logo-text{font-size:18px;font-weight:900;letter-spacing:-.02em;color:var(--ink)}
 
 /* 로그인/회원가입 화면 — 회원가입일 때만 보여주는 혜택 목록 + 로그인·회원가입 전환 링크 */
 .ob-perks{list-style:none;margin:2px 0 16px;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -1686,12 +1687,20 @@ a.fn:hover{text-decoration:underline}
 .kg-leaf-dot{fill:var(--green);opacity:.65}
 .kg-leaf-label{fill:var(--muted);font-size:12px;font-weight:600}
 
-/* 중앙 허브 — 그라디언트 글로우 + myWiki 로고(라이트/다크 자동 전환) */
+/* 중앙 허브 — 그라디언트 글로우 + my Wiki 로고 이미지(아이콘+텍스트 전체) */
 .kg-hub-glow{fill:var(--green);opacity:.07;animation:kg-pulse 2.6s var(--ease) infinite}
 .kg-hub-grad{fill:url(#kgHubGrad)}
-.kg-hub-logo-img{filter:drop-shadow(0 8px 16px rgba(21,120,80,.16))}
-.kg-hub-logo-text{font-size:13px;font-weight:900;letter-spacing:-.02em;color:var(--green)}
-@media (min-width:640px){.kg-hub-logo-text{font-size:15px}}
+/* 허브 원(지름 = viewBox 폭의 14.4%) 안에 들어가도록 폭을 그보다 살짝 작게 %로 고정 —
+   .kg-wrap이 viewBox 비율 그대로 반응형으로 커지므로 %값이 화면 크기와 무관하게 맞습니다. */
+.kg-hub-logo-full{
+  width:21%;
+  min-width:150px;
+  max-width:360px;
+  height:auto;
+  object-fit:contain;
+  display:block;
+  filter:drop-shadow(0 8px 16px rgba(21,120,80,.16));
+}
 
 @keyframes kg-pulse{
   0%,100%{transform:scale(1);opacity:.07}
@@ -1721,8 +1730,10 @@ a.fn:hover{text-decoration:underline}
   gap: 6px;
 }
 .m-logo-img {
-  height: 22px;
+  height: 27px;
   width: auto;
+  max-width: 120px;
+  object-fit: contain;
   display: block;
 }
 .m-logo-text {
@@ -1735,7 +1746,7 @@ a.fn:hover{text-decoration:underline}
 /* 화면이 아주 좁을 때는 조금 더 줄입니다. */
 @media (max-width: 360px) {
   .m-logo-img {
-    height: 19px;
+    height: 23px;
   }
 }
 
@@ -1842,7 +1853,7 @@ a.fn:hover{text-decoration:underline}
 .ob-screen.ob-landing.on{display:block}
 
 .landing-nav{display:flex;align-items:center;gap:32px;padding:22px 0}
-.landing-nav-logo{font-size:19px;font-weight:900;letter-spacing:-.02em;color:var(--ink);margin-right:auto}
+.landing-nav-logo-img{height:34px;width:auto;max-width:160px;object-fit:contain;display:block;margin-right:auto}
 .landing-nav-auth{display:flex;align-items:center;gap:18px}
 .landing-nav-login{font:inherit;font-size:13.5px;font-weight:600;color:var(--ink-2);
   background:none;border:0;cursor:pointer;padding:0}
@@ -1899,6 +1910,8 @@ a.fn:hover{text-decoration:underline}
 .lm-graph-canvas{position:relative;height:150px}
 .lm-hub{position:absolute;left:50%;top:50%;width:16px;height:16px;border-radius:50%;
   background:var(--green);opacity:.14;transform:translate(-50%,-50%)}
+.lm-hub-logo{position:absolute;left:50%;top:50%;width:34px;height:auto;
+  object-fit:contain;transform:translate(-50%,-50%);pointer-events:none}
 .lm-node-wrap{position:absolute;left:50%;top:50%;width:0;height:0}
 .lm-node{position:absolute;left:0;top:0;display:flex;align-items:center;justify-content:center;
   width:34px;height:34px;margin-left:-17px;margin-top:-17px;border-radius:50%;
@@ -2144,56 +2157,49 @@ a.fn:hover{text-decoration:underline}
 
 
 
-/* ===== SUNI Logo ===== */
 
+* ===== SUNI Logo (기존 "===== SUNI Logo =====" 블록이 있으면 통째로 교체) ===== */
+ 
 /* 펼친 상태: 아이콘+워드마크 전체 로고 */
 .suni-logo {
   display: block;
-  height: 88px;        /* 로고 크기 — 크거나 작으면 이 숫자만 조정 */
-  width: auto;
+  width: 118px;      /* 사이드바 폭에 맞춰 조정 가능 */
+  height: auto;
   object-fit: contain;
 }
-
-/* 접힌 상태: 삼각형 "my" 마크만 */
+ 
+/* 접힌 상태: 삼각형 "my" 마크만 잘라낸 별도 파일 (suni-mark.png) */
 .suni-mark {
   display: block;
-  height: 20px;        /* 접힌 마크 크기 */
+  height: 26px;      /* 접힌 레일 폭에 맞춰 조정 — 마크가 가로로 넓어서 height 기준으로 잡음 */
   width: auto;
   object-fit: contain;
 }
-
+ 
 /* 펼친 상태 로고 정렬 */
 .brand .nm {
   display: flex;
   justify-content: center;
   align-items: center;
+  width: 100%;
 }
-
-/* 토글(메뉴숨기기) + 로고 한 줄 — gap 줄여서 붙임 */
 .nm-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  margin-top: -8px !important;   /* 음수로 위로 끌어올림 + !important로 강제 */
+  gap: 10px;
 }
-.brand .eb {
-  margin-bottom: -4px !important;
-}
-
-
-/* "반도체 동향 시스템" 라벨 아래 여백 최소화 */
-.brand .eb {
-  margin-bottom: 2px;
-  line-height: 1.2;
-}
-
-/* 접힌 상태: 마크 + 토글 세로 정렬 */
+ 
+/* 접힌 상태: 마크 + 토글 세로 정렬 (마크가 가운데 오게) */
 .side.collapsed .brand {
   flex-direction: column;
   align-items: center;
   gap: 8px;
 }
+ 
+.suni-logo { display:block; height:88px; width:auto; }
+.suni-mark { display:block; height:20px; width:auto; }
+
 
 
 
@@ -2222,31 +2228,4 @@ a.fn:hover{text-decoration:underline}
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-
-/* 오늘 리포트 카드 */
-.ritem.today {
-  background:  #F5F9FA;      
-  border: 1px solid #3A3A3A;      
-}
-
-
-/* 오늘 리포트 요약 — 분류/카테고리/키워드 글씨 키우기 */
-.sh:has(+ .rep-cats) .t { font-size: 11px; }
-.sh:has(+ .rep-cats) .s { font-size: 12px; }
-.rep-cats { font-size: 13px; }
-.rep-kw { font-size: 13px; }
-.rep-kw .lb { font-size: 11px; }
-
-
-
-
-/* 리포트 모달 이슈 제목 — 키우고 블록으로 만들어 본문과 줄바꿈 */
-.rdm-p .rdm-title {
-  display: block;
-  font-size: 16px;        /* 제목 크기 — 본문보다 크게 */
-  font-weight: 700;
-  line-height: 1.4;
-  margin-bottom: 6px;     /* 제목 ↔ 본문 간격 */
 }
