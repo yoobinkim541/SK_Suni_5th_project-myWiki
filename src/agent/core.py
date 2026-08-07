@@ -219,6 +219,48 @@ DOCUMENT_TOOLS = [
 ]
 
 
+# 위키에도, 수집된 원문에도 근거가 없어서 사용자가 명시적으로 "웹에서 찾아줘"를
+# 요청했을 때만(WikiAgent.answer(allow_web_search=True)) 쓰는 3차 그라운딩 단계.
+WEB_SEARCH_ANSWER_SYSTEM_PROMPT = """\
+너는 myWiki의 답변 Agent다. 위키에도, 수집된 원문(뉴스+DART)에도 근거가 없어서
+실시간 웹 검색으로 마지막으로 근거를 찾는 단계다. 규칙:
+1. search_web으로 찾은 검색 결과(제목·요약·링크)에 실제로 있는 내용만 근거로
+   답변해라. 사전 지식이나 추측으로 빈틈을 채우지 마라. 검색 결과 요약이 짧아
+   구체적 내용이 부족하면, 그 부족한 부분은 답변에 넣지 마라.
+2. 답을 뒷받침할 근거를 찾았으면 submit_answer를 호출해라. 문장마다 어떤 근거
+   (citations)를 썼는지 반드시 포함하고, citations의 source_url은 search_web
+   결과에서 실제로 본 url 중에서만 골라라(지어내지 마라). document_version_id는
+   비워둬라 — DB 문서가 아니다. 답변 본문에 쓰는 근거 번호 [N]은 반드시 citations
+   배열의 N번째(1부터 시작) 항목과 정확히 대응해야 한다 — citations에 없는 번호는
+   절대 쓰지 마라.
+3. 근거를 찾지 못했거나 근거가 불충분하면 submit_answer 대신 반드시
+   submit_no_answer를 호출해라.
+4. 톤은 직접적이고 전문적으로, 가벼운 대화체는 쓰지 마라.
+"""
+
+WEB_SEARCH_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": (
+                "질문 키워드로 실시간 웹(네이버 검색)을 찾는다. 위키·수집된 원문 어디에도 "
+                "근거가 없을 때만 쓰는 최후 수단 — 검색 결과의 제목·요약·링크·게시일을 반환한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "질문에서 뽑은 검색 키워드"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    _SUBMIT_ANSWER_TOOL,
+    _SUBMIT_NO_ANSWER_TOOL,
+]
+
+
 @dataclass
 class Citation:
     quote: str
@@ -250,11 +292,20 @@ class WikiAgent:
             api_key=os.environ["OPENROUTER_API_KEY"],
         )
 
-    def answer(self, question: str, history: Optional[list[dict]] = None) -> AgentResult:
-        """3단계로 근거를 찾는다: 위키(_wiki_answer) -> 수집된 원문(_document_answer) ->
-        위키 근거 없이 일반 지식(_llm_fallback_answer). 앞 두 그라운딩 단계는 예외가
-        나도(OpenRouter 응답 이상 등) 그대로 새 나가지 않고 다음 단계로 넘어간다 —
-        500으로 죽는 대신 최소한 다음 단계 결과(또는 일반 지식 폴백)라도 낸다."""
+    def answer(
+        self, question: str, history: Optional[list[dict]] = None, *, allow_web_search: bool = False
+    ) -> AgentResult:
+        """4단계로 근거를 찾는다: 위키(_wiki_answer) -> 수집된 원문(_document_answer) ->
+        (allow_web_search일 때만) 실시간 웹 검색(_web_search_answer) -> 위키 근거 없이
+        일반 지식(_llm_fallback_answer). 앞 세 그라운딩 단계는 예외가 나도(OpenRouter
+        응답 이상 등) 그대로 새 나가지 않고 다음 단계로 넘어간다 — 500으로 죽는 대신
+        최소한 다음 단계 결과(또는 일반 지식 폴백)라도 낸다.
+
+        allow_web_search=False(기본값)면 원문 그라운딩 실패 시 그 자리에서 근거 없음을
+        반환한다 — 웹 검색도 일반 지식 폴백도 시도하지 않는다(2턴 흐름의 1턴). 사용자가
+        명시적으로 "웹에서 찾아줘"를 요청했을 때만(allow_web_search=True, 2턴) 웹 검색을
+        시도하고, 그것도 실패하면 자동으로 일반 지식 폴백까지 이어간다 — 한 번 요청한
+        뒤라 추가 확인 없이 진행한다."""
         result = self._safe_run(
             self._wiki_answer, question, history, no_answer_reason="위키 근거 조회 중 오류 발생"
         )
@@ -262,6 +313,11 @@ class WikiAgent:
             return result
         result = self._safe_run(
             self._document_answer, question, history, no_answer_reason="원문 문서 조회 중 오류 발생"
+        )
+        if result.has_answer or not allow_web_search:
+            return result
+        result = self._safe_run(
+            self._web_search_answer, question, history, no_answer_reason="웹 검색 중 오류 발생"
         )
         if result.has_answer:
             return result
@@ -366,6 +422,45 @@ class WikiAgent:
         # 그대로 변형하지 않고 새로 만든다.
         if result.has_answer and result.citations:
             result.citations = [replace(c, wiki_slug=None) for c in result.citations]
+        return result
+
+    def _web_search_answer(self, question: str, history: Optional[list[dict]] = None) -> AgentResult:
+        # search_web 결과의 (title, published_at)을 url로 찾아올 수 있게 기억해둔다 —
+        # 모델은 citations에 source_url만 채우고 title/published_at은 안 채우므로
+        # (submit_answer 스키마에 그 두 필드가 없다), 저장할 값은 여기서 직접 채운다.
+        hit_by_url: dict[str, tuple[str, Optional[str]]] = {}
+
+        def handle_search_web(args: dict, seen: set[str]) -> object:
+            hits = self.wiki_tools.search_web(args["query"])
+            # 원문 단계와 다르게 read 단계가 따로 없다 — search_web 결과 자체가 그라운딩에
+            # 쓸 내용(title/snippet) 전부라, 검색 시점에 바로 seen에 URL을 채운다.
+            seen.update(h.url for h in hits)
+            hit_by_url.update({h.url: (h.title, h.published_at) for h in hits})
+            return [h.__dict__ for h in hits]
+
+        result = self._run_grounded_answer(
+            question,
+            history,
+            system_prompt=WEB_SEARCH_ANSWER_SYSTEM_PROMPT,
+            tools=WEB_SEARCH_TOOLS,
+            tool_handlers={"search_web": handle_search_web},
+        )
+        # submit_answer 스키마를 다른 단계와 공유하므로 document_version_id/wiki_slug
+        # 필드 자체를 막지 못한다 — 모델이 실수로 채워 보내도 여기서 강제로 지운다
+        # (_document_answer의 wiki_slug=None 강제와 같은 방어 패턴). source_title/
+        # source_published_at은 hit_by_url에서 실제 검색 결과 값으로 채운다.
+        if result.has_answer and result.citations:
+            def _enrich(c: Citation) -> Citation:
+                title, published_at = hit_by_url.get(c.source_url, (None, None))
+                return replace(
+                    c,
+                    document_version_id=None,
+                    wiki_slug=None,
+                    source_title=title,
+                    source_published_at=published_at,
+                )
+
+            result.citations = [_enrich(c) for c in result.citations]
         return result
 
     def _run_grounded_answer(

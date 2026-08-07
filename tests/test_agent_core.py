@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Optional
 from unittest.mock import MagicMock
 
 import pytest
 
+from src.agent import core
 from src.agent.core import DOCUMENT_TOOLS, MAX_TOOL_ROUNDS, TOOLS, AgentResult, Citation, WikiAgent
 
 
@@ -114,6 +116,14 @@ class FakeDocumentDetail:
     canonical_url: str
     source_name: str
     published_at: str
+
+
+@dataclass
+class FakeWebSearchHit:
+    title: str
+    url: str
+    snippet: str
+    published_at: Optional[str]
 
 
 @pytest.fixture
@@ -326,11 +336,10 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
     assert result.has_answer is False
     assert result.no_answer_reason == "최대 조회 횟수 초과 — 근거 확정 실패"
     # MAX_TOOL_ROUNDS번은 _wiki_answer(라운드 초과), 다시 MAX_TOOL_ROUNDS번은
-    # _document_answer(마찬가지로 라운드 초과), +1번은 answer()가 이어서 시도하는
-    # _llm_fallback_answer의 호출 — side_effect 목록이 그만큼만 있어 마지막 호출은
-    # StopIteration으로 실패하고(폴백 실패로 처리) 원문 단계의 no_answer 결과가
-    # 그대로 반환된다.
-    assert call_mock.call_count == (MAX_TOOL_ROUNDS * 2) + 1
+    # _document_answer(마찬가지로 라운드 초과) — allow_web_search를 안 넘겼으므로
+    # (기본값 False) answer()는 원문 단계 결과에서 그대로 멈춘다. 웹 검색/LLM 폴백
+    # 모두 시도되지 않으므로 호출 횟수는 정확히 두 단계 몫만큼이어야 한다.
+    assert call_mock.call_count == MAX_TOOL_ROUNDS * 2
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +408,7 @@ def test_answer_falls_back_to_llm_when_wiki_answer_raises(agent, wiki_tools, mon
 
     monkeypatch.setattr(agent, "_call_model", fake_call_model)
 
-    result = agent.answer("질문")
+    result = agent.answer("질문", allow_web_search=True)
 
     assert result.has_answer is True
     assert result.is_llm_fallback is True
@@ -546,15 +555,106 @@ def test_document_answer_forces_wiki_slug_to_none_even_if_model_sends_one(agent,
     assert result.citations[0].wiki_slug is None
 
 
+def test_answer_does_not_try_web_search_by_default(agent, wiki_tools, monkeypatch):
+    """allow_web_search=False(기본값)면 원문 그라운딩 실패 시 그 자리에서 멈춘다 —
+    웹 검색도 LLM 폴백도 시도하지 않는다."""
+    wiki_tools.search_wiki_pages.return_value = []
+    wiki_tools.search_documents.return_value = []
+    call_count = {"n": 0}
+
+    def fake_call_model(messages, use_tools=True, tools=None):
+        call_count["n"] += 1
+        return tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"}))
+
+    monkeypatch.setattr(agent, "_call_model", fake_call_model)
+
+    result = agent.answer("질문")  # allow_web_search 기본값 False
+
+    assert result.has_answer is False
+    assert result.is_llm_fallback is False
+    # 위키 1라운드 + 원문 1라운드 = 2회. 웹 검색/LLM 폴백이 시도됐다면 3회 이상이어야 한다.
+    assert call_count["n"] == 2
+
+
+def test_answer_tries_web_search_when_allowed(agent, wiki_tools, monkeypatch):
+    wiki_tools.search_wiki_pages.return_value = []
+    wiki_tools.search_documents.return_value = []
+    wiki_tools.search_web.return_value = [
+        FakeWebSearchHit(
+            title="SK하이닉스 ADR 상장",
+            url="https://example.com/a",
+            snippet="SK하이닉스가 나스닥에 ADR을 상장했다.",
+            published_at="2026-08-07T09:00:00+09:00",
+        )
+    ]
+    citation = {"source_url": "https://example.com/a", "quote": "ADR을 상장했다"}
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키 근거 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문 근거 없음"})),
+        tool_call_response(("call-3", "search_web", {"query": "SK하이닉스 ADR"})),
+        tool_call_response(("call-4", "submit_answer", {
+            "answer": "SK하이닉스가 나스닥에 ADR을 상장했다.[1]",
+            "citations": [citation],
+        })),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("SK하이닉스 ADR 상장이 뭐야?", allow_web_search=True)
+
+    assert result.has_answer is True
+    assert result.is_llm_fallback is False
+    assert result.citations[0].source_url == "https://example.com/a"
+    assert result.citations[0].document_version_id is None  # DB 행이 아니므로 항상 None
+    assert result.citations[0].source_title == "SK하이닉스 ADR 상장"  # search_web 결과에서 채움
+    assert result.citations[0].source_published_at == "2026-08-07T09:00:00+09:00"
+
+
+def test_answer_falls_back_to_llm_when_web_search_also_fails(agent, wiki_tools, monkeypatch):
+    wiki_tools.search_wiki_pages.return_value = []
+    wiki_tools.search_documents.return_value = []
+    wiki_tools.search_web.return_value = []
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키 근거 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문 근거 없음"})),
+        tool_call_response(("call-3", "submit_no_answer", {"reason": "웹 검색 근거 없음"})),
+        plain_text_response("일반 지식으로는 이렇습니다."),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("아주 최신 질문", allow_web_search=True)
+
+    assert result.has_answer is True
+    assert result.is_llm_fallback is True
+    assert result.citations == []
+
+
+def test_web_search_answer_passes_web_search_tools_not_document_tools(agent, wiki_tools, monkeypatch):
+    wiki_tools.search_web.return_value = []
+    captured_tools = []
+
+    def fake_call_model(messages, use_tools=True, tools=None):
+        captured_tools.append(tools)
+        return tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"}))
+
+    monkeypatch.setattr(agent, "_call_model", fake_call_model)
+
+    agent._web_search_answer("질문")
+
+    assert captured_tools[0] is core.WEB_SEARCH_TOOLS
+    assert captured_tools[0] is not core.DOCUMENT_TOOLS
+    assert captured_tools[0] is not core.TOOLS
+
+
 def test_answer_falls_back_to_llm_when_wiki_and_documents_both_have_no_answer(agent, wiki_tools, monkeypatch):
     responses = [
         tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
         tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
+        tool_call_response(("call-3", "submit_no_answer", {"reason": "웹 검색에도 근거 없음"})),
         plain_text_response("SK하이닉스는 국내 반도체 기업이다."),
     ]
     monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
 
-    result = agent.answer("아무 질문")
+    result = agent.answer("아무 질문", allow_web_search=True)
 
     assert result.has_answer is True
     assert result.is_llm_fallback is True
@@ -576,7 +676,7 @@ def test_answer_falls_back_to_llm_when_document_answer_raises(agent, wiki_tools,
 
     monkeypatch.setattr(agent, "_call_model", fake_call_model)
 
-    result = agent.answer("질문")
+    result = agent.answer("질문", allow_web_search=True)
 
     assert result.has_answer is True
     assert result.is_llm_fallback is True
@@ -593,11 +693,12 @@ def test_answer_falls_back_to_llm_when_no_wiki_answer(agent, wiki_tools, monkeyp
         tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
         # 위키 다음 원문 단계도 근거 없음으로 끝나야 그 뒤에 llm 폴백이 시도된다.
         tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
+        tool_call_response(("call-3", "submit_no_answer", {"reason": "웹 검색에도 근거 없음"})),
         plain_text_response("HBM은 여러 D램을 수직으로 쌓아 대역폭을 늘린 고대역폭 메모리다."),
     ]
     monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
 
-    result = agent.answer("HBM이 뭐야?")
+    result = agent.answer("HBM이 뭐야?", allow_web_search=True)
 
     assert result.has_answer is True
     assert result.is_llm_fallback is True
@@ -632,13 +733,14 @@ def test_llm_fallback_answer_calls_model_without_tools(agent, wiki_tools, monkey
     """_llm_fallback_answer는 WikiTools/citations를 아예 안 주려는 것이므로
     use_tools=False로 호출해야 한다."""
     responses = [
-        tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"})),
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
         plain_text_response("일반 지식 답변"),
     ]
     call_mock = MagicMock(side_effect=responses)
     monkeypatch.setattr(agent, "_call_model", call_mock)
 
-    agent.answer("아무 질문")
+    agent.answer("아무 질문", allow_web_search=True)
 
     fallback_call = call_mock.call_args_list[-1]
     assert fallback_call.kwargs.get("use_tools") is False
@@ -659,7 +761,7 @@ def test_answer_keeps_no_answer_when_llm_fallback_raises(agent, wiki_tools, monk
 
     monkeypatch.setattr(agent, "_call_model", fake_call_model)
 
-    result = agent.answer("아무 질문")
+    result = agent.answer("아무 질문", allow_web_search=True)
 
     assert result.has_answer is False
     assert result.is_llm_fallback is False
@@ -670,18 +772,19 @@ def test_answer_keeps_no_answer_when_llm_fallback_returns_empty_text(agent, wiki
     """폴백 모델이 빈 응답을 주면 근거 없음으로 취급하고, 있지도 않은 답을 만들지 않는다."""
     responses = [
         tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"})),
-        # 원문 단계도 근거 없음으로 끝나야 llm 폴백이 시도된다. 폴백이 빈 텍스트를
-        # 주면 최종 결과는 마지막으로 실행된 단계(원문 단계)의 사유로 남는다.
         tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
+        # 웹 검색 단계도 근거 없음으로 끝나야 llm 폴백이 시도된다. 폴백이 빈 텍스트를
+        # 주면 최종 결과는 마지막으로 실행된 단계(웹 검색 단계)의 사유로 남는다.
+        tool_call_response(("call-3", "submit_no_answer", {"reason": "웹 검색에도 근거 없음"})),
         plain_text_response("   "),
     ]
     monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
 
-    result = agent.answer("아무 질문")
+    result = agent.answer("아무 질문", allow_web_search=True)
 
     assert result.has_answer is False
     assert result.is_llm_fallback is False
-    assert result.no_answer_reason == "원문에도 관련 문서 없음"
+    assert result.no_answer_reason == "웹 검색에도 근거 없음"
 
 
 # ---------------------------------------------------------------------------
