@@ -54,6 +54,22 @@ class WorkspaceMemberOut(BaseModel):
     role: Optional[str] = None
 
 
+class UpdateMemberRoleRequest(BaseModel):
+    role: Literal["admin", "editor", "viewer"]
+
+
+class AdminSessionOut(BaseModel):
+    id: str
+    workspace_id: str
+    user_id: str
+    title: Optional[str]
+    visibility: str
+    owner_name: Optional[str] = None
+    archived_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class CitationOut(BaseModel):
     id: str
     document_version_id: str

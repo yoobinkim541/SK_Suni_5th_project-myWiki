@@ -612,3 +612,82 @@ def ban_auth_user(user_id: str) -> None:
     delete_auth_user가 뒷문으로 재현하고 있었다. ban_duration으로 로그인만 막으면
     auth.users 행이 그대로 남아 이 CASCADE가 전혀 발동하지 않는다."""
     get_supabase().auth.admin.update_user_by_id(user_id, {"ban_duration": PERMANENT_BAN_DURATION})
+
+
+# ---------------------------------------------------------------------------
+# 오너 전용 워크스페이스 관리 — 멤버 방출·역할 변경.
+# 기존 get_chat_session/list_chat_sessions(일반 사용자 접근 제어)는 건드리지 않고
+# 완전히 분리된 함수로 둔다 — 오너 권한 체크는 호출부(main.py)의 몫이다.
+# ---------------------------------------------------------------------------
+
+
+def remove_workspace_member(workspace_id: str, user_id: str) -> None:
+    """workspace_members 행 삭제 + 이 워크스페이스 소속 세션들의 참여자 행도 함께
+    삭제한다 — 방출됐는데 팀 세션엔 계속 참여자로 남는 상태를 방지한다."""
+    session_ids_res = (
+        get_supabase()
+        .table("chat_sessions")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+    session_ids = [row["id"] for row in session_ids_res.data]
+    if session_ids:
+        (
+            get_supabase()
+            .table("chat_session_participants")
+            .delete()
+            .eq("user_id", user_id)
+            .in_("session_id", session_ids)
+            .execute()
+        )
+
+    get_supabase().table("workspace_members").delete().eq(
+        "workspace_id", workspace_id
+    ).eq("user_id", user_id).execute()
+
+
+def update_workspace_member_role(workspace_id: str, user_id: str, role: str) -> None:
+    get_supabase().table("workspace_members").update({"role": role}).eq(
+        "workspace_id", workspace_id
+    ).eq("user_id", user_id).execute()
+
+
+def list_workspace_sessions_for_admin(workspace_id: str, visibility: str) -> list[dict]:
+    """참여자/소유자 필터 없이 워크스페이스의 세션을 전부 조회한다(오너 전용 열람용).
+    get_chat_session/list_chat_sessions(일반 사용자용, 접근 제어 있음)와는 별개 함수다."""
+    res = (
+        get_supabase()
+        .table("chat_sessions")
+        .select("*, profiles(display_name)")
+        .eq("workspace_id", workspace_id)
+        .eq("visibility", visibility)
+        .is_("deleted_at", "null")
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    rows = []
+    for row in res.data:
+        profile = row.pop("profiles", None) or {}
+        row["owner_name"] = profile.get("display_name")
+        rows.append(row)
+    return rows
+
+
+def get_chat_session_for_admin(session_id: str, workspace_id: str) -> Optional[dict]:
+    """get_chat_session과 달리 참여자/소유자 여부를 확인하지 않는다 — workspace_id
+    일치만 확인한다(오너 전용 열람용).
+
+    삭제(soft-delete)된 세션도 조회된다 — list_workspace_sessions_for_admin과 달리
+    deleted_at 필터가 없다. 오너 감사 목적상 사용자가 세션을 지워도 오너의 조회
+    권한까지 사라지면 안 된다(의도적 설계, 누락 아님)."""
+    res = (
+        get_supabase()
+        .table("chat_sessions")
+        .select("*")
+        .eq("id", session_id)
+        .eq("workspace_id", workspace_id)
+        .maybe_single()
+        .execute()
+    )
+    return res.data
