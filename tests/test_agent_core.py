@@ -302,13 +302,21 @@ def test_answer_returns_no_answer_when_read_wiki_page_not_found(agent, wiki_tool
 
 
 def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatch):
+    """MAX_TOOL_ROUNDS 초과 시 정확히 "최대 조회 횟수 초과 — 근거 확정 실패" 사유로
+    끝나야 한다는 게 이 테스트의 핵심 신호다. 3단계 파이프라인에서 그 신호가 최종
+    결과에도 그대로 남으려면(fix round 1에서 이 사유 문자열이 다른 테스트 어디에도
+    안 남고 사라졌던 문제), 원문 단계도 위키 단계와 동일하게 라운드를 소진시켜
+    같은 방식(같은 사유 문자열)으로 끝나게 해야 한다."""
     wiki_tools.list_wiki_topics.return_value = []
+    wiki_tools.search_documents.return_value = []
     responses = [
         tool_call_response((f"call-{i}", "list_wiki_topics", {})) for i in range(MAX_TOOL_ROUNDS)
     ] + [
-        # 위키 단계가 라운드 초과로 끝나면 원문 단계가 이어서 시도된다 — 그 단계는
-        # 바로 근거 없음으로 끝내서 흐름이 계속 이어짐(→ llm 폴백 시도)만 확인한다.
-        tool_call_response(("call-doc", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"}))
+        # 위키 단계가 라운드 초과로 끝나면 원문 단계가 이어서 시도된다 — 원문 단계도
+        # search_documents만 반복 호출하고 끝내 submit하지 않아 동일하게 라운드를
+        # 소진시킨다(내용은 중요치 않음, 소진 자체가 목적).
+        tool_call_response((f"call-doc-{i}", "search_documents", {"query": "x"}))
+        for i in range(MAX_TOOL_ROUNDS)
     ]
     call_mock = MagicMock(side_effect=responses)
     monkeypatch.setattr(agent, "_call_model", call_mock)
@@ -316,14 +324,13 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
     result = agent.answer("계속 조회만 하는 모델")
 
     assert result.has_answer is False
-    # 위키 단계의 "최대 조회 횟수 초과" 사유는 원문 단계가 정상적으로 근거 없음을
-    # 판정하면서 대체된다 — 최종 결과는 마지막으로 실행된 단계(원문 단계)의 사유다.
-    assert result.no_answer_reason == "원문에도 관련 문서 없음"
-    # MAX_TOOL_ROUNDS번은 _wiki_answer(라운드 초과), +1번은 _document_answer(근거 없음
-    # 판정), +1번은 answer()가 이어서 시도하는 _llm_fallback_answer의 호출 — side_effect
-    # 목록이 그만큼만 있어 마지막 호출은 StopIteration으로 실패하고(폴백 실패로 처리)
-    # 원문 단계의 no_answer 결과가 그대로 반환된다.
-    assert call_mock.call_count == MAX_TOOL_ROUNDS + 2
+    assert result.no_answer_reason == "최대 조회 횟수 초과 — 근거 확정 실패"
+    # MAX_TOOL_ROUNDS번은 _wiki_answer(라운드 초과), 다시 MAX_TOOL_ROUNDS번은
+    # _document_answer(마찬가지로 라운드 초과), +1번은 answer()가 이어서 시도하는
+    # _llm_fallback_answer의 호출 — side_effect 목록이 그만큼만 있어 마지막 호출은
+    # StopIteration으로 실패하고(폴백 실패로 처리) 원문 단계의 no_answer 결과가
+    # 그대로 반환된다.
+    assert call_mock.call_count == (MAX_TOOL_ROUNDS * 2) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -433,6 +440,46 @@ def test_answer_uses_document_answer_when_wiki_has_no_answer(agent, wiki_tools, 
     assert result.citations[0].wiki_slug is None
     wiki_tools.search_documents.assert_called_once_with("SK하이닉스 ADR 상장")
     wiki_tools.read_document.assert_called_once_with("doc-ver-1")
+
+
+def test_document_answer_forces_wiki_slug_to_none_even_if_model_sends_one(agent, wiki_tools, monkeypatch):
+    """원문 문서 단계는 위키 페이지에서 나온 근거가 아니므로 citations[].wiki_slug는
+    항상 None이어야 한다. DOCUMENT_TOOLS의 submit_answer 스키마는 위키 단계와
+    공유(재사용)하느라 wiki_slug 필드 자체를 막지 못하므로, 모델이 실수로 wiki_slug를
+    채워 보내도 코드가 강제로 지워야 한다 — 프롬프트만으로는 강제되지 않는다."""
+    wiki_tools.search_documents.return_value = [
+        FakeDocumentSearchHit(document_version_id="doc-ver-1", title="SK하이닉스 ADR 상장 공시", score=0.7)
+    ]
+    wiki_tools.read_document.return_value = FakeDocumentDetail(
+        document_version_id="doc-ver-1",
+        title="SK하이닉스 ADR 상장 공시",
+        markdown="SK하이닉스가 나스닥에 ADR을 상장했다.",
+        canonical_url="https://dart.fss.or.kr/example",
+        source_name="DART - SK하이닉스",
+        published_at="2026-07-10T00:00:00+00:00",
+    )
+    citation_with_wiki_slug = {
+        "document_version_id": "doc-ver-1",
+        "wiki_slug": "hbm4",  # 모델이 실수로 채워 보낸 위키 슬러그 — 원문 단계엔 있으면 안 됨
+        "quote": "SK하이닉스가 나스닥에 ADR을 상장했다.",
+        "relevance_score": 0.9,
+    }
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "search_documents", {"query": "SK하이닉스 ADR 상장"})),
+        tool_call_response(("call-3", "read_document", {"document_version_id": "doc-ver-1"})),
+        tool_call_response(("call-4", "submit_answer", {
+            "answer": "SK하이닉스가 나스닥에 ADR을 상장했다. [1]",
+            "citations": [citation_with_wiki_slug],
+        })),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("SK하이닉스 ADR 상장 공시가 뭐야?")
+
+    assert result.has_answer is True
+    assert len(result.citations) == 1
+    assert result.citations[0].wiki_slug is None
 
 
 def test_answer_falls_back_to_llm_when_wiki_and_documents_both_have_no_answer(agent, wiki_tools, monkeypatch):

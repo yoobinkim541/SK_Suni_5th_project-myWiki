@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 from openai import OpenAI
@@ -345,7 +345,7 @@ class WikiAgent:
                 "published_at": document.published_at,
             }
 
-        return self._run_grounded_answer(
+        result = self._run_grounded_answer(
             question,
             history,
             system_prompt=DOCUMENT_ANSWER_SYSTEM_PROMPT,
@@ -355,6 +355,14 @@ class WikiAgent:
                 "read_document": handle_read_document,
             },
         )
+        # DOCUMENT_TOOLS는 submit_answer 스키마를 위키 단계와 재사용하므로 wiki_slug
+        # 필드 자체를 막지 못한다 — 프롬프트로만 "원문 단계엔 wiki_slug 없음"을 바라는
+        # 대신, 모델이 실수로(또는 이전 위키 조회 결과를 착각해) wiki_slug를 채워 보내도
+        # 여기서 강제로 지운다. Citation은 non-frozen dataclass이지만 원본 객체를
+        # 그대로 변형하지 않고 새로 만든다.
+        if result.has_answer and result.citations:
+            result.citations = [replace(c, wiki_slug=None) for c in result.citations]
+        return result
 
     def _run_grounded_answer(
         self,
