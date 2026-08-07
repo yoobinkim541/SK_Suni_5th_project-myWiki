@@ -16,10 +16,15 @@ collect()·preprocess()는 예외를 던지지 않고 실패를 pipeline_jobs에
     python scripts/run_pipeline.py --source-id <uuid>
     python scripts/run_pipeline.py --collect-only
     python scripts/run_pipeline.py --preprocess-only
+
+파서를 바꾼 뒤 기존 문서에 반영할 때 (--rehash, run_rehash() 참조):
+    python scripts/run_pipeline.py --rehash --dry-run
+    python scripts/run_pipeline.py --rehash --limit 200
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -32,11 +37,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.collectors.interface import collect
-from src.pipeline_common import jobs, repository
+from src.pipeline_common import jobs, repository, storage
 from src.pipeline_common.db import get_client
 from src.pipeline_common.models import CollectRequest
 from src.pipeline_common.timeutil import parse_datetime
+from src.preprocessing import parsers
 from src.preprocessing.interface import preprocess
+
+# 재해시에서 "눈으로 봐야 하는" 감소율. 상용구 제거기 자체는 40%를 넘으면 되돌리지만,
+# 그건 본문 노드 텍스트 기준이고 여기는 Markdown 길이 기준이라 값이 다르다.
+_SHRINK_OUTLIER_RATIO = 0.3
 
 
 def get_workspace_id() -> UUID:
@@ -187,6 +197,270 @@ def run_preprocess(workspace_id: UUID) -> dict:
     return summary
 
 
+# ------------------------------------------------------------
+# 재해시 마이그레이션 (--rehash)
+# ------------------------------------------------------------
+
+# content_type을 collect job에서 못 읽을 때 raw 파일 확장자로 되짚는다.
+# storage.EXT_BY_CONTENT_TYPE의 역방향이다.
+_CONTENT_TYPE_BY_EXT = {ext: ct for ct, ext in storage.EXT_BY_CONTENT_TYPE.items()}
+
+
+def _content_type_for(raw_object_key: str, collect_result: dict) -> str:
+    from_job = collect_result.get("content_type")
+    if from_job:
+        return str(from_job)
+    ext = raw_object_key.rsplit(".", 1)[-1].lower() if "." in raw_object_key else ""
+    return _CONTENT_TYPE_BY_EXT.get(ext, "text/html")
+
+
+def _rehash_one(
+    document_id: UUID,
+    version: dict,
+    collect_result: dict,
+    *,
+    dry_run: bool,
+) -> dict:
+    """문서 1건을 재해시한다. 반환값이 그대로 리포트 한 줄이 된다."""
+    version_id = UUID(str(version["id"]))
+    old_hash = version["content_hash"]
+    record: dict = {
+        "document_id": str(document_id),
+        "document_version_id": str(version_id),
+        "version_no": version.get("version_no"),
+        "old_content_hash": old_hash,
+        "old_parser_version": version.get("parser_version"),
+        "markdown_object_key": version.get("markdown_object_key"),
+        "raw_object_key": None,
+        "raw_downloaded": False,
+        "action": "skip",
+        "skip_reason": None,
+    }
+
+    # raw 키는 행을 먼저 본다. preprocess()는 collect job에서만 읽어서 job이 없으면
+    # 실패하는데, 행에 남은 키가 멀쩡한 경우가 있다.
+    raw_key = version.get("raw_object_key") or collect_result.get("raw_object_key")
+    if not raw_key:
+        record["skip_reason"] = "raw_object_key 없음"
+        return record
+    record["raw_object_key"] = raw_key
+
+    try:
+        body = storage.download(raw_key)
+    except Exception as exc:  # noqa: BLE001 - Storage 예외 종류가 버전마다 다르다
+        record["skip_reason"] = f"raw 다운로드 실패: {exc}"
+        return record
+    record["raw_downloaded"] = True
+
+    # 게이트 2(본문 보존량)는 구 파서 결과와 길이를 비교해야 한다. 구 파서 결과는
+    # 저장된 Markdown 그 자체다 — 구 파서 코드는 이 시점에 이미 없다.
+    try:
+        record["old_len"] = len(
+            storage.download(version["markdown_object_key"]).decode("utf-8", errors="replace")
+        )
+    except Exception:  # noqa: BLE001 - 감소율 집계에서만 빠진다
+        record["old_len"] = None
+
+    try:
+        parsed = parsers.parse(body, _content_type_for(raw_key, collect_result))
+    except Exception as exc:  # noqa: BLE001 - 행을 건드리지 않고 사유만 남긴다
+        record["skip_reason"] = f"정제 실패: {exc}"
+        return record
+
+    record["new_content_hash"] = parsed.content_hash
+    record["new_parser_version"] = parsed.parser_version
+    record["new_len"] = len(parsed.markdown)
+
+    if parsed.content_hash == old_hash:
+        # 상용구가 없던 문서. 커서만 전진시킨다.
+        record["action"] = "parser_version_only"
+        if not dry_run:
+            repository.update_document_version_content(
+                version_id,
+                content_hash=parsed.content_hash,
+                parser_version=parsed.parser_version,
+                language=parsed.language,
+            )
+        return record
+
+    record["action"] = "rehash"
+    if dry_run:
+        return record
+
+    # 업로드를 먼저, UPDATE를 나중에 한다. UPDATE가 실패하면 행이 구 해시·구
+    # parser_version을 유지하므로 커서가 전진하지 않고, 재정제는 결정적이라
+    # 다음 패스가 같은 해시를 다시 계산해 재시도한다.
+    try:
+        storage.upload(
+            version["markdown_object_key"], parsed.markdown.encode("utf-8"), "text/markdown"
+        )
+        repository.update_document_version_content(
+            version_id,
+            content_hash=parsed.content_hash,
+            parser_version=parsed.parser_version,
+            language=parsed.language,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # uq_dv_document_hash 충돌(형제 버전과 해시가 겹침) 포함. 행은 그대로 둔다.
+        record["action"] = "skip"
+        record["skip_reason"] = f"갱신 실패: {exc}"
+    return record
+
+
+def run_rehash(
+    workspace_id: UUID,
+    *,
+    limit: int | None,
+    dry_run: bool,
+    force: bool,
+    report_path: Path,
+) -> dict:
+    """
+    파서를 바꾼 뒤 기존 document_versions를 제자리에서 다시 해시한다.
+
+    새 행을 만들지 않는다 — 분석 단계가 "분석 행이 없는 document_versions"를 잡아가서,
+    993개 행을 새로 만들면 그대로 LLM 4단계 대기열에 얹히기 때문이다.
+
+    parser_version이 커서다. 이미 최신 파서로 갱신된 행은 건너뛰므로 중간에 끊겨도
+    다시 돌리면 이어서 처리한다. --force면 커서를 무시한다(롤백 경로).
+    """
+    target_version = parsers.PARSER_VERSIONS["html"]
+    documents = repository.list_active_documents(workspace_id)
+    document_ids = [UUID(str(doc["id"])) for doc in documents]
+    latest_versions = repository.latest_versions_by_document(document_ids)
+    collect_jobs = repository.latest_completed_collect_jobs_by_document(
+        workspace_id, document_ids
+    )
+
+    summary = {
+        "documents": len(document_ids),
+        "targets": 0,
+        "rehashed": 0,
+        "parser_version_only": 0,
+        "skipped": 0,
+        "raw_missing": 0,
+        "skip_reasons": {},
+        "dry_run": dry_run,
+        "report_path": str(report_path),
+    }
+
+    records: list[dict] = []
+    for document_id in document_ids:
+        version = latest_versions.get(str(document_id))
+        if version is None:
+            continue
+        if not force and version.get("parser_version") == target_version:
+            continue
+        if limit is not None and summary["targets"] >= limit:
+            break
+        summary["targets"] += 1
+
+        collect_result = (collect_jobs.get(str(document_id)) or {}).get("result") or {}
+        record = _rehash_one(document_id, version, collect_result, dry_run=dry_run)
+        records.append(record)
+
+        if record["action"] == "rehash":
+            summary["rehashed"] += 1
+        elif record["action"] == "parser_version_only":
+            summary["parser_version_only"] += 1
+        else:
+            summary["skipped"] += 1
+            reason = record["skip_reason"] or "알 수 없음"
+            summary["skip_reasons"][reason] = summary["skip_reasons"].get(reason, 0) + 1
+        if not record["raw_downloaded"]:
+            summary["raw_missing"] += 1
+
+    report_path.write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
+    )
+    summary["gates"] = _rehash_gates(records, summary)
+    return summary
+
+
+def _rehash_gates(records: list[dict], summary: dict) -> dict:
+    """
+    게이트 2(본문 보존량)·4(롤백 경로) 판정.
+
+    게이트 1(인용문 보존)·3(접힘)은 인용 테이블과 다중 버전 전수 조회가 필요해
+    이 배치가 아니라 별도 하네스가 맡는다.
+    """
+    shrinks = sorted(
+        1 - (r["new_len"] / r["old_len"])
+        for r in records
+        if r.get("old_len") and r.get("new_len")
+    )
+    outliers = [
+        {
+            "document_id": r["document_id"],
+            "shrink_ratio": round(1 - r["new_len"] / r["old_len"], 3),
+        }
+        for r in records
+        if r.get("old_len")
+        and r.get("new_len")
+        and (1 - r["new_len"] / r["old_len"]) >= _SHRINK_OUTLIER_RATIO
+    ]
+
+    def pct(p: float) -> float | None:
+        if not shrinks:
+            return None
+        return round(shrinks[min(int(len(shrinks) * p), len(shrinks) - 1)], 3)
+
+    # 게이트 4: 대상 중 raw를 못 받은 건이 있으면 FAIL. 못 받은 건은 행을 건드리지
+    # 않았으므로 데이터는 안전하지만, "언제든 되돌릴 수 있다"는 근거가 성립하지 않는다.
+    gate4 = summary["raw_missing"] == 0
+
+    return {
+        "gate2_body_preserved": {
+            "verdict": "REVIEW" if outliers else "PASS",
+            "p50": pct(0.5),
+            "p90": pct(0.9),
+            "p99": pct(0.99),
+            "max": round(shrinks[-1], 3) if shrinks else None,
+            "outliers": outliers,
+            "note": "이상치는 개별 확인 후에만 PASS로 닫는다",
+        },
+        "gate4_rollback": {
+            "verdict": "PASS" if gate4 else "FAIL",
+            "raw_missing": summary["raw_missing"],
+            "targets": summary["targets"],
+        },
+    }
+
+
+def print_rehash_summary(summary: dict) -> None:
+    print("\n=== 재해시 요약 ===")
+    mode = "DRY-RUN (쓰지 않음)" if summary["dry_run"] else "실행"
+    print(f"모드: {mode}")
+    print(f"대상: {summary['targets']}건 / 전체 문서 {summary['documents']}건")
+    print(
+        f"재해시 {summary['rehashed']}건 / "
+        f"parser_version만 갱신 {summary['parser_version_only']}건 / "
+        f"건너뜀 {summary['skipped']}건"
+    )
+    if summary["skip_reasons"]:
+        print(f"건너뛴 사유: {summary['skip_reasons']}")
+    print(f"리포트: {summary['report_path']}")
+
+    gates = summary["gates"]
+    g2 = gates["gate2_body_preserved"]
+    g4 = gates["gate4_rollback"]
+    print("\n--- 게이트 ---")
+    print(
+        f"게이트 2 (본문 보존량): {g2['verdict']} — "
+        f"감소율 p50 {g2['p50']} / p90 {g2['p90']} / p99 {g2['p99']} / max {g2['max']}"
+    )
+    if g2["outliers"]:
+        print(f"  이상치 {len(g2['outliers'])}건 — 개별 확인 필요:")
+        for item in g2["outliers"][:20]:
+            print(f"    {item['document_id']}  감소율 {item['shrink_ratio']}")
+    print(f"게이트 4 (롤백 경로): {g4['verdict']} — raw 누락 {g4['raw_missing']}건")
+    print("게이트 1(인용문 보존)·3(접힘)은 별도 하네스에서 판정한다.")
+
+    passed = sum(1 for g in (g2, g4) if g["verdict"] == "PASS")
+    verdict = "PASS" if passed == 2 else "FAIL"
+    print(f"\nGATE: {verdict} ({passed}/2 · 이 배치가 판정하는 몫)")
+
+
 def print_summary(collect_summary: dict | None, preprocess_summary: dict | None) -> None:
     print("\n=== 요약 ===")
     if collect_summary is not None:
@@ -224,12 +498,42 @@ def main() -> int:
     parser.add_argument(
         "--preprocess-only", action="store_true", help="정제만 하고 수집은 건너뛴다"
     )
+    parser.add_argument(
+        "--rehash",
+        action="store_true",
+        help="파서 교체분을 기존 버전 행에 제자리 반영한다 (수집·정제를 하지 않는다)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="--rehash 계산만 하고 쓰지 않는다"
+    )
+    parser.add_argument("--report", default=None, help="--rehash JSONL 리포트 경로")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="--rehash에서 parser_version 커서를 무시하고 전건 재처리한다 (롤백 경로)",
+    )
     args = parser.parse_args()
 
     if args.collect_only and args.preprocess_only:
         parser.error("--collect-only와 --preprocess-only는 함께 쓸 수 없다")
+    if args.rehash and (args.collect_only or args.preprocess_only):
+        parser.error("--rehash는 --collect-only/--preprocess-only와 함께 쓸 수 없다")
+    if (args.dry_run or args.force or args.report) and not args.rehash:
+        parser.error("--dry-run/--force/--report는 --rehash에서만 쓴다")
 
     workspace_id = get_workspace_id()
+
+    if args.rehash:
+        default_report = f"rehash_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+        rehash_summary = run_rehash(
+            workspace_id,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            force=args.force,
+            report_path=Path(args.report or default_report),
+        )
+        print_rehash_summary(rehash_summary)
+        return 0
 
     collect_summary = None
     preprocess_summary = None
