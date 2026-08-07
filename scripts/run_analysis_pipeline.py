@@ -190,7 +190,12 @@ def _has_failed_results(results: list, status_field: str) -> bool:
     return any(getattr(result, status_field, "completed") == "failed" for result in results)
 
 
-def run_analysis_pipeline(workspace_id: str, *, limit: int = DEFAULT_LIMIT) -> list[str] | None:
+def run_analysis_pipeline(
+    workspace_id: str,
+    *,
+    limit: int = DEFAULT_LIMIT,
+    document_version_ids: list[str] | None = None,
+) -> list[str] | None:
     """분류->신뢰도->중요도->랭킹 4단계를 실행한다.
 
     스케줄 배치에서는 실행 시간 예산이 빠듯하므로, 이미 중요도/랭킹 직전까지 온 문서가
@@ -201,7 +206,11 @@ def run_analysis_pipeline(workspace_id: str, *, limit: int = DEFAULT_LIMIT) -> l
     3. 같은 실행 안에서 한 번 더 하류 단계 재시도: 신뢰도 -> 중요도 -> 랭킹
     """
     effective_limit = min(max(limit, 0), MAX_ANALYSIS_CANDIDATES)
-    candidate_ids = select_analysis_candidates(workspace_id, limit=effective_limit)
+    candidate_ids = (
+        list(dict.fromkeys(document_version_ids))[:effective_limit]
+        if document_version_ids is not None
+        else select_analysis_candidates(workspace_id, limit=effective_limit)
+    )
     if not candidate_ids:
         log("analysis candidates selected: 0")
         return None

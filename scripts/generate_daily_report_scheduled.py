@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.pipeline_common.db import get_client
+from src.analysis.daily_report_batch import get_completed_analysis_batch_document_ids
 from src.report.candidate_provider import get_report_candidates
 from src.report.service import generate_daily_report_artifacts
 
@@ -51,10 +52,12 @@ def run_scheduled_daily_report(*, now: datetime | None = None) -> dict[str, obje
     report_date = current_time.astimezone(SEOUL_TZ).date()
     workspace_id = get_workspace_id()
     window_start, window_end = get_daily_report_window(current_time)
+    batch_document_version_ids = get_completed_analysis_batch_document_ids(workspace_id=workspace_id, report_date=report_date)
     candidates = get_report_candidates(
         workspace_id=workspace_id,
         report_date=report_date,
         published_from=window_start,
+        document_version_ids=batch_document_version_ids,
         published_to=window_end,
     )
     analysis_document_version_ids = [candidate.document_version_id for candidate in candidates]

@@ -8,7 +8,7 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: scheduled-data-refresh
+  group: daily-report-schedule
   cancel-in-progress: false
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Analyze backlog for the daily report
-        run: python scripts/run_analysis_pipeline.py --limit 50
+        run: python scripts/run_daily_report_analysis_catchup.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

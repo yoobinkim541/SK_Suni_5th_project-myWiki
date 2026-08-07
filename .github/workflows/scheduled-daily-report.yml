@@ -7,7 +7,7 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: scheduled-daily-report
+  group: daily-report-schedule
   cancel-in-progress: false
 
 jobs:

@@ -87,6 +87,24 @@ def get_report_candidates(
             .data
         )
 
+    if published_from is not None and published_to is not None:
+        batch_document_ids = list({row["document_id"] for row in version_rows})
+        published_document_rows = (
+            db.table("documents")
+            .select("id")
+            .in_("id", batch_document_ids)
+            .gte("published_at", published_from.isoformat())
+            .lt("published_at", published_to.isoformat())
+            .execute()
+            .data
+        )
+        published_document_ids = {row["id"] for row in published_document_rows}
+        version_rows = [
+            row for row in version_rows if row["document_id"] in published_document_ids
+        ]
+        if not version_rows:
+            return []
+
     if not version_rows:
         return []
 
