@@ -91,8 +91,24 @@ export function fetchKpiSummary() {
 
 // 대시보드 화면 하나가 여러 API를 한 번에 부르지 않게, 한 번에 다 가져오는 편의 함수도 둡니다.
 // kpiSummary만 실데이터이고 나머지는 목업인 혼합 상태입니다 — 항목별로 하나씩 교체합니다.
+//
+// ⚠ kpiSummary는 별도로 try/catch합니다 — 게스트(비로그인)는 /dashboard/summary가 401을
+//   내는데, 예전엔 이걸 그대로 던져서 news/issues/trend/keywords(전부 목업이라 로그인과
+//   무관하게 항상 뜰 수 있는 데이터)까지 통째로 빈 화면이 되어버렸습니다. 이제 KPI만
+//   실패하면 KPI 카드만 "—"로 두고, 나머지 섹션은 정상적으로 보여줍니다.
 export async function fetchDashboard() {
-  const kpiSummary = await fetchKpiSummary();
+  let kpiSummary;
+  try {
+    kpiSummary = await fetchKpiSummary();
+  } catch (err) {
+    console.error('[dashboardApi] fetchKpiSummary 실패(게스트이거나 인증 만료):', err);
+    kpiSummary = {
+      collectedDocs: { value: '—', desc: '' },
+      generatedReports: { value: '—', desc: '' },
+      wikiDocs: { value: '—', desc: '' },
+      avgConfidence: { value: '—', desc: '' },
+    };
+  }
   return {
     news: MOCK_NEWS,
     issues: MOCK_ISSUES,
