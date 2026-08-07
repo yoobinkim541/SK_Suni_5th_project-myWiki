@@ -5,6 +5,11 @@ from pypdf import PdfReader
 from src.analysis.interface import EvidenceRef, SectionDraft
 from src.report.pdf_renderer import (
     PdfReportDocument,
+    PdfSection,
+    K_IMPLICATIONS,
+    K_MONITORING,
+    K_OPPORTUNITY,
+    K_RISK,
     REPORT_RENDERER_VERSION,
     build_daily_report_pdf_document,
     build_daily_report_pdf_filename,
@@ -69,12 +74,10 @@ def test_build_daily_report_pdf_filename_normalizes_spaces() -> None:
 
 
 def test_normalize_pdf_text_applies_nfc_and_replaces_unsupported_chars() -> None:
-    decomposed = "한글 ✓ 😀"
+    decomposed = "\u1112\u1161\u11ab \u2713 \U0001F600"
     normalized = normalize_pdf_text(decomposed)
 
-    assert normalized.startswith("한글")
-    assert "[check]" in normalized
-    assert "[emoji]" in normalized
+    assert normalized == "\ud55c [check] [emoji]"
 
 
 def test_render_daily_report_pdf_returns_pdf_bytes() -> None:
@@ -111,13 +114,13 @@ def test_render_daily_report_pdf_returns_pdf_bytes() -> None:
 
 
 def test_render_daily_report_pdf_preserves_korean_text_for_extraction() -> None:
-    body = "한글 본문입니다. 수율 개선과 생산 확대가 동시에 진행됩니다."
-    evidence = "엔비디아향 HBM 출하가 늘고 있습니다."
-    assert "한글 본문" in repr(body)
+    title = "\uc77c\uc77c \uc0b0\uc5c5 \ub3d9\ud5a5 \ubcf4\uace0\uc11c"
+    body = "\ud55c\uae00 \ubcf8\ubb38\uc785\ub2c8\ub2e4. \uc218\uc728 \uac1c\uc120\uacfc \uc0dd\uc0b0 \uc548\uc815\ud654\uac00 \ub3d9\uc2dc\uc5d0 \uc9c4\ud589\ub429\ub2c8\ub2e4."
+    evidence = "\uc5d4\ube44\ub514\uc544 HBM \ucd9c\ud558\uac00 \ub298\uace0 \uc788\uc2b5\ub2c8\ub2e4."
 
     document = PdfReportDocument(
-        title=f"일일 산업 동향 보고서 {REPORT_RENDERER_VERSION}",
-        subtitle="sk-요약-2026-08-03",
+        title=f"{title} {REPORT_RENDERER_VERSION}",
+        subtitle="sk-report-2026-08-03",
         generated_at="2026-08-03T09:00:00+09:00",
         version=7,
         sections=(
@@ -126,8 +129,8 @@ def test_render_daily_report_pdf_preserves_korean_text_for_extraction() -> None:
                 version=1,
                 sections=[
                     SectionDraft(
-                        category="공급망·생산",
-                        title="HBM 양산 확대",
+                        category="supply-chain",
+                        title="HBM \uc591\uc0b0 \uc548\uc815\ud654",
                         content=body,
                         confidence_score=0.91,
                         evidences=[
@@ -147,8 +150,47 @@ def test_render_daily_report_pdf_preserves_korean_text_for_extraction() -> None:
     pdf_bytes = render_daily_report_pdf(document)
     extracted = _extract_text(pdf_bytes)
 
-    assert "일일 산업 동향 보고서" in extracted
-    assert "HBM 양산 확대" in extracted
-    assert "한글 본문입니다." in extracted
-    assert "생산 확대가 동시에 진행됩니다." in extracted
-    assert "엔비디아향 HBM 출하가 늘고 있습니다." in extracted
+    assert title in extracted
+    assert "HBM \uc591\uc0b0 \uc548\uc815\ud654" in extracted
+    assert "\ud55c\uae00 \ubcf8\ubb38\uc785\ub2c8\ub2e4." in extracted
+    assert "\uc0dd\uc0b0 \uc548\uc815\ud654\uac00 \ub3d9\uc2dc\uc5d0 \uc9c4\ud589\ub429\ub2c8\ub2e4." in extracted
+    assert "\uc5d4\ube44\ub514\uc544 HBM \ucd9c\ud558\uac00 \ub298\uace0 \uc788\uc2b5\ub2c8\ub2e4." in extracted
+
+
+def test_render_daily_report_pdf_splits_long_implications_without_layout_error() -> None:
+    def _items(prefix: str) -> list[str]:
+        return [
+            f"- {prefix} detailed implication line {index:02d} keeps the full report content available for review and page splitting marker-{prefix}-{index:02d}"
+            for index in range(90)
+        ]
+
+    body = "\n".join(
+        [K_OPPORTUNITY, *_items("opportunity"), "", K_RISK, *_items("risk"), "", K_MONITORING, *_items("monitoring")]
+    )
+    document = PdfReportDocument(
+        title="Daily Report",
+        subtitle="2026-08-08",
+        generated_at="2026-08-08T08:00:00+09:00",
+        version=18,
+        sections=(
+            PdfSection(
+                category="",
+                title=K_IMPLICATIONS,
+                body=body,
+                confidence_label="",
+                section_type="implications",
+            ),
+        ),
+    )
+
+    pdf_bytes = render_daily_report_pdf(document)
+    reader = PdfReader(BytesIO(pdf_bytes))
+    extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 0
+    assert len(reader.pages) >= 2
+    assert K_IMPLICATIONS in extracted
+    assert "marker-opportunity-89" in extracted
+    assert "marker-risk-89" in extracted
+    assert "marker-monitoring-89" in extracted

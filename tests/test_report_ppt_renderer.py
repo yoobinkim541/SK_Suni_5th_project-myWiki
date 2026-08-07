@@ -21,7 +21,11 @@ K_BODY = "\uad6d\ub0b4 \uba54\ubaa8\ub9ac \uc81c\uc870\uc0ac\uc640 \uacf5\uae09\
 K_EVIDENCE = "HBM \uc218\uc694 \ud655\ub300\uc5d0 \ub9de\ucdb0 \uad00\ub828 \uacf5\uae09\ub9dd \uc804\ubc18\uc5d0\uc11c \ud22c\uc790 \uc18d\ub3c4\uac00 \ube68\ub77c\uc9c0\uace0 \uc788\ub2e4."
 
 
-def make_section(*, status: ReportSectionStatus = ReportSectionStatus.COMPLETED) -> ReportSectionDraft:
+def make_section(
+    *,
+    status: ReportSectionStatus = ReportSectionStatus.COMPLETED,
+    title: str = K_SECTION,
+) -> ReportSectionDraft:
     return ReportSectionDraft(
         issue_key="issue-1",
         representative_analysis_result_id="analysis-1",
@@ -29,7 +33,7 @@ def make_section(*, status: ReportSectionStatus = ReportSectionStatus.COMPLETED)
         importance_score=88,
         impact_direction=ImpactDirection.OPPORTUNITY,
         time_horizon=TimeHorizon.MID_TERM,
-        title=K_SECTION,
+        title=title,
         current_summary=K_BODY,
         key_facts=["\ud575\uc2ec \uc0ac\uc2e4 1", "\ud575\uc2ec \uc0ac\uc2e4 2"],
         implications=["SK\ud558\uc774\ub2c9\uc2a4 \uc218\ud61c\uc0ac \ud655\ub300"],
@@ -132,3 +136,30 @@ def test_render_daily_report_ppt_creates_agenda_and_evidence_slides() -> None:
     presentation = Presentation(BytesIO(render_daily_report_ppt(report_document)))
 
     assert len(presentation.slides) >= 4
+
+
+def test_render_daily_report_ppt_keeps_wrapped_highlight_title_above_divider() -> None:
+    long_title = "SK\ud558\uc774\ub2c9\uc2a4 \ubbf8\uad6d \uc0c1\uc7a5 \ud6c4 \uc6d4\uac00 \uae0d\uc815 \uc804\ub9dd\uacfc AI \uba54\ubaa8\ub9ac \uc218\uc694 \uad6c\uc870\uc801 \ubcc0\ud654 \ubc0f \ucc28\uc138\ub300 \uc2dc\uc7a5 \uacbd\uc7c1 \uc2ec\ud654"
+    report_document = build_daily_report_ppt_document(
+        report_key="daily-trends-2026-08-03",
+        version=1,
+        sections=[make_section(title=long_title)],
+        report_date=date(2026, 8, 3),
+    )
+
+    presentation = Presentation(BytesIO(render_daily_report_ppt(report_document)))
+    expected_title = f"1. {long_title} | Highlights"
+    highlight_slide = next(
+        slide
+        for slide in presentation.slides
+        if any(getattr(shape, "text", "").strip() == expected_title for shape in slide.shapes)
+    )
+    shapes = list(highlight_slide.shapes)
+    title_index = next(
+        index for index, shape in enumerate(shapes) if getattr(shape, "text", "").strip() == expected_title
+    )
+    title_shape = shapes[title_index]
+    divider_shape = shapes[title_index + 1]
+
+    assert title_shape.text == expected_title
+    assert title_shape.top + title_shape.height <= divider_shape.top

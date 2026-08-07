@@ -9,7 +9,7 @@ from supabase import Client
 
 from ..analysis.repository import get_supabase
 from .markdown_renderer import render_generated_report_markdown
-from .models import ArtifactType, GeneratedReport
+from .models import ArtifactType, GeneratedReport, ReportSectionStatus
 from .repository import (
     ReportPersistenceError,
     SavedReportArtifact,
@@ -215,7 +215,7 @@ def create_and_save_pdf_artifact(
 
     rendered_pdf = pdf_bytes
     if rendered_pdf is None:
-        rendered_pdf = _render_generated_report_pdf(report)
+        rendered_pdf = _render_generated_report_pdf(_build_artifact_render_report(report))
 
     return save_pdf_report_artifact(
         report_id=report.report_id,
@@ -242,15 +242,16 @@ def create_and_save_docx_artifact(
 
     rendered_docx = docx_bytes
     if rendered_docx is None:
-        report_key = _build_report_key_from_report(report)
-        generated_at = report.generated_at.isoformat() if report.generated_at is not None else None
+        render_report = _build_artifact_render_report(report)
+        report_key = _build_report_key_from_report(render_report)
+        generated_at = render_report.generated_at.isoformat() if render_report.generated_at is not None else None
         word_document = build_daily_report_word_document(
             report_key=report_key,
-            version=report.version,
-            sections=report.sections,
+            version=render_report.version,
+            sections=render_report.sections,
             generated_at=generated_at,
-            report_date=report.report_date,
-            title=report.title,
+            report_date=render_report.report_date,
+            title=render_report.title,
         )
         rendered_docx = render_daily_report_word(word_document)
 
@@ -279,15 +280,16 @@ def create_and_save_pptx_artifact(
 
     rendered_pptx = pptx_bytes
     if rendered_pptx is None:
-        report_key = _build_report_key_from_report(report)
-        generated_at = report.generated_at.isoformat() if report.generated_at is not None else None
+        render_report = _build_artifact_render_report(report)
+        report_key = _build_report_key_from_report(render_report)
+        generated_at = render_report.generated_at.isoformat() if render_report.generated_at is not None else None
         ppt_document = build_daily_report_ppt_document(
             report_key=report_key,
-            version=report.version,
-            sections=report.sections,
+            version=render_report.version,
+            sections=render_report.sections,
             generated_at=generated_at,
-            report_date=report.report_date,
-            title=report.title,
+            report_date=render_report.report_date,
+            title=render_report.title,
         )
         rendered_pptx = render_daily_report_ppt(ppt_document)
 
@@ -459,6 +461,24 @@ def _cleanup_uploaded_artifact(
 def _build_report_key_from_report(report: GeneratedReport) -> str:
     return f"{report.report_type.value}:{report.workspace_id}:{report.report_date.isoformat()}"
 
+
+def _build_artifact_render_report(report: GeneratedReport) -> GeneratedReport:
+    render_report = report.model_copy(deep=True)
+    for section in render_report.sections:
+        if section.status == ReportSectionStatus.DRAFTING and _section_has_renderable_content(section):
+            section.status = ReportSectionStatus.COMPLETED
+    return render_report
+
+
+def _section_has_renderable_content(section) -> bool:
+    return bool(
+        section.current_summary
+        or section.key_facts
+        or section.historical_context
+        or section.implications
+        or section.watch_points
+        or section.news_citations
+    )
 
 def _validate_binary_payload(payload: bytes, *, field_name: str) -> bytes:
     if not isinstance(payload, (bytes, bytearray)):

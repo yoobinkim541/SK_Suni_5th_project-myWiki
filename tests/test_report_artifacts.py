@@ -12,6 +12,7 @@ from src.analysis.models import Category
 from src.report.artifact_service import (
     DEFAULT_REPORT_ARTIFACT_BUCKET,
     MARKDOWN_CONTENT_TYPE,
+    PDF_CONTENT_TYPE,
     ReportArtifactConflictError,
     ReportArtifactError,
     ReportArtifactUploadError,
@@ -19,6 +20,7 @@ from src.report.artifact_service import (
     compute_markdown_content_hash,
     _render_generated_report_pdf,
     create_and_save_markdown_artifact,
+    create_and_save_pdf_artifact,
     encode_markdown_payload,
     save_markdown_report_artifact,
 )
@@ -248,7 +250,7 @@ def test_build_report_artifact_object_key_uses_project_path_rule() -> None:
 
 
 def test_encode_markdown_payload_uses_utf8_bytes() -> None:
-    markdown = "# 蹂닿퀬??n?쒓? 蹂몃Ц"
+    markdown = "# 癰귣떯???n??? 癰귣챶揆"
 
     payload = encode_markdown_payload(markdown)
 
@@ -264,7 +266,7 @@ def test_compute_markdown_content_hash_is_deterministic() -> None:
 
 def test_save_markdown_report_artifact_uploads_and_persists_metadata() -> None:
     supabase = FakeSupabase()
-    markdown = "# 蹂닿퀬??n蹂몃Ц"
+    markdown = "# 癰귣떯???n癰귣챶揆"
 
     artifact = save_markdown_report_artifact(
         report_id="report-1",
@@ -515,3 +517,19 @@ def test_render_generated_report_pdf_includes_llm_analysis_blocks() -> None:
     assert "fact" in extracted
     assert "implication" in extracted
     assert "watch" in extracted
+
+
+def test_create_and_save_pdf_artifact_renders_drafting_sections_without_mutating_report() -> None:
+    supabase = FakeSupabase()
+    report = make_report()
+    original_report = deepcopy(report)
+
+    artifact = create_and_save_pdf_artifact(report=report, supabase=supabase)
+    uploaded_pdf = supabase.last_upload["file"] if supabase.last_upload is not None else b""
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(uploaded_pdf)).pages)
+
+    assert artifact.mime_type == PDF_CONTENT_TYPE
+    assert uploaded_pdf.startswith(b"%PDF")
+    assert "title-issue-1" in extracted
+    assert "summary" in extracted
+    assert report == original_report
