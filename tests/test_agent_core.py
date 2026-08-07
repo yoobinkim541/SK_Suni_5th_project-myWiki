@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.agent.core import MAX_TOOL_ROUNDS, AgentResult, WikiAgent
+from src.agent.core import DOCUMENT_TOOLS, MAX_TOOL_ROUNDS, TOOLS, AgentResult, WikiAgent
 
 
 # ---------------------------------------------------------------------------
@@ -448,6 +448,62 @@ def test_answer_uses_document_answer_when_wiki_has_no_answer(agent, wiki_tools, 
     assert result.citations[0].wiki_slug is None
     wiki_tools.search_documents.assert_called_once_with("SK하이닉스 ADR 상장")
     wiki_tools.read_document.assert_called_once_with("doc-ver-1")
+
+
+def test_document_answer_passes_document_tools_not_wiki_tools_to_model(agent, wiki_tools, monkeypatch):
+    """_document_answer가 실수로 위키용 TOOLS를 모델에 넘기면(예: _run_grounded_answer의
+    tools 인자 배선이 잘못 꼬이면) 모델이 search_wiki_pages/read_wiki_page 같은 위키
+    도구를 호출하게 되는데, 이 브랜치 이전 테스트들은 전부 _call_model을 통째로
+    monkeypatch해서 실제로 전달된 tools kwarg 값을 검증하지 않았다 — 이 테스트가
+    그 공백을 메운다. 위키 단계(첫 라운드) 호출들의 tools는 TOOLS와 동일 객체여야
+    하고, 원문 단계(위키가 근거 없음으로 끝난 뒤 이어지는 라운드) 호출들의 tools는
+    DOCUMENT_TOOLS와 동일 객체여야 한다(위키용 TOOLS가 아니어야 한다)."""
+    wiki_tools.search_documents.return_value = [
+        FakeDocumentSearchHit(document_version_id="doc-ver-1", title="SK하이닉스 ADR 상장 공시", score=0.7)
+    ]
+    wiki_tools.read_document.return_value = FakeDocumentDetail(
+        document_version_id="doc-ver-1",
+        title="SK하이닉스 ADR 상장 공시",
+        markdown="SK하이닉스가 나스닥에 ADR을 상장했다.",
+        canonical_url="https://dart.fss.or.kr/example",
+        source_name="DART - SK하이닉스",
+        published_at="2026-07-10T00:00:00+00:00",
+    )
+    citation = {
+        "document_version_id": "doc-ver-1",
+        "quote": "SK하이닉스가 나스닥에 ADR을 상장했다.",
+        "relevance_score": 0.9,
+    }
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "search_documents", {"query": "SK하이닉스 ADR 상장"})),
+        tool_call_response(("call-3", "read_document", {"document_version_id": "doc-ver-1"})),
+        tool_call_response(("call-4", "submit_answer", {
+            "answer": "SK하이닉스가 나스닥에 ADR을 상장했다. [1]",
+            "citations": [citation],
+        })),
+    ]
+    captured_tools: list[list[dict] | None] = []
+
+    def capturing_call_model(messages, use_tools=True, tools=None):
+        captured_tools.append(tools)
+        return responses[len(captured_tools) - 1]
+
+    monkeypatch.setattr(agent, "_call_model", capturing_call_model)
+
+    result = agent.answer("SK하이닉스 ADR 상장 공시가 뭐야?")
+
+    assert result.has_answer is True
+    assert len(captured_tools) == 4
+    # 라운드 1(call-1)은 위키 단계 — tools는 위키용 TOOLS와 동일 객체여야 한다.
+    assert captured_tools[0] is TOOLS
+    # 라운드 2~4(call-2, call-3, call-4)는 원문 단계 — tools는 DOCUMENT_TOOLS와 동일
+    # 객체여야 하고, 위키용 TOOLS가 아니어야 한다.
+    assert captured_tools[1] is DOCUMENT_TOOLS
+    assert captured_tools[2] is DOCUMENT_TOOLS
+    assert captured_tools[3] is DOCUMENT_TOOLS
+    for tools_arg in captured_tools[1:]:
+        assert tools_arg is not TOOLS
 
 
 def test_document_answer_forces_wiki_slug_to_none_even_if_model_sends_one(agent, wiki_tools, monkeypatch):
