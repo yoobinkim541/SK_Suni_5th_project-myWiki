@@ -34,7 +34,7 @@ class FakeTable:
         self.rows = [dict(r) for r in rows]
         self.eq_filters: list[tuple[str, object]] = []
         self.in_filters: list[tuple[str, set[object]]] = []
-        self.ordering: list[tuple[str, bool]] = []
+        self.ordering: list[tuple[str, bool, bool | None]] = []
         self.row_limit: int | None = None
         self._want_single = False
 
@@ -49,8 +49,8 @@ class FakeTable:
         self.in_filters.append((field, set(values)))
         return self
 
-    def order(self, field: str, desc: bool = False) -> "FakeTable":
-        self.ordering.append((field, desc))
+    def order(self, field: str, desc: bool = False, nullsfirst: bool | None = None) -> "FakeTable":
+        self.ordering.append((field, desc, nullsfirst))
         return self
 
     def limit(self, value: int) -> "FakeTable":
@@ -67,8 +67,15 @@ class FakeTable:
             rows = [r for r in rows if r.get(field) == value]
         for field, values in self.in_filters:
             rows = [r for r in rows if r.get(field) in values]
-        for field, desc in reversed(self.ordering):
-            rows = sorted(rows, key=lambda r: r.get(field) or "", reverse=desc)
+        for field, desc, nullsfirst in reversed(self.ordering):
+            effective_nullsfirst = desc if nullsfirst is None else nullsfirst
+            non_null = sorted(
+                (r for r in rows if r.get(field) is not None),
+                key=lambda r: r[field],
+                reverse=desc,
+            )
+            nulls = [r for r in rows if r.get(field) is None]
+            rows = (nulls + non_null) if effective_nullsfirst else (non_null + nulls)
         if self.row_limit is not None:
             rows = rows[: self.row_limit]
         if self._want_single:
@@ -80,9 +87,12 @@ class FakeSupabase:
     def __init__(self, tables: dict[str, list[dict]], objects: dict[str, bytes] | None = None):
         self.tables = tables
         self.storage = FakeStorage(objects or {})
+        self.created_tables: dict[str, list[FakeTable]] = {}
 
     def table(self, name: str) -> FakeTable:
-        return FakeTable(self.tables.get(name, []))
+        fake_table = FakeTable(self.tables.get(name, []))
+        self.created_tables.setdefault(name, []).append(fake_table)
+        return fake_table
 
 
 def _document_row(doc_id: str, title: str, published_at: str, status: str = "active") -> dict:
@@ -226,3 +236,66 @@ def test_get_document_detail_returns_none_when_workspace_mismatch():
     detail = document_search.get_document_detail(WORKSPACE_ID, "ver-1", supabase=supabase)
 
     assert detail is None
+
+
+def test_search_documents_skips_candidate_with_missing_storage_object():
+    """후보 문서 하나의 storage object가 없어도(FileNotFoundError) 전체 스캔이
+    죽지 않고, 다운로드에 성공한 나머지 후보만 결과에 포함돼야 한다."""
+    supabase = FakeSupabase(
+        tables={
+            "documents": [
+                _document_row("doc-1", "HBM 수요 전망", "2026-08-01T00:00:00+00:00"),
+                _document_row("doc-2", "HBM 공급 부족", "2026-08-02T00:00:00+00:00"),
+            ],
+            "document_versions": [
+                _version_row("ver-1", "doc-1", 1, "processed/ws-1/doc-1/1.md"),
+                _version_row("ver-2", "doc-2", 1, "processed/ws-1/doc-2/1.md"),
+            ],
+        },
+        objects={
+            # doc-2의 markdown object가 없다 — download()가 FileNotFoundError를 던진다.
+            "ws-1/doc-1/1.md": "HBM 수요 전망 기사".encode("utf-8"),
+        },
+    )
+
+    results = document_search.search_documents(WORKSPACE_ID, "HBM 수요", limit=5, supabase=supabase)
+
+    assert len(results) == 1
+    assert results[0].document_version_id == "ver-1"
+
+
+def test_get_document_detail_returns_none_when_storage_object_missing():
+    """markdown storage object가 없으면(FileNotFoundError) 예외 없이 None을 반환한다."""
+    supabase = FakeSupabase(
+        tables={
+            "document_versions": [_version_row("ver-1", "doc-1", 1, "processed/ws-1/doc-1/1.md")],
+            "documents": [_document_row("doc-1", "SK하이닉스 ADR 상장", "2026-07-10T00:00:00+00:00")],
+            "sources": [{"id": "source-1", "name": "DART - SK하이닉스"}],
+        },
+        objects={},
+    )
+
+    detail = document_search.get_document_detail(WORKSPACE_ID, "ver-1", supabase=supabase)
+
+    assert detail is None
+
+
+def test_search_documents_orders_by_published_at_with_nulls_last():
+    """published_at 정렬에 nullsfirst=False가 명시적으로 전달돼야 한다 — 안 그러면
+    Postgres 기본 동작(desc일 때 NULLS FIRST)이 published_at이 비어있는 문서를
+    스캔 윈도우 앞부분으로 밀어넣어, 실제 최신 문서가 밀려날 수 있다."""
+    supabase = FakeSupabase(
+        tables={
+            "documents": [_document_row("doc-1", "HBM 수요 전망", "2026-08-01T00:00:00+00:00")],
+            "document_versions": [_version_row("ver-1", "doc-1", 1, "processed/ws-1/doc-1/1.md")],
+        },
+        objects={"ws-1/doc-1/1.md": "HBM 수요 전망".encode("utf-8")},
+    )
+
+    document_search.search_documents(WORKSPACE_ID, "HBM 수요", limit=5, supabase=supabase)
+
+    documents_table = supabase.created_tables["documents"][0]
+    ordering_calls = [(field, desc) for field, desc, _ in documents_table.ordering if field == "published_at"]
+    assert ("published_at", True) in ordering_calls
+    nullsfirst_values = [nullsfirst for field, desc, nullsfirst in documents_table.ordering if field == "published_at"]
+    assert nullsfirst_values == [False]

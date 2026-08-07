@@ -14,6 +14,7 @@ src/wiki/repository.py::search_wiki_contexts()와 같은 스코어링(title 60% 
 """
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -22,6 +23,8 @@ from supabase import Client
 
 from ..analysis.repository import get_supabase
 from . import storage
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SCAN_LIMIT = 50
 """
@@ -62,7 +65,7 @@ def search_documents(
         .select("id, title")
         .eq("workspace_id", workspace_id)
         .eq("status", "active")
-        .order("published_at", desc=True)
+        .order("published_at", desc=True, nullsfirst=False)
         .limit(DEFAULT_SCAN_LIMIT)
         .execute()
         .data
@@ -93,8 +96,16 @@ def search_documents(
     for document_id, version in latest_version_by_document.items():
         title = titles_by_document_id[document_id]
         bucket, path = storage.split_key(version["markdown_object_key"])
-        markdown_bytes = db.storage.from_(bucket).download(path)
-        content = markdown_bytes.decode("utf-8")
+        try:
+            markdown_bytes = db.storage.from_(bucket).download(path)
+            content = markdown_bytes.decode("utf-8")
+        except Exception:
+            logger.warning(
+                "document_search: markdown 다운로드 실패, 후보 건너뜀 (document_version_id=%s)",
+                version["id"],
+                exc_info=True,
+            )
+            continue
 
         score = _score_document(title=str(title), content=content, query_token_set=query_token_set)
         if score is None:
@@ -146,7 +157,15 @@ def get_document_detail(
             source_name = source_res.data.get("name")
 
     bucket, path = storage.split_key(version["markdown_object_key"])
-    markdown_bytes = db.storage.from_(bucket).download(path)
+    try:
+        markdown_bytes = db.storage.from_(bucket).download(path)
+    except Exception:
+        logger.warning(
+            "document_search: markdown 다운로드 실패 (document_version_id=%s)",
+            document_version_id,
+            exc_info=True,
+        )
+        return None
 
     return DocumentDetail(
         document_version_id=str(version["id"]),
