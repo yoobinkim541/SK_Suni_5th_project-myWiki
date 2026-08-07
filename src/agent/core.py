@@ -35,6 +35,10 @@ MAX_TOOL_ROUNDS = 10  # 무한루프 방지 — 실사용 로그에서 6일 때 
 
 logger = logging.getLogger(__name__)
 
+
+class OpenRouterEmptyResponseError(RuntimeError):
+    """OpenRouter가 예외 없이 choices가 비어 있는 응답을 줬을 때(실측 사례)."""
+
 SYSTEM_PROMPT = """\
 너는 myWiki의 답변 Agent다. 규칙:
 1. 반드시 read_wiki_page로 실제 읽은 위키 문서 내용만 근거로 답변해라.
@@ -185,8 +189,16 @@ class WikiAgent:
         """위키 근거로 먼저 답을 찾고(_wiki_answer), 못 찾으면 일반 LLM 지식으로
         한 번 더 시도한다(_llm_fallback_answer) — 이때는 반드시 is_llm_fallback=True로
         표시해서 위키 근거 답변과 구분되게 한다. 폴백마저 실패하면(예외) 원래의
-        has_answer=False 결과를 그대로 낸다 — 폴백 실패를 감추고 거짓 답을 주면 안 된다."""
-        result = self._wiki_answer(question, history)
+        has_answer=False 결과를 그대로 낸다 — 폴백 실패를 감추고 거짓 답을 주면 안 된다.
+
+        _wiki_answer 자체가 예외를 던져도(OpenRouter가 choices=None을 주는 등 실측
+        사례) 그대로 새 나가게 두지 않는다 — 이 요청이 500으로 죽는 대신 근거 없음으로
+        강등해 LLM 폴백을 시도할 기회를 준다."""
+        try:
+            result = self._wiki_answer(question, history)
+        except Exception:  # noqa: BLE001 - OpenRouter 응답 이상 등, 폴백으로 넘긴다
+            logger.warning("wiki_answer_failed_falling_back_to_llm", exc_info=True)
+            result = AgentResult(has_answer=False, no_answer_reason="위키 근거 조회 중 오류 발생")
         if result.has_answer:
             return result
         fallback = self._llm_fallback_answer(question, history)
@@ -229,7 +241,16 @@ class WikiAgent:
 
             for tool_call in message.tool_calls:
                 name = tool_call.function.name
-                args = json.loads(tool_call.function.arguments or "{}")
+                try:
+                    args = json.loads(tool_call.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    # 실측 버그: 모델이 tool call 인자로 잘린(비정상 종료된) JSON을 줄 때가
+                    # 있다 — 그대로 두면 answer() 전체가 크래시한다. 이 호출만 실패로
+                    # 알리고 다음 라운드에서 모델이 다시 시도하게 둔다.
+                    messages.append(
+                        self._tool_result(tool_call.id, {"error": "잘못된 인자(JSON 파싱 실패)"})
+                    )
+                    continue
 
                 if name == "list_wiki_topics":
                     topics = self.wiki_tools.list_wiki_topics()
@@ -322,21 +343,29 @@ class WikiAgent:
         # _llm_fallback_answer(위키 근거 없는 일반 지식 답변)는 tools 없이 호출한다 —
         # WikiTools/citations를 아예 안 주려는 것이므로 도구 자체를 노출하면 안 된다.
         if not use_tools:
-            return self.client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model=model, max_tokens=1500, messages=messages,
             )
-        return self.client.chat.completions.create(
-            model=model,
-            max_tokens=1500,
-            tools=TOOLS,
-            # 매 라운드는 4개 도구 중 하나로 끝나야 한다는 게 아래 로직 전체의 전제다.
-            # tool_choice="auto"(기본값)로 두면 모델이 도구 없이 텍스트로 답을 끝낼 수
-            # 있는데, 특히 대화 히스토리가 있는 짧은 후속 질문("그러면~")에서 모델이
-            # 직전 턴 답변 텍스트를 근거로 오인해 이번 턴 조회를 건너뛰는 경우가 있었다
-            # ("모델이 근거 조회 없이 응답을 종료함"). "required"로 강제해 그 경로를 막는다.
-            tool_choice="required",
-            messages=messages,
-        )
+        else:
+            response = self.client.chat.completions.create(
+                model=model,
+                max_tokens=1500,
+                tools=TOOLS,
+                # 매 라운드는 4개 도구 중 하나로 끝나야 한다는 게 아래 로직 전체의 전제다.
+                # tool_choice="auto"(기본값)로 두면 모델이 도구 없이 텍스트로 답을 끝낼 수
+                # 있는데, 특히 대화 히스토리가 있는 짧은 후속 질문("그러면~")에서 모델이
+                # 직전 턴 답변 텍스트를 근거로 오인해 이번 턴 조회를 건너뛰는 경우가 있었다
+                # ("모델이 근거 조회 없이 응답을 종료함"). "required"로 강제해 그 경로를 막는다.
+                tool_choice="required",
+                messages=messages,
+            )
+        # 실측 버그: OpenRouter가 HTTP 200에 choices=None(또는 빈 배열)인 응답을 줄 때가
+        # 있다 — 예외를 안 던져서 그대로 두면 호출부의 response.choices[0]에서
+        # TypeError로 크래시한다. 여기서 실패로 취급해야 _call_model의 기존 폴백 모델
+        # 재시도 경로(원인이 primary 모델 자체가 아니어도)를 그대로 탄다.
+        if not response.choices:
+            raise OpenRouterEmptyResponseError(f"OpenRouter returned no choices (model={model})")
+        return response
 
     @staticmethod
     def _tool_result(tool_call_id: str, output: object) -> dict:
