@@ -38,3 +38,34 @@ export function fetchDashboardSummary() {
 export function fetchDashboardTrend() {
   return apiFetch('/dashboard/trend');
 }
+
+/**
+ * '오늘의 키워드' 칩용 — 제목에 등장한 낱말 상위 8개 (최근 7일).
+ *
+ * count는 "그 낱말이 등장한 문서 수"입니다. 수집 질의어 건수가 아닙니다 —
+ * 화면 문구가 '언급 순'이라 그쪽을 쓰면 뜻이 어긋납니다.
+ *
+ * @returns {Promise<{keywords: {word: string, count: number}[]}>}
+ */
+export function fetchDashboardKeywords() {
+  return apiFetch('/dashboard/keywords');
+}
+
+/**
+ * '최신 뉴스' 카드용 — 문서 단위로 접은 뒤 발행일 내림차순.
+ *
+ * ⚠ quote는 빈 문자열로 올 수 있습니다(2026-08-07 실측 커버리지 8%).
+ *   분석이 수집을 못 따라가 최신 문서일수록 인용문이 없고, 이 목록은 최신순이라
+ *   하필 그 구간을 고릅니다. 채워 넣지 않고 화면에서 접습니다.
+ *
+ * ⚠ is_doc은 이 경로에서 사실상 항상 false입니다. 발행일 내림차순 상위 N이라
+ *   건수가 적은 공시가 그 구간에 못 듭니다(실측 60건 중 0건).
+ *
+ * @returns {Promise<{items: {
+ *   title, quote, category, tags: string[],
+ *   source_label, source_url, published_at, is_doc,
+ * }[]}>}
+ */
+export function fetchDashboardNews() {
+  return apiFetch('/dashboard/news');
+}

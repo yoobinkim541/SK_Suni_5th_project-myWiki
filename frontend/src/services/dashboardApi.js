@@ -8,11 +8,16 @@
 //                       수집 문서·생성 보고서·위키 문서·평균 신뢰도 4종
 //   [LIVE] trend        GET /dashboard/trend   -> src/api/dashboard_router.py
 //                       최근 7일 일별 수집·채택 (KST 기준)
-//   [목업] news         백엔드 없음
-//   [목업] issues       백엔드 없음
-//   [목업] keywords     백엔드 없음
+//   [LIVE] news         GET /dashboard/news    -> src/api/dashboard_router.py
+//                       문서 단위로 접은 뒤 발행일 내림차순
+//   [LIVE] keywords     GET /dashboard/keywords -> src/api/dashboard_router.py
+//                       제목에 등장한 낱말 상위 8개 (최근 7일)
+//   [목업] issues       백엔드 없음 — summary·level이 분석 산출물이라 조회만으로는
+//                       못 만듭니다. 공시 기반이어야 하는데 /dashboard/news 경로에는
+//                       공시가 거의 안 들어옵니다(별도 조회 필요, 이환희 협의 사항).
 //
 // 목업 항목은 백엔드가 생기기 전까지 지우지 않습니다 — 지우면 화면이 빕니다.
+// MOCK_NEWS·MOCK_KEYWORDS는 VITE_USE_MOCK 분기에서 계속 쓰므로 남겨 둡니다.
 //
 // categoryPreview는 이 파일에서 뺐습니다. #92(대시보드 개편)로 DashboardPage가
 // CategoryPreview를 렌더링하지 않게 됐는데 fetchDashboard()가 값을 계속 반환하고
@@ -25,7 +30,12 @@
 // ⚠ VITE_USE_MOCK은 전역 스위치입니다. 'false'로 두면 이 파일뿐 아니라
 //   agentApi·wikiApi·settingsApi도 함께 실백엔드로 붙습니다.
 
-import { fetchDashboardSummary, fetchDashboardTrend } from '../api/dashboard';
+import {
+  fetchDashboardKeywords,
+  fetchDashboardNews,
+  fetchDashboardSummary,
+  fetchDashboardTrend,
+} from '../api/dashboard';
 import {
   MOCK_NEWS,
   MOCK_ISSUES,
@@ -40,9 +50,42 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 // 하려는 장치라, 실제 백엔드가 생기면 이 함수가 아니라 각 fetch* 함수 안을 바꿉니다.
 const delay = (value) => Promise.resolve(value);
 
-// [목업] 백엔드 없음
+// 발행 시각 -> '12분 전' 같은 상대 시간. 백엔드는 ISO 그대로 주고 여기서 만듭니다 —
+// 서버 시각과 보는 사람의 시각이 다를 수 있어서, 서버가 미리 계산하면 어긋납니다.
+// 하루가 넘으면 상대 표기가 오히려 안 읽혀서 날짜로 바꿉니다.
+function toRelativeTime(iso) {
+  if (!iso) return '';
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return '';
+
+  const minutes = Math.floor((Date.now() - then.getTime()) / 60000);
+  if (minutes < 1) return '방금 전';
+  if (minutes < 60) return `${minutes}분 전`;
+  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}시간 전`;
+  return `${then.getMonth() + 1}.${then.getDate()}`;
+}
+
+// 백엔드 DashboardNewsItemOut -> 뉴스 카드가 기대하는 shape.
+//
+// tags에 ?? []를 거는 이유: DashboardPage가 n.tags.map()을 가드 없이 부릅니다.
+// 백엔드도 항상 배열을 주지만, 여기서 한 번 더 막아야 화면이 안 죽습니다.
+function toNewsItem(item) {
+  return {
+    title: item.title,
+    quote: item.quote || '',
+    category: item.category,
+    tags: item.tags ?? [],
+    isDoc: item.is_doc,
+    sourceLabel: item.source_label,
+    sourceUrl: item.source_url,
+    time: toRelativeTime(item.published_at),
+  };
+}
+
+// [LIVE] VITE_USE_MOCK !== 'false' 일 때만 목업입니다.
 export function fetchNews() {
-  return delay(MOCK_NEWS);
+  if (USE_MOCK) return delay(MOCK_NEWS);
+  return fetchDashboardNews().then((res) => (res.items ?? []).map(toNewsItem));
 }
 
 // [목업] 백엔드 없음
@@ -74,9 +117,14 @@ export function fetchTrend() {
   return fetchDashboardTrend().then((res) => (res.days ?? []).map(toTrendDay));
 }
 
-// [목업] 백엔드 없음
+// [LIVE] VITE_USE_MOCK !== 'false' 일 때만 목업입니다.
+//
+// 칩과 뉴스 카드의 tags는 백엔드에서 같은 키워드 사전을 씁니다. 칩을 눌렀을 때
+// 뉴스가 좁혀지는 게 텍스트 매칭(newsMatchesInterest)이라, 사전이 갈리면
+// 칩을 눌러도 걸리는 카드가 없어 빈 화면이 됩니다. 둘은 같이 실데이터로 붙입니다.
 export function fetchKeywords() {
-  return delay(MOCK_KEYWORDS);
+  if (USE_MOCK) return delay(MOCK_KEYWORDS);
+  return fetchDashboardKeywords().then((res) => res.keywords ?? []);
 }
 
 // 백엔드 DashboardSummaryOut -> KpiCard 4개가 기대하는 kpiSummary shape.
@@ -122,7 +170,7 @@ export function fetchKpiSummary() {
 // 돌려줍니다(차트는 "표시할 추이 데이터가 없습니다"를 그립니다) — 목업으로 덮으면
 // 백엔드가 죽은 걸 정상 화면처럼 보이게 만듭니다.
 export async function fetchDashboard() {
-  const [kpiSummary, trend] = await Promise.all([
+  const [kpiSummary, trend, news, keywords] = await Promise.all([
     fetchKpiSummary().catch((err) => {
       console.error('[dashboardApi] KPI 조회 실패(게스트이거나 인증 만료) — KPI만 빈 상태로 둡니다:', err);
       return {
@@ -136,12 +184,20 @@ export async function fetchDashboard() {
       console.error('[dashboardApi] 추이 조회 실패 — 차트만 빈 상태로 둡니다:', err);
       return [];
     }),
+    fetchNews().catch((err) => {
+      console.error('[dashboardApi] 뉴스 조회 실패 — 뉴스만 빈 상태로 둡니다:', err);
+      return [];
+    }),
+    fetchKeywords().catch((err) => {
+      console.error('[dashboardApi] 키워드 조회 실패 — 칩만 빈 상태로 둡니다:', err);
+      return [];
+    }),
   ]);
   return {
-    news: MOCK_NEWS,
+    news,
     issues: MOCK_ISSUES,
     trend,
-    keywords: MOCK_KEYWORDS,
+    keywords,
     kpiSummary,
   };
 }
