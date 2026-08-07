@@ -103,6 +103,7 @@ export default function AdminPanel() {
   const [sessionMessagesError, setSessionMessagesError] = useState(null);
 
   function loadMembers() {
+    setMembersError(null);
     listWorkspaceMembers()
       .then((rows) => setMembers(rows))
       .catch((e) => setMembersError(e.message || '멤버 목록을 불러오지 못했습니다.'));
@@ -155,13 +156,26 @@ export default function AdminPanel() {
           <SettingsRow label="불러오는 중…" desc=""><div /></SettingsRow>
         )}
         {!membersError && (members ?? []).map((m) => (
-          <MemberRow
-            key={m.user_id}
-            member={m}
-            busy={busyUserId === m.user_id}
-            onRemove={handleRemove}
-            onChangeRole={handleChangeRole}
-          />
+          // 오너 본인 행은 방출/역할변경 대상이 될 수 없다(백엔드도 400으로 거부).
+          // 워크스페이스당 오너는 항상 1명뿐이고 이 패널은 오너에게만 렌더링되므로,
+          // role === 'owner'인 행이 곧 "나"다 — 읽기 전용으로 표시하고 컨트롤을 뺀다.
+          m.role === 'owner' ? (
+            <SettingsRow
+              key={m.user_id}
+              label={`${m.display_name || m.user_id} (나)`}
+              desc={m.email || ''}
+            >
+              <span className={`pt-role ${roleClass(m.role)}`}>{roleLabel(m.role)}</span>
+            </SettingsRow>
+          ) : (
+            <MemberRow
+              key={m.user_id}
+              member={m}
+              busy={busyUserId === m.user_id}
+              onRemove={handleRemove}
+              onChangeRole={handleChangeRole}
+            />
+          )
         ))}
       </SettingsGroup>
 
