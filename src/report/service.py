@@ -282,6 +282,7 @@ def generate_daily_report_artifacts(
     language: str = "ko",
     requested_by: str | None = None,
     formats: list[str] | None = None,
+    analysis_document_version_ids: list[str] | None = None,
     supabase: Client | None = None,
     llm_client=None,
 ) -> dict[str, Any]:
@@ -291,9 +292,11 @@ def generate_daily_report_artifacts(
             formats=[normalize_report_artifact_format(item) for item in formats],
         )
 
+
     config = ReportGenerationConfig(
         requested_by=requested_by,
         artifacts=artifact_config or ReportArtifactConfig(),
+        analysis_document_version_ids=analysis_document_version_ids,
     )
     result = generate_daily_report(
         ReportGenerationRequest(

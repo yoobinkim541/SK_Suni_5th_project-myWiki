@@ -1,0 +1,33 @@
+name: Daily Report Analysis Catch-up
+
+# 22:00 UTC is 07:00 Korea Standard Time. Finish the previous 24 hours'
+# analysis backlog before the 08:00 daily-report generation begins.
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: daily-report-schedule
+  cancel-in-progress: false
+
+jobs:
+  catch-up:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Analyze backlog for the daily report
+        run: python scripts/run_daily_report_analysis_catchup.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
