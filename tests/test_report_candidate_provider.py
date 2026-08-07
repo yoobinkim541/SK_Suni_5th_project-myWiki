@@ -101,6 +101,43 @@ def test_get_report_candidates_applies_seoul_date_range_and_metadata_mapping() -
     assert candidates[0].ranking_score == Decimal("90.2")
 
 
+def test_get_report_candidates_uses_fixed_document_ids_instead_of_report_date() -> None:
+    tables = _tables_for_candidates(
+        published_ats={
+            "doc-in-batch": "2026-08-01T01:00:00+00:00",
+            "doc-outside-batch": "2026-08-02T03:00:00+00:00",
+        }
+    )
+
+    candidates = get_report_candidates(
+        workspace_id="ws-1",
+        report_date=date(2026, 8, 2),
+        document_version_ids=["ver-doc-in-batch-v1"],
+        supabase=FakeSupabase(tables),
+    )
+
+    assert [candidate.document_id for candidate in candidates] == ["doc-in-batch"]
+
+
+def test_get_report_candidates_accepts_a_custom_publication_window() -> None:
+    candidates = get_report_candidates(
+        workspace_id="ws-1",
+        report_date=date(2026, 8, 7),
+        published_from=datetime(2026, 8, 5, 23, tzinfo=timezone.utc),
+        published_to=datetime(2026, 8, 6, 23, tzinfo=timezone.utc),
+        supabase=FakeSupabase(
+            _tables_for_candidates(
+                published_ats={
+                    "doc-start": "2026-08-05T23:00:00+00:00",
+                    "doc-end-minus": "2026-08-06T22:59:59+00:00",
+                    "doc-end": "2026-08-06T23:00:00+00:00",
+                }
+            )
+        ),
+    )
+
+    assert [candidate.document_id for candidate in candidates] == ["doc-end-minus", "doc-start"]
+
 def test_get_report_candidates_maps_disclosure_source_type() -> None:
     """selector.py의 공시 예외(analysis/README.md 참조)가 source_type을 보고
     판단하므로, sources.source_type이 candidate까지 그대로 전달돼야 한다."""

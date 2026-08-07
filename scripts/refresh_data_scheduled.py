@@ -1,18 +1,4 @@
-"""데이터 갱신 주기(workspace_settings.data_refresh_cycle_minutes)를 지킨 채
-수집 -> 정제 -> 분류 -> 신뢰도 -> 중요도 -> 랭킹을 순서대로 도는 게이트.
-
-refresh_wiki_scheduled.py와 같은 구조다 — GitHub Actions는 30분(가장 촘촘한 주기 옵션)마다
-이 스크립트를 부르지만, 실제로 도는 건 설정된 주기가 지났을 때뿐이다.
-
-수집·분석을 원래 scheduled-collection.yml/scheduled-analysis.yml 두 워크플로우로 따로
-돌렸었는데, 그러면 둘 다 "이 주기 값"만 보고 각자 게이트를 통과하다 보니 분석이 그 직전
-수집 결과를 못 받고 그 이전 수집분으로 도는 레이스가 생길 수 있었다. 이 스크립트는
-한 실행 안에서 수집 -> 분석을 순서대로 실행해 그 레이스를 없앤다.
-
-사용법:
-    python scripts/refresh_data_scheduled.py
-"""
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sys
 from datetime import datetime, time, timedelta, timezone
@@ -25,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from scripts.run_analysis_pipeline import run_analysis_pipeline
+from scripts.run_analysis_pipeline import get_adaptive_analysis_limit, run_analysis_pipeline
 from scripts.run_pipeline import run_collect, run_preprocess
 
 from src.pipeline_common.db import get_client
@@ -35,10 +21,7 @@ GRACE_MINUTES = 15
 
 KST = timezone(timedelta(hours=9))
 NIGHTLY_ANALYSIS_WINDOW_KST = (time(0, 0), time(6, 0))
-"""scripts/run_nightly_analysis.py가 이 시간대(KST)에 분류~랭킹을 전담해서 돈다.
-같은 시간에 이 스크립트도 분석 단계를 돌리면 두 프로세스가 같은 "아직 안 된 문서"를
-동시에 집어서 LLM 호출을 중복으로 쓰게 되므로, 이 창 안에서는 분석 단계를 건너뛰고
-수집·정제만 한다 (야간 배치가 못 도는 예외 상황 대비, 수집·정제는 계속 살려둔다)."""
+"""scripts/run_nightly_analysis.py owns analysis from 00:00 to 06:00 KST."""
 
 
 def is_within_nightly_analysis_window(now_utc: datetime) -> bool:
@@ -52,8 +35,6 @@ def log(msg: str) -> None:
 
 
 def is_refresh_due(last_data_refresh_at: str | None, cycle_minutes: int, *, now: datetime) -> bool:
-    """refresh_wiki_scheduled.is_refresh_due와 동일한 로직 — 주기가 안 지났으면 스킵한다.
-    GRACE_MINUTES만큼 조기 허용해서 cron 지연으로 주기가 한 사이클 통째로 밀리는 걸 막는다."""
     if last_data_refresh_at is None:
         return True
     last = datetime.fromisoformat(last_data_refresh_at.replace("Z", "+00:00"))
@@ -64,36 +45,42 @@ def is_refresh_due(last_data_refresh_at: str | None, cycle_minutes: int, *, now:
 def get_workspace_id() -> str:
     rows = get_client().table("workspaces").select("id, name").limit(2).execute().data
     if len(rows) != 1:
-        raise SystemExit(f"workspace_id를 자동으로 하나로 못 정했다 (workspaces 행 {len(rows)}개).")
+        raise SystemExit(f"workspace_id could not be resolved automatically (workspaces={len(rows)}).")
     return str(rows[0]["id"])
 
 
-if __name__ == "__main__":
+def run_scheduled_refresh(*, now: datetime | None = None) -> bool:
     workspace_id = get_workspace_id()
     settings = get_workspace_settings(workspace_id)
 
-    now = datetime.now(timezone.utc)
-    if not is_refresh_due(settings.last_data_refresh_at, settings.data_refresh_cycle_minutes, now=now):
+    current_time = now or datetime.now(timezone.utc)
+    if not is_refresh_due(settings.last_data_refresh_at, settings.data_refresh_cycle_minutes, now=current_time):
         log(
-            f"아직 주기 안 됨 (주기={settings.data_refresh_cycle_minutes}분, "
-            f"마지막 갱신={settings.last_data_refresh_at})"
+            f"refresh skipped (cycle={settings.data_refresh_cycle_minutes}m last={settings.last_data_refresh_at})"
         )
-        sys.exit(0)
+        return False
 
-    gate_now = now  # 게이트 통과 시각 — 수집+분석 완료 후가 아니라 이 시각으로 찍는다
-    log(f"주기 도달 — 수집 시작 (주기={settings.data_refresh_cycle_minutes}분)")
+    gate_now = current_time
+    log(f"refresh started (cycle={settings.data_refresh_cycle_minutes}m)")
 
     collect_summary = run_collect(UUID(workspace_id), limit=None, source_id=None)
-    log(f"수집 완료: {collect_summary}")
+    log(f"collect complete: {collect_summary}")
 
     preprocess_summary = run_preprocess(UUID(workspace_id))
-    log(f"정제 완료: {preprocess_summary}")
+    log(f"preprocess complete: {preprocess_summary}")
 
-    if is_within_nightly_analysis_window(now):
-        log("야간 분석 배치(run_nightly_analysis.py) 전담 시간대라 분석 단계 건너뜀")
+    if is_within_nightly_analysis_window(current_time):
+        log("analysis skipped during nightly analysis window (00:00-06:00 KST)")
     else:
-        log("분석 단계 시작 (분류->신뢰도->중요도->랭킹)")
-        run_analysis_pipeline(workspace_id, limit=50)
+        analysis_limit = get_adaptive_analysis_limit(workspace_id)
+        log(f"analysis pipeline started (limit={analysis_limit})")
+        if run_analysis_pipeline(workspace_id, limit=analysis_limit) is None:
+            log("analysis did not complete; daily report will wait for its 08:00 schedule")
 
     mark_data_refreshed(workspace_id, at=gate_now)
-    log("완료")
+    log("refresh complete (daily report is generated separately at 08:00 KST)")
+    return True
+
+
+if __name__ == "__main__":
+    sys.exit(0 if run_scheduled_refresh() is not None else 1)
