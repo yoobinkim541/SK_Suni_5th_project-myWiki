@@ -227,10 +227,15 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
                 </a>
               </div>
               <h4>{n.title}</h4>
-              <div className="quote">{n.quote}</div>
-              <div className="tags">
-                {n.tags.map((t) => <span className="tag" key={t}>{t}</span>)}
-              </div>
+              {/* 인용문은 분석(importance) 산출물이라 최신 기사일수록 비어 있습니다
+                  (2026-08-07 실측 커버리지 8%). 없는 걸 본문 조각으로 채우면 근거 없는
+                  인용이 되므로, 빈 블록을 그리는 대신 접습니다. */}
+              {n.quote && <div className="quote">{n.quote}</div>}
+              {n.tags?.length > 0 && (
+                <div className="tags">
+                  {n.tags.map((t) => <span className="tag" key={t}>{t}</span>)}
+                </div>
+              )}
               <div className="card-foot">
                 <a className="src-btn" href={n.sourceUrl} target="_blank" rel="noopener" title={`${n.sourceLabel} 원문 보기`}>
                   {n.sourceLabel}
