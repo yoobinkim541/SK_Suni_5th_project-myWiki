@@ -144,3 +144,20 @@ def test_read_document_delegates_to_document_search_module(monkeypatch):
 
     assert result is None
     assert captured == {"workspace_id": "ws-1", "document_version_id": "ver-1"}
+
+
+def test_search_web_delegates_to_web_search_module(monkeypatch):
+    captured = {}
+
+    def fake_search_web(query, limit):
+        captured["query"] = query
+        captured["limit"] = limit
+        return ["fake-hit"]
+
+    monkeypatch.setattr("src.agent.wiki_tools.web_search.search_web", fake_search_web)
+
+    tools = WikiTools(workspace_id="ws-1")
+    result = tools.search_web("SK하이닉스", limit=3)
+
+    assert result == ["fake-hit"]
+    assert captured == {"query": "SK하이닉스", "limit": 3}

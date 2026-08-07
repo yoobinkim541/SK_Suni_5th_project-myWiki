@@ -4,6 +4,7 @@ Wiki·원문 문서 조회 도구 — Agent 전용 어댑터 (Karpathy LLM Wiki 
 Agent 가 list_wiki_topics() → read_wiki_page() 를 순차 호출해 필요한 문서만 읽는다.
 위키에 근거가 없을 때는 search_documents() → read_document()로 수집된 원문(뉴스+DART,
 위키 발행 여부 무관)에서 근거를 찾는다.
+그마저 없을 때는 search_web()으로 실시간 웹(네이버 검색)에서 찾는다.
 실제 DB/Storage 조회는 src/wiki/query.py, src/pipeline_common/document_search.py 에 위임한다.
 
 변경 시 주의:
@@ -15,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..pipeline_common import document_search
+from ..pipeline_common import document_search, web_search
 from ..wiki import query as wiki_query
 from ..wiki.interface import WikiPageContent, WikiPageSummary, WikiSource
 from ..wiki.interface import search_wiki_contexts
@@ -97,3 +98,8 @@ class WikiTools:
     def read_document(self, document_version_id: str) -> Optional[document_search.DocumentDetail]:
         """원문 문서 1건의 전체 내용과 출처 메타데이터(매체명·게시일·원문 링크)를 반환한다."""
         return document_search.get_document_detail(self.workspace_id, document_version_id)
+
+    def search_web(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[web_search.WebSearchHit]:
+        """실시간 웹(네이버 검색)에서 찾는다. 위키·원문 모두 근거가 없을 때(_web_search_answer)만
+        쓰는 3차 검색 도구 — workspace 스코프 데이터가 아니라 workspace_id를 받지 않는다."""
+        return web_search.search_web(query, limit)
