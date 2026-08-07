@@ -391,8 +391,11 @@ def list_participants(session_id: str, profile: dict = Depends(get_current_user)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="세션을 찾을 수 없음")
 
-    rows = db.list_chat_session_participants(session_id)
-    return [ParticipantOut(user_id=r["user_id"], display_name=r.get("display_name")) for r in rows]
+    rows = db.list_chat_session_participants(session_id, workspace_id)
+    return [
+        ParticipantOut(user_id=r["user_id"], display_name=r.get("display_name"), role=r.get("role"))
+        for r in rows
+    ]
 
 
 @app.post(
@@ -403,9 +406,11 @@ def list_participants(session_id: str, profile: dict = Depends(get_current_user)
 def add_participant(
     session_id: str, body: AddParticipantRequest, profile: dict = Depends(get_current_user)
 ):
-    """참여자 추가는 이미 참여 중인 사람이면 누구나 할 수 있다(get_chat_session이 이미
-    참여자만 통과시키므로 별도 체크가 필요 없다). 추가 대상은 같은 워크스페이스
-    소속이어야 한다 — 안 그러면 다른 워크스페이스 사람을 끌어들일 수 있다."""
+    """참여자 추가는 get_chat_session을 통과한(=이미 참여 중인) 사람 중, 워크스페이스
+    역할이 게스트(viewer)가 아니면 할 수 있다 — frontend/src/constants/roles.js의
+    canInviteToSession(owner/admin/editor만 허용, viewer 제외)과 서버 권한을 맞춘다.
+    추가 대상은 같은 워크스페이스 소속이어야 한다 — 안 그러면 다른 워크스페이스
+    사람을 끌어들일 수 있다."""
     workspace_id = _require_workspace(profile)
     session = db.get_chat_session(session_id, workspace_id, profile["id"])
     if session is None:
@@ -413,13 +418,19 @@ def add_participant(
     if session["visibility"] != "team":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="팀 공유 세션에서만 참여자를 관리할 수 있음")
 
+    requester_role = db.get_workspace_role(workspace_id, profile["id"])
+    if requester_role == "viewer":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="게스트는 참여자를 초대할 수 없음")
+
     if db.get_default_workspace_id(body.user_id) != workspace_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="같은 워크스페이스 멤버만 추가할 수 있음")
 
     db.add_chat_session_participant(session_id, body.user_id)
     added_profile = db.get_profile(body.user_id)
     return ParticipantOut(
-        user_id=body.user_id, display_name=added_profile.get("display_name") if added_profile else None
+        user_id=body.user_id,
+        display_name=added_profile.get("display_name") if added_profile else None,
+        role=db.get_workspace_role(workspace_id, body.user_id),
     )
 
 
@@ -428,8 +439,10 @@ def add_participant(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def remove_participant(session_id: str, user_id: str, profile: dict = Depends(get_current_user)):
-    """본인 탈퇴는 항상 허용한다. 다른 사람을 빼는 건 세션 생성자만 가능하다 —
-    참여자끼리 서로 쫓아내지 못하게 막는다."""
+    """본인 탈퇴는 항상 허용한다. 다른 사람을 빼는 건 세션 생성자이거나(기존 규칙),
+    frontend/src/constants/roles.js의 canRemoveFromSession대로 워크스페이스 역할이
+    owner/admin이면 가능하다 — 화면에서 관리자·팀장에게 보여주는 제외 버튼이
+    실제로도 동작해야 하므로, 버튼을 가리는 역할 규칙과 서버 권한을 일치시킨다."""
     workspace_id = _require_workspace(profile)
     session = db.get_chat_session(session_id, workspace_id, profile["id"])
     if session is None:
@@ -437,8 +450,12 @@ def remove_participant(session_id: str, user_id: str, profile: dict = Depends(ge
     if session["visibility"] != "team":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="팀 공유 세션에서만 참여자를 관리할 수 있음")
 
-    if user_id != profile["id"] and session["user_id"] != profile["id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="다른 참여자는 세션 생성자만 뺄 수 있음")
+    is_self = user_id == profile["id"]
+    is_creator = session["user_id"] == profile["id"]
+    if not is_self and not is_creator:
+        requester_role = db.get_workspace_role(workspace_id, profile["id"])
+        if requester_role not in ("owner", "admin"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="다른 참여자는 세션 생성자이거나 관리자·팀장만 뺄 수 있음")
 
     db.remove_chat_session_participant(session_id, user_id)
 
@@ -449,7 +466,9 @@ def list_members(profile: dict = Depends(get_current_user)):
     workspace_id = _require_workspace(profile)
     rows = db.list_workspace_members(workspace_id)
     return [
-        WorkspaceMemberOut(user_id=r["user_id"], display_name=r.get("display_name"), email=r.get("email"))
+        WorkspaceMemberOut(
+            user_id=r["user_id"], display_name=r.get("display_name"), email=r.get("email"), role=r.get("role"),
+        )
         for r in rows
     ]
 

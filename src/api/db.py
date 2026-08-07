@@ -189,7 +189,13 @@ def _flatten_display_name(row: dict) -> dict:
     return row
 
 
-def list_chat_session_participants(session_id: str) -> list[dict]:
+def list_chat_session_participants(session_id: str, workspace_id: str) -> list[dict]:
+    """세션 참여자 목록 + 각자의 워크스페이스 역할(role).
+
+    role은 chat_session_participants가 아니라 workspace_members에 있는 값이라
+    (세션 참여자격과 워크스페이스 역할은 별개 테이블) 참여자 user_id들로 한 번 더
+    조회해서 합친다 — frontend/src/constants/roles.js의 canInviteToSession/
+    canRemoveFromSession이 이 role로 화면 버튼을 가리는 데 쓴다."""
     res = (
         get_supabase()
         .table("chat_session_participants")
@@ -198,7 +204,30 @@ def list_chat_session_participants(session_id: str) -> list[dict]:
         .order("created_at")
         .execute()
     )
-    return [_flatten_display_name(row) for row in res.data]
+    rows = [_flatten_display_name(row) for row in res.data]
+
+    role_by_user_id = _get_workspace_roles(workspace_id, [r["user_id"] for r in rows])
+    for r in rows:
+        r["role"] = role_by_user_id.get(r["user_id"])
+    return rows
+
+
+def _get_workspace_roles(workspace_id: str, user_ids: list[str]) -> dict[str, str]:
+    if not user_ids:
+        return {}
+    res = (
+        get_supabase()
+        .table("workspace_members")
+        .select("user_id, role")
+        .eq("workspace_id", workspace_id)
+        .in_("user_id", list(set(user_ids)))
+        .execute()
+    )
+    return {row["user_id"]: row["role"] for row in res.data}
+
+
+def get_workspace_role(workspace_id: str, user_id: str) -> Optional[str]:
+    return _get_workspace_roles(workspace_id, [user_id]).get(user_id)
 
 
 def _get_email(user_id: str) -> Optional[str]:
@@ -218,7 +247,7 @@ def list_workspace_members(workspace_id: str) -> list[dict]:
     res = (
         get_supabase()
         .table("workspace_members")
-        .select("user_id, profiles(display_name)")
+        .select("user_id, role, profiles(display_name)")
         .eq("workspace_id", workspace_id)
         .execute()
     )
