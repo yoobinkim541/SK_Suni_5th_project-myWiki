@@ -16,7 +16,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from openai import OpenAI
 
@@ -222,13 +222,69 @@ class WikiAgent:
         )
 
     def _wiki_answer(self, question: str, history: Optional[list[dict]] = None) -> AgentResult:
-        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        def handle_list_wiki_topics(args: dict, seen: set[str]) -> object:
+            topics = self.wiki_tools.list_wiki_topics()
+            return [t.__dict__ for t in topics]
+
+        def handle_search_wiki_pages(args: dict, seen: set[str]) -> object:
+            hits = self.wiki_tools.search_wiki_pages(args["query"])
+            return [h.__dict__ for h in hits]
+
+        def handle_read_wiki_page(args: dict, seen: set[str]) -> object:
+            page = self.wiki_tools.read_wiki_page(args["slug"])
+            if page is None:
+                return {"error": "문서를 찾을 수 없음"}
+            seen.update(s.document_version_id for s in page.sources)
+            return {
+                "title": page.title,
+                "markdown": page.markdown,
+                "sources": [s.__dict__ for s in page.sources],
+            }
+
+        return self._run_grounded_answer(
+            question,
+            history,
+            system_prompt=SYSTEM_PROMPT,
+            tools=TOOLS,
+            tool_handlers={
+                "list_wiki_topics": handle_list_wiki_topics,
+                "search_wiki_pages": handle_search_wiki_pages,
+                "read_wiki_page": handle_read_wiki_page,
+            },
+        )
+
+    def _run_grounded_answer(
+        self,
+        question: str,
+        history: Optional[list[dict]],
+        *,
+        system_prompt: str,
+        tools: list[dict],
+        tool_handlers: dict[str, Callable[[dict, set[str]], object]],
+    ) -> AgentResult:
+        """라운드 루프 본체 — _wiki_answer/_document_answer가 공유한다.
+
+        tool_handlers는 {tool 이름: handler}. handler(args, seen_document_version_ids)는
+        JSON 직렬화 가능한 tool 결과를 반환하고, "읽기" 성격의 도구라면
+        seen_document_version_ids를 in-place로 갱신해야 한다(뒤이은 submit_answer의
+        grounding 검증이 이 집합을 기준으로 판정한다). submit_answer/submit_no_answer는
+        두 그라운딩 단계에서 동일하므로 여기서 직접 처리하고 tool_handlers에 넣지 않는다.
+        """
+        messages: list[dict] = [{"role": "system", "content": system_prompt}]
         messages.extend(history or [])
         messages.append({"role": "user", "content": question})
         seen_document_version_ids: set[str] = set()
 
         for _ in range(MAX_TOOL_ROUNDS):
-            response = self._call_model(messages)
+            # tools가 기본 TOOLS와 동일하면 예전 _wiki_answer와 완전히 같은 호출
+            # 형태(_call_model(messages))를 유지한다 — 기존 테스트가 _call_model을
+            # tools 키워드 인자 없는 fake로 monkeypatch하고 있어, 여기서 매번
+            # tools=tools를 넘기면 그 테스트들이 깨진다. tools가 다른 값(예: 향후
+            # _document_answer의 문서 조회 도구 목록)일 때만 명시적으로 전달한다.
+            if tools is TOOLS:
+                response = self._call_model(messages)
+            else:
+                response = self._call_model(messages, tools=tools)
             choice = response.choices[0]
             message = choice.message
 
@@ -252,27 +308,9 @@ class WikiAgent:
                     )
                     continue
 
-                if name == "list_wiki_topics":
-                    topics = self.wiki_tools.list_wiki_topics()
-                    output = [t.__dict__ for t in topics]
+                if name in tool_handlers:
+                    output = tool_handlers[name](args, seen_document_version_ids)
                     messages.append(self._tool_result(tool_call.id, output))
-
-                elif name == "search_wiki_pages":
-                    hits = self.wiki_tools.search_wiki_pages(args["query"])
-                    output = [h.__dict__ for h in hits]
-                    messages.append(self._tool_result(tool_call.id, output))
-
-                elif name == "read_wiki_page":
-                    page = self.wiki_tools.read_wiki_page(args["slug"])
-                    if page is None:
-                        messages.append(self._tool_result(tool_call.id, {"error": "문서를 찾을 수 없음"}))
-                    else:
-                        seen_document_version_ids.update(s.document_version_id for s in page.sources)
-                        messages.append(self._tool_result(tool_call.id, {
-                            "title": page.title,
-                            "markdown": page.markdown,
-                            "sources": [s.__dict__ for s in page.sources],
-                        }))
 
                 elif name == "submit_answer":
                     try:
@@ -293,9 +331,9 @@ class WikiAgent:
                             citations=citations,
                         )
                     else:
-                        # citations가 비었거나, read_wiki_page로 실제 조회한 문서에 없는
-                        # document_version_id를 인용했거나(모델의 지어낸 근거), relevance_score가
-                        # CHECK 제약(0~1) 범위를 벗어남 — 이런 답변을 그대로 저장하면 message_citations
+                        # citations가 비었거나, 실제로 조회한 문서에 없는 document_version_id를
+                        # 인용했거나(모델의 지어낸 근거), relevance_score가 CHECK 제약(0~1)
+                        # 범위를 벗어남 — 이런 답변을 그대로 저장하면 message_citations
                         # FK/CHECK 위반으로 API가 500을 내거나, 근거 없는 답이 저장된다.
                         terminal_result = AgentResult(
                             has_answer=False,
@@ -327,9 +365,9 @@ class WikiAgent:
                 return False
         return True
 
-    def _call_model(self, messages: list[dict], *, use_tools: bool = True):
+    def _call_model(self, messages: list[dict], *, use_tools: bool = True, tools: list[dict] | None = None):
         try:
-            return self._complete(MODEL_NAME, messages, use_tools=use_tools)
+            return self._complete(MODEL_NAME, messages, use_tools=use_tools, tools=tools)
         except Exception:
             if FALLBACK_MODEL_NAME == MODEL_NAME:
                 raise
@@ -337,9 +375,11 @@ class WikiAgent:
                 "openrouter_primary_model_failed_using_fallback",
                 extra={"primary_model": MODEL_NAME, "fallback_model": FALLBACK_MODEL_NAME},
             )
-            return self._complete(FALLBACK_MODEL_NAME, messages, use_tools=use_tools)
+            return self._complete(FALLBACK_MODEL_NAME, messages, use_tools=use_tools, tools=tools)
 
-    def _complete(self, model: str, messages: list[dict], *, use_tools: bool = True):
+    def _complete(
+        self, model: str, messages: list[dict], *, use_tools: bool = True, tools: list[dict] | None = None
+    ):
         # _llm_fallback_answer(위키 근거 없는 일반 지식 답변)는 tools 없이 호출한다 —
         # WikiTools/citations를 아예 안 주려는 것이므로 도구 자체를 노출하면 안 된다.
         if not use_tools:
@@ -350,7 +390,7 @@ class WikiAgent:
             response = self.client.chat.completions.create(
                 model=model,
                 max_tokens=1500,
-                tools=TOOLS,
+                tools=tools if tools is not None else TOOLS,
                 # 매 라운드는 4개 도구 중 하나로 끝나야 한다는 게 아래 로직 전체의 전제다.
                 # tool_choice="auto"(기본값)로 두면 모델이 도구 없이 텍스트로 답을 끝낼 수
                 # 있는데, 특히 대화 히스토리가 있는 짧은 후속 질문("그러면~")에서 모델이
