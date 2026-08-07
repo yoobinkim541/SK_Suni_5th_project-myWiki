@@ -228,6 +228,48 @@ class DashboardTrendOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 오늘의 키워드 · 최신 뉴스 — GET /dashboard/keywords, GET /dashboard/news 전용
+#
+# CategoryKeywordOut/CategoryDocumentOut을 재사용하지 않는다. 모양은 비슷해도
+# 의미가 다르다 — 저쪽 keywords는 '문서를 끌어온 수집 질의어'이고 이쪽은
+# '제목에 등장한 낱말'이다. 같다고 묶으면 한쪽만 바뀔 때 조용히 깨진다.
+# ---------------------------------------------------------------------------
+
+class DashboardKeywordOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    word: str
+    count: int
+
+
+class DashboardKeywordsOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    keywords: list[DashboardKeywordOut]
+
+
+class DashboardNewsItemOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    title: str
+    # 분석이 아직 안 붙은 문서는 빈 문자열이다. 화면이 이 블록을 접는다.
+    quote: str
+    category: str
+    # 항상 배열이다. DashboardPage가 tags.map()을 가드 없이 부른다.
+    tags: list[str]
+    source_label: str
+    source_url: str
+    published_at: datetime | None
+    is_doc: bool
+
+
+class DashboardNewsOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    items: list[DashboardNewsItemOut]
+
+
+# ---------------------------------------------------------------------------
 # 카테고리 현황 — GET /categories/stats 전용
 # ---------------------------------------------------------------------------
 

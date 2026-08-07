@@ -9,7 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from . import db
 from .auth import get_current_user
-from .schemas import DashboardSummaryOut, DashboardTrendOut
+from .schemas import (
+    DashboardKeywordsOut,
+    DashboardNewsOut,
+    DashboardSummaryOut,
+    DashboardTrendOut,
+)
 from ..dashboard import service as dashboard_service
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -34,3 +39,17 @@ def get_trend(profile: dict = Depends(get_current_user)):
     """DashboardPage 동향 차트 전용. 최근 7일 일별 수집·채택 건수 (KST 기준)."""
     workspace_id = _require_workspace(profile)
     return dashboard_service.get_dashboard_trend(workspace_id)
+
+
+@router.get("/keywords", response_model=DashboardKeywordsOut)
+def get_keywords(profile: dict = Depends(get_current_user)):
+    """DashboardPage '오늘의 키워드' 칩 전용. 제목에 등장한 낱말 상위 8개 (최근 7일)."""
+    workspace_id = _require_workspace(profile)
+    return dashboard_service.get_dashboard_keywords(workspace_id)
+
+
+@router.get("/news", response_model=DashboardNewsOut)
+def get_news(profile: dict = Depends(get_current_user)):
+    """DashboardPage '최신 뉴스' 카드 전용. 문서 단위로 접은 뒤 발행일 내림차순."""
+    workspace_id = _require_workspace(profile)
+    return dashboard_service.get_dashboard_news(workspace_id)
