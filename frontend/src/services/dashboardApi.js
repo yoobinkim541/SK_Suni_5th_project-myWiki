@@ -6,9 +6,10 @@
 // 항목별 연동 현황 (2026-08-05 확인):
 //   [LIVE] kpiSummary   GET /dashboard/summary -> src/api/dashboard_router.py
 //                       수집 문서·생성 보고서·위키 문서·평균 신뢰도 4종
+//   [LIVE] trend        GET /dashboard/trend   -> src/api/dashboard_router.py
+//                       최근 7일 일별 수집·채택 (KST 기준)
 //   [목업] news         백엔드 없음
 //   [목업] issues       백엔드 없음
-//   [목업] trend        백엔드 없음
 //   [목업] categoryPreview  백엔드 없음. 분류 체계 미합의 상태라 착수 전 팀 결정 필요
 //                       + #92(대시보드 개편)로 DashboardPage에서 렌더링이 빠졌다.
 //                         fetchDashboard()는 아직 이 값을 반환하지만 지금은 쓰이지 않는다.
@@ -19,7 +20,7 @@
 // ⚠ VITE_USE_MOCK은 전역 스위치입니다. 'false'로 두면 이 파일뿐 아니라
 //   agentApi·wikiApi·settingsApi도 함께 실백엔드로 붙습니다.
 
-import { fetchDashboardSummary } from '../api/dashboard';
+import { fetchDashboardSummary, fetchDashboardTrend } from '../api/dashboard';
 import {
   MOCK_NEWS,
   MOCK_ISSUES,
@@ -45,9 +46,28 @@ export function fetchIssues() {
   return delay(MOCK_ISSUES);
 }
 
-// [목업] 백엔드 없음
+// 백엔드 TrendDayOut -> TrendChart가 기대하는 shape.
+//
+// date는 'YYYY-MM-DD'로 오는데 차트 x축은 폭이 좁아 'MM.DD'만 쓴다. 문자열을
+// 잘라 쓰는 이유는 new Date()로 파싱하면 브라우저 타임존에 따라 하루가 밀려서다 —
+// 백엔드가 이미 KST 기준으로 잘라 보낸 날짜라 여기서 다시 해석하면 안 된다.
+//
+// news/disclosure는 차트가 안 쓰지만 그대로 넘긴다. 나중에 계열을 나눠 그릴 때
+// 서비스 계약을 다시 바꾸지 않아도 되게 한다.
+function toTrendDay(day) {
+  return {
+    date: String(day.date).slice(5).replace('-', '.'),
+    collected: day.collected,
+    adopted: day.adopted,
+    news: day.news,
+    disclosure: day.disclosure,
+  };
+}
+
+// [LIVE] VITE_USE_MOCK !== 'false' 일 때만 목업입니다.
 export function fetchTrend() {
-  return delay(MOCK_TREND);
+  if (USE_MOCK) return delay(MOCK_TREND);
+  return fetchDashboardTrend().then((res) => (res.days ?? []).map(toTrendDay));
 }
 
 // [목업 · 현재 미사용] #92 이후 DashboardPage가 CategoryPreview를 렌더링하지 않습니다.
@@ -90,13 +110,16 @@ export function fetchKpiSummary() {
 }
 
 // 대시보드 화면 하나가 여러 API를 한 번에 부르지 않게, 한 번에 다 가져오는 편의 함수도 둡니다.
-// kpiSummary만 실데이터이고 나머지는 목업인 혼합 상태입니다 — 항목별로 하나씩 교체합니다.
+// kpiSummary·trend가 실데이터이고 나머지는 목업인 혼합 상태입니다 — 항목별로 하나씩 교체합니다.
+//
+// 목업 항목은 fetch* 함수를 거치지 않고 상수를 그대로 씁니다. 실연동된 둘만
+// Promise.all로 병렬 호출해서, 화면이 두 응답을 순차로 기다리지 않게 합니다.
 export async function fetchDashboard() {
-  const kpiSummary = await fetchKpiSummary();
+  const [kpiSummary, trend] = await Promise.all([fetchKpiSummary(), fetchTrend()]);
   return {
     news: MOCK_NEWS,
     issues: MOCK_ISSUES,
-    trend: MOCK_TREND,
+    trend,
     categoryPreview: MOCK_CATEGORY_PREVIEW,
     keywords: MOCK_KEYWORDS,
     kpiSummary,
