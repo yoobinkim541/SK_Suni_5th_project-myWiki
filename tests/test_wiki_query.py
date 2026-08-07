@@ -38,6 +38,11 @@ class FakeTable:
         self.ilike_filters.append((field, pattern))
         return self
 
+    def order(self, field, desc=False):
+        # 이 파일의 테스트는 keyword 필터 자체만 검증하고 정렬 순서는 안 따지므로
+        # no-op — 정렬 자체는 tests/test_wiki_query_list_pages.py가 별도로 검증한다.
+        return self
+
     def limit(self, n):
         self._limit = n
         return self
