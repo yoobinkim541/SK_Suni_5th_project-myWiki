@@ -533,13 +533,17 @@ def copy_message_citations(target_message_id: str, citations: list[dict]) -> Non
 
 
 # ---------------------------------------------------------------------------
-# 회원 탈퇴 — profiles를 하드 삭제하지 않고 소프트 삭제한다.
+# 회원 탈퇴 — profiles/auth.users를 하드 삭제하지 않는다.
 #
 # profiles를 실제로 DELETE하면 chat_sessions.user_id/chat_session_participants.user_id가
 # ON DELETE CASCADE라 이 사용자가 만든 팀 공유 대화가 다른 참여자 화면에서도 사라지고,
 # chat_messages.user_id는 NO ACTION이라 그 사람이 메시지를 하나라도 남겼으면 FK 위반으로
 # 삭제 자체가 막힌다. deleted_at만 세우는 소프트 삭제로 이 문제를 피한다 — 기존 콘텐츠는
 # 작성자 표시(profiles(display_name) 조인)까지 그대로 남는다.
+#
+# 같은 이유로 auth.users도 하드 삭제하지 않는다 — profiles.id -> auth.users.id에도
+# ON DELETE CASCADE(fk_profiles_auth_user)가 걸려 있어서, auth.users를 지우면 위에서
+# 피하려던 CASCADE 체인이 뒷문으로 그대로 재현된다(ban_auth_user 참고).
 # ---------------------------------------------------------------------------
 
 
@@ -559,11 +563,23 @@ def delete_push_subscriptions_for_user(user_id: str) -> None:
     get_supabase().table("push_subscriptions").delete().eq("user_id", user_id).execute()
 
 
-def delete_auth_user(user_id: str) -> None:
-    """Supabase Auth의 실제 로그인 자격을 없앤다(auth.users 행 삭제) — service_role
-    Admin API로만 가능하다(본인이 자기 계정을 클라이언트에서 지울 수 없음).
+# 100년 — GoTrue의 ban_duration은 유한한 값만 받아서 "영구"를 문자 그대로 표현할 방법이
+# 없다. 사실상 영구 차단으로 취급할 수 있는 값을 쓴다.
+PERMANENT_BAN_DURATION = "876000h"
 
-    profiles.id는 auth.users.id를 FK로 참조하지 않으므로(DB 레벨 제약 없음) 이 호출이
-    profiles/chat_sessions 등 우리 테이블에 어떤 CASCADE도 일으키지 않는다 — soft_delete_profile로
-    이미 남긴 deleted_at 흔적은 그대로 유지된다."""
-    get_supabase().auth.admin.delete_user(user_id)
+
+def ban_auth_user(user_id: str) -> None:
+    """Supabase Auth의 실제 로그인을 막는다(auth.users 행은 지우지 않고 ban만 건다) —
+    service_role Admin API로만 가능하다(본인이 자기 계정을 클라이언트에서 못 지움).
+
+    ⚠ 처음엔 auth.admin.delete_user()로 auth.users 행 자체를 지우려 했으나, 실제로는
+    profiles.id -> auth.users.id에 ON DELETE CASCADE FK(fk_profiles_auth_user)가 걸려
+    있어서(information_schema 기반 조회로는 안 잡히고 pg_constraint로 직접 조회해야
+    보임 — cross-schema FK를 information_schema.constraint_column_usage가 못 잡는
+    경우가 있다) auth.users 삭제가 profiles까지 실제로 CASCADE 삭제해 버렸다. 이어서
+    chat_sessions.user_id -> profiles.id도 CASCADE라 이 사용자의 세션까지 지우려다
+    chat_messages의 FK(NO ACTION)에 막혀 통째로 실패하는 걸 프로덕션 auth 로그에서
+    확인했다(2026-08-07) — 즉 soft_delete_profile로 지키려던 것과 정확히 같은 문제를
+    delete_auth_user가 뒷문으로 재현하고 있었다. ban_duration으로 로그인만 막으면
+    auth.users 행이 그대로 남아 이 CASCADE가 전혀 발동하지 않는다."""
+    get_supabase().auth.admin.update_user_by_id(user_id, {"ban_duration": PERMANENT_BAN_DURATION})
