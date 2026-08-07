@@ -437,22 +437,13 @@ def _build_category_flowables(section: PdfSection, styles: StyleSheet1) -> list[
 def _build_implication_flowables(section: PdfSection, styles: StyleSheet1) -> list[object]:
     flowables: list[object] = [Paragraph(_xml_text(section.title), styles["SectionTitle"])]
     grouped = _split_implication_groups(section.body)
-    cells = []
     for label in (K_OPPORTUNITY, K_RISK, K_MONITORING):
         values = grouped.get(label, []) or [K_NO_INFORMATION]
-        cell_body = "<br/>".join(_xml_text(value) for value in values)
-        cells.append([Paragraph(_xml_text(label), styles["BoxTitle"]), Spacer(1, 1.5 * mm), Paragraph(cell_body, styles["Body"])])
-    boxes = Table([cells], colWidths=[(170 * mm) / 3] * 3, hAlign="LEFT")
-    boxes.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), PALE), ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
-        ("INNERGRID", (0, 0), (-1, -1), 0.5, LIGHT_BORDER),
-        ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-        ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
+        flowables.append(Paragraph(_xml_text(label), styles["Subheading"]))
+        flowables.extend(Paragraph(_xml_text(value), styles["Body"]) for value in values)
+        flowables.append(Spacer(1, 2.5 * mm))
     conclusion = _build_conclusion(grouped)
-    flowables.append(boxes)
-    flowables.extend([Spacer(1, 5 * mm), Paragraph(_xml_text(conclusion), styles["Subheading"]), Spacer(1, 2 * mm)])
+    flowables.extend([Spacer(1, 2.5 * mm), Paragraph(_xml_text(conclusion), styles["Subheading"]), Spacer(1, 2 * mm)])
     return flowables
 
 
