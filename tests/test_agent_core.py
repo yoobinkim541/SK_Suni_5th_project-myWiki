@@ -236,7 +236,7 @@ def test_answer_passes_question_and_history_to_first_call(agent, wiki_tools, mon
     # 호출 시점 상태를 보려면 그때그때 복사해서 기록해야 한다.
     captured_calls: list[list[dict]] = []
 
-    def fake_call_model(messages):
+    def fake_call_model(messages, use_tools=True, tools=None):
         captured_calls.append(list(messages))
         return tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"}))
 
@@ -382,9 +382,17 @@ def test_call_model_falls_back_when_primary_returns_no_choices(agent, wiki_tools
 
 def test_answer_falls_back_to_llm_when_wiki_answer_raises(agent, wiki_tools, monkeypatch):
     """_wiki_answer 도중 예외(OpenRouter 호출 실패 등)가 나도 500 성격의 크래시로 새지
-    않고 근거 없음으로 강등한 뒤 LLM 폴백을 시도해야 한다."""
+    않고 근거 없음으로 강등한 뒤, 원문 그라운딩 단계도 정직하게 시도되고(마찬가지로
+    근거 없음), 최종적으로 LLM 폴백을 시도해야 한다.
 
-    def fake_call_model(messages, use_tools=True):
+    fake_call_model이 tools 키워드 인자를 받지 않던 예전 버전은 _document_answer가
+    tools=DOCUMENT_TOOLS로 호출할 때 TypeError를 던졌고, 그 예외는 _safe_run이 잡아서
+    문서 단계를 조용히 "근거 없음"으로 강등시켰다 — 결과 assert는 우연히 여전히
+    성립해서(폴백까지 이어지므로) 문서 단계가 한 번도 실행되지 못한 채로 그린이었다.
+    이제 tools 인자를 받되(값은 안 씀, use_tools로만 분기) 문서 단계도 실제로
+    use_tools=True로 호출되게 해서 그 단계도 정직하게 예외 -> 근거 없음을 거치게 한다."""
+
+    def fake_call_model(messages, use_tools=True, tools=None):
         if use_tools:
             raise RuntimeError("OpenRouter returned no choices")
         return plain_text_response("일반 지식 답변")

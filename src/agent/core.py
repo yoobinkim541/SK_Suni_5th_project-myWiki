@@ -387,15 +387,7 @@ class WikiAgent:
         seen_document_version_ids: set[str] = set()
 
         for _ in range(MAX_TOOL_ROUNDS):
-            # tools가 기본 TOOLS와 동일하면 예전 _wiki_answer와 완전히 같은 호출
-            # 형태(_call_model(messages))를 유지한다 — 기존 테스트가 _call_model을
-            # tools 키워드 인자 없는 fake로 monkeypatch하고 있어, 여기서 매번
-            # tools=tools를 넘기면 그 테스트들이 깨진다. tools가 다른 값(예: 향후
-            # _document_answer의 문서 조회 도구 목록)일 때만 명시적으로 전달한다.
-            if tools is TOOLS:
-                response = self._call_model(messages)
-            else:
-                response = self._call_model(messages, tools=tools)
+            response = self._call_model(messages, tools=tools)
             choice = response.choices[0]
             message = choice.message
 
