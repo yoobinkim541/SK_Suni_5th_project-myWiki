@@ -11,12 +11,19 @@
 import KpiCard from '../dashboard/KpiCard';
 import CategoryRow from './CategoryRow';
 import CategoryKeywordChart from './CategoryKeywordChart';
+import { formatKoreanDate } from '../../lib/formatDate';
 
 // 목업을 기본값으로 두지 않는다. 실연동 후 summary/categories가 undefined로 들어오면
 // 목업이 조용히 fallback돼서, 실데이터가 안 오는 상황을 정상처럼 보이게 만든다.
 // 데이터를 채우는 책임은 CategoryPage에 있다.
 export default function CategoryDetail({
-  date = '2026.07.24 금요일',
+  // 기본값을 '2026.07.24 금요일'로 박아놓고 CategoryPage가 이 prop을 안 넘겨서,
+  // 화면에 고정된 과거 날짜가 그대로 떠 있었다. 기본 인자는 렌더마다 다시 평가되므로
+  // 탭을 자정 넘겨 열어둬도 날짜가 따라간다.
+  date = formatKoreanDate(),
+  // [목업] '일 배치 정상'은 실제와 반대다 — 수집·분석 배치가 매 회차 timeout으로
+  // 잘리고 있다(P1). 배치 상태를 실데이터로 바꾸려면 그게 먼저 풀려야 해서,
+  // 이번에는 날짜만 고치고 이 라벨은 목업으로 남겨둔다.
   statusLabel = '반도체 도메인 · 일 배치 정상',
   summary,
   categories = [],

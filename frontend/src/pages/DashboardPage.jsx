@@ -25,8 +25,11 @@ import KnowledgeGraph from '../components/dashboard/KnowledgeGraph';
 import InterestsBar from '../components/dashboard/InterestsBar';
 import { fetchDashboard } from '../services/dashboardApi';
 import { filterNewsByInterests } from '../data/mockOnboarding';
+import { formatKoreanDate } from '../lib/formatDate';
 
-// 파이프라인 단계 — 시안 ".pipe" 그대로
+// [목업] 파이프라인 단계 — 시안 ".pipe" 그대로. 시각이 고정값이라 실제 배치 시각이
+// 아니다. 배치 상태를 실데이터로 바꾸려면 스케줄러가 매 회차 완주해야 하는데
+// 아직 그렇지 않다(수집·정제·분석이 한 실행의 시간 예산을 나눠 쓴다).
 const PIPELINE_STEPS = [
   { name: '수집', time: '07:12' },
   { name: '정제·검증', time: '07:28' },
@@ -139,7 +142,10 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
     <section className="view on" id="v-dash">
       <div className="ph ph-tight">
         <h2>메인 대시보드</h2>
-        <span className="dt">2026.07.24 금요일</span>
+        <span className="dt">{formatKoreanDate()}</span>
+        {/* [목업] '일 배치 정상'은 실제와 반대다 — 배치가 매 회차 시간 예산에 걸려
+            잘리고 있다. 카테고리 현황 헤더(CategoryDetail.jsx)와 같은 상태이고,
+            배치 상태 실데이터화는 그게 풀린 뒤 두 화면을 함께 다룬다. */}
         <span className="st">반도체 도메인 · 일 배치 <b>정상</b></span>
       </div>
 
