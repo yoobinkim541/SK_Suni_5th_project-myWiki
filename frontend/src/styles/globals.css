@@ -274,8 +274,7 @@ svg text{font-family:inherit}
 .row h3.mu{font-weight:400;color:var(--ink-2)}
 .row p{font-size:12.5px;font-weight:400;color:#68736F;line-height:1.75;max-width:620px}
 .row .meta{text-align:right}
-.row .meta .s{font-size:11px;font-weight:500;color:var(--ink-2)}
-.row .meta .s.doc{color:#175243;font-weight:600}
+.row .meta .s{font-size:11px;font-weight:600;color:#175243}
 .row .meta .w{display:block;font-size:11px;font-weight:400;color:#9AA6A2;margin-top:7px}
 .row.empty{border-left:2px dashed var(--hair);padding-left:16px}
 .legend{margin-top:20px;padding-top:13px;border-top:1px solid var(--hair);
@@ -756,7 +755,7 @@ input[type="text"].fld,input[type="email"].fld{min-width:196px}
 
 /* ---------- 출처 원문 라우팅 링크 ---------- */
 .row .meta a.s{cursor:pointer;transition:color var(--dur-fast) var(--ease)}
-.row .meta a.s::after{content:"↗";font-size:9.5px;font-weight:700;margin-left:4px;color:var(--faint)}
+.row .meta a.s::after{content:"↗";font-size:9.5px;font-weight:700;margin-left:4px;color:currentColor}
 .row .meta a.s:hover,.row .meta a.s:hover::after{color:var(--green)}
 .row .meta a.w{cursor:pointer;transition:color var(--dur-fast) var(--ease)}
 .row .meta a.w:hover{color:var(--green);font-weight:500}
