@@ -251,3 +251,49 @@ def test_limit으로_배치를_나눈다(
     )
 
     assert summary["targets"] == 2
+
+
+# ---------------------------------------------------------------------------
+# 게이트 2 — 본문 문장 판정
+#
+# 이 판정이 틀리면 게이트가 엉뚱한 것을 세고, 그 수치가 절대원칙 3 예외 요청의
+# 근거로 나간다. 2026-08-07 dry-run에서 실제로 두 번 잘못 셌다.
+# ---------------------------------------------------------------------------
+
+BODY_SENTENCE = (
+    "SK하이닉스가 올해 2분기 영업이익 60조원을 넘어서며 또 한 번 기록을 갈아치웠다."
+)
+
+
+def test_본문_문장만_센다() -> None:
+    assert run_pipeline._body_sentences(BODY_SENTENCE) == {BODY_SENTENCE}
+
+
+def test_헤드라인은_본문_문장이_아니다() -> None:
+    """
+    한국어 기사 제목은 마침표를 안 찍는다. 종결어미에 마침표 없는 '다'를 넣으면
+    관련기사 헤드라인이 전부 본문으로 잡혀, 정상 제거가 '본문 손실'로 보고된다.
+    """
+    headline = "* 콜라·사이다 사고 싶으면 지금?…반값 뚝 할인, 정부가 지원한다"
+    with_markup = "* ## 반도체 급락에도 저가매수…초고수, SK하이닉스·SK텔레콤 담았다"
+
+    assert run_pipeline._body_sentences(headline) == set()
+    assert run_pipeline._body_sentences(with_markup) == set()
+
+
+def test_이미지_줄은_본문_문장이_아니다() -> None:
+    """
+    이미지는 alt 처리로 줄 모양이 바뀐다(![alt](url) -> alt). 걷어내지 않으면
+    그 정상 변경이 '사라진 문장'으로 잡힌다.
+    """
+    line = "![SK하이닉스 2분기 영업이익 60조원 (이천=연합뉴스) 홍기원 기자 = 또](https://x/y.jpg)"
+
+    assert run_pipeline._body_sentences(line) == set()
+
+
+def test_마크업이_붙어도_같은_문장으로_본다() -> None:
+    """구 파서와 신 파서가 같은 문장에 다른 마크업을 붙여도 보존으로 세야 한다."""
+    plain = run_pipeline._body_sentences(BODY_SENTENCE)
+    decorated = run_pipeline._body_sentences(f"> **{BODY_SENTENCE}**")
+
+    assert plain == decorated

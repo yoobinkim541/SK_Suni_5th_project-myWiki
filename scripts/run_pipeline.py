@@ -60,8 +60,20 @@ _BODY_RETENTION_MIN = 0.99
 
 _HANGUL_RE = re.compile(r"[가-힣]")
 
-# 한국어 기사 문단의 종결형. 관련기사 목록·메뉴·버튼 텍스트는 여기에 안 걸린다.
-_SENTENCE_ENDINGS = ("다.", "요.", "음.", "다", "됐다", "했다")
+# 한국어 기사 문단의 종결형. **마침표를 반드시 포함한다.**
+#
+# 마침표 없는 '다'를 넣으면 헤드라인체가 전부 걸린다 — 한국어 기사 제목은 마침표를
+# 안 찍는다("…정부가 지원한다", "…SK텔레콤 담았다"). 2026-08-07 dry-run에서 이것 때문에
+# 관련기사 헤드라인이 '본문 문장'으로 잡혀 이상치 112건이 나왔고, 열어보니 대부분
+# 정상적으로 제거된 상용구였다.
+_SENTENCE_ENDINGS = ("다.", "요.", "음.")
+
+# Markdown 표기를 걷어내고 문장만 남기기 위한 것들.
+# 이미지는 alt 처리(boilerplate.replace_images_with_alt)로 줄 모양이 바뀌므로,
+# 걷어내지 않으면 정상 변경이 '사라진 문장'으로 잡힌다.
+_MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_MD_PREFIX_RE = re.compile(r"^[\s>*+\-#]+")
+_MD_EMPHASIS_RE = re.compile(r"[*_`]+")
 
 
 def get_workspace_id() -> UUID:
@@ -230,8 +242,10 @@ def _body_sentences(markdown: str) -> set[str]:
     "상용구를 지웠는가 본문을 지웠는가"를 가르는 데는 충분하다.
     """
     sentences = set()
-    for line in markdown.splitlines():
-        line = line.strip()
+    for raw_line in markdown.splitlines():
+        line = _MD_IMAGE_RE.sub("", raw_line)
+        line = _MD_PREFIX_RE.sub("", line)
+        line = _MD_EMPHASIS_RE.sub("", line).strip()
         if len(line) < _BODY_SENTENCE_MIN_LEN:
             continue
         if not _HANGUL_RE.search(line):
