@@ -37,16 +37,6 @@ const PIPELINE_STEPS = [
   { name: '보고서 생성', time: '07:42 · 1건' },
 ];
 
-// 원문/출처 링크 아이콘 — 문서든 뉴스든 항상 같은 우측 상단 대각선 화살표(↗)로 통일한다.
-// (라벨 텍스트로 "공시 원문"/"뉴스"를 구분하지, 아이콘 모양은 더 이상 나누지 않는다.)
-function ExtLinkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none">
-      <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function kpiDesc(desc) {
   if (desc && typeof desc === 'object') {
     return <>{desc.text} <b>{desc.highlight}</b></>;
@@ -222,14 +212,13 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
               <div className="card-top">
                 <span className="badge">{n.category}</span>
                 <a className="ext-link" href={n.sourceUrl} target="_blank" rel="noopener" title="원문 기사로 이동">
-                  <ExtLinkIcon />
-                  뉴스
+                  뉴스 보기 →
                 </a>
               </div>
               <h4>{n.title}</h4>
               <div className="quote">{n.quote}</div>
               <div className="tags">
-                {n.tags.map((t) => <span className="tag" key={t}>{t}</span>)}
+                <span className="tag">{n.tags.join(' · ')}</span>
               </div>
               <div className="card-foot">
                 <a className="src-btn" href={n.sourceUrl} target="_blank" rel="noopener" title={`${n.sourceLabel} 원문 보기`}>

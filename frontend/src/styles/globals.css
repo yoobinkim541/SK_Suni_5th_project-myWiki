@@ -12,9 +12,10 @@
   --panel:#ffffff; --rail:#e9ebe3; --tint:#f5f6f4;
   --green:#175243; --green-tint:#eef3f1; --amber:#9a5b00; --track:#e9eae6;
   /* 신뢰도 3구간 — 뚜렷한 신호등 색 */
-  --conf-high:#0a5c3e; --conf-high-tint:#e5efe9;
-  --conf-mid:#565f64;  --conf-mid-tint:#ecedea;
-  --conf-low:#8f2116;  --conf-low-tint:#f6e3e0;
+  --conf-high:#4C9A83; --conf-high-tint:#e7f1ec;
+  --conf-mid:#E5A23C;  --conf-mid-tint:#fbeedb;
+  --conf-low:#D95757;  --conf-low-tint:#fbe7e5;
+  --conf-label:#68736F;
 
   --ease:cubic-bezier(.22,.61,.36,1);
   --dur-fast:.16s; --dur-base:.28s; --dur-slow:.5s;
@@ -29,9 +30,10 @@
   --panel:#15171a; --rail:#1a1d21; --tint:#1a1d21;
   --green:#5cbf9a; --green-tint:#1a2620; --amber:#d69a4a; --track:#2a2e33;
   /* 신뢰도 3구간 — 다크 대비용 */
-  --conf-high:#3fb98b; --conf-high-tint:#122720;
-  --conf-mid:#9aa2a8;  --conf-mid-tint:#22262a;
-  --conf-low:#d9584a;  --conf-low-tint:#2d1512;
+  --conf-high:#5fb69b; --conf-high-tint:#16261f;
+  --conf-mid:#e5a23c;  --conf-mid-tint:#2b2114;
+  --conf-low:#e2685c;  --conf-low-tint:#2d1512;
+  --conf-label:#8a938f;
 
   /* 다크는 패널 배경 자체가 거의 검정이라 라이트와 같은 옅은 그림자는 안 보인다 —
      불투명도를 올려서 카드 경계가 살짝이라도 뜨게 한다. */
@@ -258,15 +260,15 @@ svg text{font-family:inherit}
   border-bottom:1px solid var(--hair);align-items:start}
 .tr{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
 /* 신뢰도 = 구간색 점 + 라벨 + 점수를 한 덩어리 pill 로 통일 */
-.tr .l{display:inline-flex;align-items:center;gap:6px;line-height:1;
-  font-size:11.5px;font-weight:700;letter-spacing:-.01em;
-  color:var(--conf-high);background:var(--conf-high-tint);padding:6px 10px;border-radius:20px;
-  border:1px solid color-mix(in srgb,var(--conf-high) 26%,transparent)}
+.tr .l{display:inline-flex;align-items:center;gap:4px;line-height:1;
+  font-size:11.5px;font-weight:700;letter-spacing:-.01em}
+.tr .l .lb{color:var(--conf-label);font-weight:500}
+.tr .l .v{color:var(--conf-high)}
 .tr .l i{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
 .tr .n{font-size:10.5px;font-weight:300;color:var(--faint);line-height:1.3}
-.tr.mid .l{color:var(--conf-mid);background:var(--conf-mid-tint);border-color:color-mix(in srgb,var(--conf-mid) 26%,transparent)}
-.tr.low .l{color:var(--conf-low);background:var(--conf-low-tint);border-color:color-mix(in srgb,var(--conf-low) 26%,transparent)}
-.tr.non .l{color:var(--faint);background:transparent;border-color:var(--hair)}
+.tr.mid .l .v{color:var(--conf-mid)}
+.tr.low .l .v{color:var(--conf-low)}
+.tr.non .l .v{color:var(--faint)}
 .row .ct{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.09em}
 .row h3{font-size:16.5px;font-weight:700;letter-spacing:-.025em;line-height:1.4;margin:5px 0 7px}
 .row h3.mu{font-weight:400;color:var(--ink-2)}
@@ -368,8 +370,8 @@ svg text{font-family:inherit}
 .cd .pc.low{color:var(--conf-low)}
 .cd .trk{margin-bottom:14px}
 .cd .tags{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
-.tag{font-size:11.5px;font-weight:500;color:var(--ink-2);padding:4px 11px;
-  border:1px solid var(--hair);border-radius:20px}
+.tag{font-size:11.5px;font-weight:500;color:#6B7774;padding:0;
+  border:none;border-radius:0}
 .cd .top{font-size:12.5px;font-weight:300;color:var(--muted)}
 .cd .top b{font-weight:700;color:var(--ink)}
 .cd .top .cf{font-weight:700;color:var(--conf-high);background:var(--conf-high-tint);
@@ -900,47 +902,46 @@ a.cite:hover .ex{color:var(--green)}
 
 /* 카테고리 현황 — 카드형(Progress Bar 제거, 뉴스 프리뷰 구성으로 개편) */
 .cat-card-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-.cat-card-grid .cd{border:1px solid var(--hair);border-radius:16px;padding:20px;background:var(--panel);
-  cursor:pointer;
-  transition:border-color var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease)}
-.cat-card-grid .cd:hover{border-color:var(--green);transform:translateY(-3px);box-shadow:0 16px 30px -16px rgba(21,23,26,.18)}
+.cat-card-grid .cd{border:1px solid #D9E2DE;border-radius:14px;padding:20px;background:#FFFFFF;
+  cursor:pointer;box-shadow:0 1px 2px rgba(23,82,67,.04);
+  transition:border-color var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease)}
+.cat-card-grid .cd:hover{border-color:#B9C8C2;box-shadow:0 2px 8px rgba(23,82,67,.06)}
 .cat-card-grid .cd .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .cat-card-grid .cd .hd-count{font-size:11px;font-weight:500;color:var(--muted)}
 .cat-card-grid .cd .hd-count b{font-size:13px;font-weight:900;color:var(--ink);margin-right:2px}
-.cat-card-grid .cd .top-issue{font-size:17px;font-weight:700;letter-spacing:-.015em;margin-bottom:10px;line-height:1.42;color:var(--ink)}
+.cat-card-grid .cd .top-issue{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:10px;line-height:1.45;color:var(--ink)}
 .cat-card-grid .cd .tags{margin-bottom:14px}
 .cat-card-grid .cd .cat-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding-top:12px;border-top:1px dashed var(--hair-2)}
+  padding-top:12px;border-top:1px solid #E5EBE8}
 
 /* ---- 공용 컴포넌트: 카테고리 Badge / 인용문 Preview / 출처 버튼 / 원문 링크 / 신뢰도 Badge ---- */
-.badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:5px 10px;
-  border-radius:8px;background:var(--green);color:#fff;border:1px solid var(--green)}
-:root[data-theme="dark"] .badge{color:#0d1512}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;
+  color:#175243;background:none;border:none;padding:0;border-radius:0;letter-spacing:-.005em}
+:root[data-theme="dark"] .badge{color:var(--green)}
 .lvl{font-weight:700}
 .lvl.hi{color:var(--conf-high)}
 .lvl.mid{color:var(--conf-mid)}
 .lvl.low{color:var(--conf-low)}
 
-.quote{position:relative;background:var(--tint);border:1px solid var(--hair-2);border-radius:10px;
-  padding:11px 13px 11px 30px;font-size:12px;line-height:1.62;color:var(--ink-2)}
-.quote::before{content:'\275D';position:absolute;left:9px;top:5px;font-size:17px;font-weight:700;
-  color:var(--faint);font-family:Georgia,'Noto Serif KR',serif}
+.quote{position:relative;background:none;border:none;border-left:2px solid #4C9A83;border-radius:0;
+  padding:2px 0 2px 13px;font-size:12px;line-height:1.62;color:#5F6866}
 
 .src-btn{display:inline;background:none;border:none;padding:0;margin:0;font:inherit;
-  font-size:11.5px;font-weight:700;color:var(--ink-2);cursor:pointer}
-.src-btn:hover{color:var(--green);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px}
+  font-size:11.5px;font-weight:700;color:#175243;cursor:pointer}
+.src-btn:hover{text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px}
 
-.ext-link{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--muted);
-  padding:4px 7px;border-radius:6px;flex:none}
-.ext-link:hover{color:var(--green);background:var(--green-tint)}
-.ext-link svg{width:9px;height:9px;flex:none}
+.ext-link{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:#347FA3;
+  padding:0;border-radius:0;flex:none}
+.ext-link:hover{text-decoration:underline;text-underline-offset:2px}
 
-.trust{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:800;
+.trust{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;
   white-space:nowrap;flex:none}
 .trust svg{width:9px;height:9px;flex:none}
-.trust.hi{color:var(--conf-high)}
-.trust.mid{color:var(--conf-mid)}
-.trust.low{color:var(--conf-low)}
+.trust .lb{color:var(--conf-label);font-weight:500}
+.trust .v{color:var(--conf-high)}
+.trust.hi .v{color:var(--conf-high)}
+.trust.mid .v{color:var(--conf-mid)}
+.trust.low .v{color:var(--conf-low)}
 
 /* 카테고리 관련 뉴스 모달 행 */
 #catNewsRows{max-height:min(56vh,440px);overflow-y:auto;padding-right:4px}
@@ -988,18 +989,18 @@ a.fn:hover{text-decoration:underline}
 /* ---------- 대시보드 최신 뉴스(상단 고정) ---------- */
 .news-feed{margin-bottom:6px}
 .news-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-.news-card{border:1px solid var(--hair-3);border-radius:16px;padding:16px 18px;background:var(--panel);
-  box-shadow:var(--shadow-card);
-  transition:border-color var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease)}
-.news-card:hover{border-color:var(--green);transform:translateY(-3px);box-shadow:0 16px 30px -16px rgba(21,23,26,.18)}
+.news-card{border:1px solid #D9E2DE;border-radius:14px;padding:16px 18px;background:#FFFFFF;
+  box-shadow:0 1px 2px rgba(23,82,67,.04);
+  transition:border-color var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease)}
+.news-card:hover{border-color:#B9C8C2;box-shadow:0 2px 8px rgba(23,82,67,.06)}
 .news-card.hidden{display:none}
 .news-card .card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px}
-.news-card h4{font-size:14.5px;font-weight:700;line-height:1.46;letter-spacing:-.01em;margin:0 0 10px}
+.news-card h4{font-size:14.5px;font-weight:700;line-height:1.46;letter-spacing:-.01em;margin:0 0 10px;color:var(--ink)}
 .news-card .quote{margin-bottom:10px}
 .news-card .tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .news-card .card-foot{display:flex;align-items:baseline;gap:0;
-  padding-top:10px;border-top:1px dashed var(--hair-2)}
-.news-card .time{font-size:11.5px;color:var(--muted);font-weight:300;white-space:nowrap}
+  padding-top:10px;border-top:1px solid #E5EBE8}
+.news-card .time{font-size:11.5px;color:#9AA6A2;font-weight:300;white-space:nowrap}
 .news-more{display:block;margin:14px auto 0;padding:9px 22px;border-radius:20px;
   border:1px solid var(--hair);background:var(--panel);color:var(--ink-2);
   font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;
@@ -1688,7 +1689,7 @@ a.fn:hover{text-decoration:underline}
 .kg-leaf-label{fill:var(--muted);font-size:12px;font-weight:600}
 
 /* 중앙 허브 — 그라디언트 글로우 + my Wiki 로고 이미지(아이콘+텍스트 전체) */
-.kg-hub-glow{fill:var(--green);opacity:.07;animation:kg-pulse 2.6s var(--ease) infinite}
+.kg-hub-glow{fill:#4C9A83;opacity:.09;animation:kg-pulse 2.6s var(--ease) infinite}
 .kg-hub-grad{fill:url(#kgHubGrad)}
 /* 허브 원(지름 = viewBox 폭의 14.4%) 안에 들어가도록 폭을 그보다 살짝 작게 %로 고정 —
    .kg-wrap이 viewBox 비율 그대로 반응형으로 커지므로 %값이 화면 크기와 무관하게 맞습니다. */
@@ -1699,7 +1700,7 @@ a.fn:hover{text-decoration:underline}
   height:auto;
   object-fit:contain;
   display:block;
-  filter:drop-shadow(0 8px 16px rgba(21,120,80,.16));
+  filter:drop-shadow(0 8px 16px rgba(76,154,131,.18));
 }
 
 @keyframes kg-pulse{

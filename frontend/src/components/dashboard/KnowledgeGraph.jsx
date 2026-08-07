@@ -87,9 +87,9 @@ export default function KnowledgeGraph() {
       >
         <defs>
           <radialGradient id="kgHubGrad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="var(--green-soft, #4fc491)" stopOpacity=".28" />
-            <stop offset="65%" stopColor="var(--green)" stopOpacity=".14" />
-            <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
+            <stop offset="0%" stopColor="#6FC0A5" stopOpacity=".34" />
+            <stop offset="65%" stopColor="#4C9A83" stopOpacity=".16" />
+            <stop offset="100%" stopColor="#4C9A83" stopOpacity="0" />
           </radialGradient>
         </defs>
 
