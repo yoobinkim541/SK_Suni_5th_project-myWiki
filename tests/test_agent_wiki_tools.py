@@ -106,3 +106,41 @@ def test_search_wiki_pages_returns_empty_list_when_no_match(monkeypatch):
     hits = tools.search_wiki_pages("존재하지 않는 주제")
 
     assert hits == []
+
+
+def test_search_documents_delegates_to_document_search_module(monkeypatch):
+    captured = {}
+
+    def fake_search_documents(workspace_id, query, limit=5, *, supabase=None):
+        captured["workspace_id"] = workspace_id
+        captured["query"] = query
+        captured["limit"] = limit
+        return []
+
+    monkeypatch.setattr(
+        "src.agent.wiki_tools.document_search.search_documents", fake_search_documents
+    )
+
+    tools = WikiTools(workspace_id="ws-1")
+    tools.search_documents("SK하이닉스 ADR", limit=3)
+
+    assert captured == {"workspace_id": "ws-1", "query": "SK하이닉스 ADR", "limit": 3}
+
+
+def test_read_document_delegates_to_document_search_module(monkeypatch):
+    captured = {}
+
+    def fake_get_document_detail(workspace_id, document_version_id, *, supabase=None):
+        captured["workspace_id"] = workspace_id
+        captured["document_version_id"] = document_version_id
+        return None
+
+    monkeypatch.setattr(
+        "src.agent.wiki_tools.document_search.get_document_detail", fake_get_document_detail
+    )
+
+    tools = WikiTools(workspace_id="ws-1")
+    result = tools.read_document("ver-1")
+
+    assert result is None
+    assert captured == {"workspace_id": "ws-1", "document_version_id": "ver-1"}
