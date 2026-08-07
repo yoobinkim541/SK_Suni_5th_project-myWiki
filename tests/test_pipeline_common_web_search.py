@@ -1,7 +1,6 @@
 """src/pipeline_common/web_search.py 단위 테스트 — 네이버 검색 API 호출은 httpx.get을 monkeypatch한다."""
 from __future__ import annotations
 
-import httpx
 import pytest
 
 from src.pipeline_common import web_search
@@ -100,6 +99,28 @@ def test_search_web_raises_when_credentials_missing(monkeypatch):
 def test_search_web_raises_on_error_status(monkeypatch):
     def fake_get(url, *, params, headers, timeout):
         return FakeResponse(401, {"errorMessage": "Invalid auth"})
+
+    monkeypatch.setattr(web_search.httpx, "get", fake_get)
+    monkeypatch.setenv("NAVER_CLIENT_ID", "test-id")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "test-secret")
+
+    with pytest.raises(web_search.WebSearchError):
+        web_search.search_web("q")
+
+
+class FakeResponseWithJsonError:
+    """게이트웨이가 JSON이 아닌 오류 페이지를 줄 때(예: 502 + HTML)."""
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+    def json(self) -> dict:
+        raise ValueError("Expecting value")  # json.JSONDecodeError의 기본 메시지
+
+
+def test_search_web_raises_when_json_decode_fails(monkeypatch):
+    """게이트웨이의 오류 응답(502 등)이 JSON이 아니면 WebSearchError로 래핑돼야 한다."""
+    def fake_get(url, *, params, headers, timeout):
+        return FakeResponseWithJsonError(502)
 
     monkeypatch.setattr(web_search.httpx, "get", fake_get)
     monkeypatch.setenv("NAVER_CLIENT_ID", "test-id")

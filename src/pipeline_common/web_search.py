@@ -68,7 +68,13 @@ def search_web(query: str, limit: int = 5) -> list[WebSearchHit]:
     except Exception as exc:  # noqa: BLE001 - httpx 예외 계층이 넓다
         raise WebSearchError(f"네이버 검색 API 호출 실패: {exc}") from exc
 
-    payload = response.json()
+    try:
+        payload = response.json()
+    except Exception as exc:  # noqa: BLE001 - 게이트웨이가 JSON 아닌 오류 페이지를 줄 수 있다
+        raise WebSearchError(
+            f"네이버 검색 API 응답을 JSON으로 읽을 수 없다 (HTTP {response.status_code}): {exc}"
+        ) from exc
+
     # status_code를 확인 안 하면 인증 실패(401) 같은 오류 응답도 items가 빈 리스트라
     # "정상 호출인데 0건"으로 조용히 넘어간다 — fetchers.py의 같은 교훈을 그대로 적용.
     if response.status_code >= 400:
