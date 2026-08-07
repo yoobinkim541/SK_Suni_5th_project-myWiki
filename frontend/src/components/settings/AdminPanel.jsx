@@ -5,7 +5,7 @@
 // 대상이 본인이 아니라 타인이라 그 정도로 무겁게 막을 필요는 없고, 버튼 2단계 확인
 // (한 번 누르면 "정말 방출?"로 바뀌고 다시 눌러야 실행) 정도면 충분하다는 설계 결정.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import SettingsGroup from './SettingsGroup';
 import SettingsRow from './SettingsRow';
 import AdminSessionViewModal from './AdminSessionViewModal';
@@ -101,6 +101,7 @@ export default function AdminPanel() {
   const [sessionMessages, setSessionMessages] = useState(null);
   const [sessionMessagesLoading, setSessionMessagesLoading] = useState(false);
   const [sessionMessagesError, setSessionMessagesError] = useState(null);
+  const latestSessionRequest = useRef(0);
 
   function loadMembers() {
     setMembersError(null);
@@ -138,14 +139,15 @@ export default function AdminPanel() {
   }
 
   function openSession(session) {
+    const requestId = ++latestSessionRequest.current;
     setViewingSession(session);
     setSessionMessages(null);
     setSessionMessagesError(null);
     setSessionMessagesLoading(true);
     getWorkspaceSessionMessages(session.id)
-      .then((rows) => setSessionMessages(rows))
-      .catch((e) => setSessionMessagesError(e.message || '대화 내용을 불러오지 못했습니다.'))
-      .finally(() => setSessionMessagesLoading(false));
+      .then((rows) => { if (requestId === latestSessionRequest.current) setSessionMessages(rows); })
+      .catch((e) => { if (requestId === latestSessionRequest.current) setSessionMessagesError(e.message || '대화 내용을 불러오지 못했습니다.'); })
+      .finally(() => { if (requestId === latestSessionRequest.current) setSessionMessagesLoading(false); });
   }
 
   return (
@@ -155,7 +157,7 @@ export default function AdminPanel() {
         {!membersError && members === null && (
           <SettingsRow label="불러오는 중…" desc=""><div /></SettingsRow>
         )}
-        {!membersError && (members ?? []).map((m) => (
+        {(members ?? []).map((m) => (
           // 오너 본인 행은 방출/역할변경 대상이 될 수 없다(백엔드도 400으로 거부).
           // 워크스페이스당 오너는 항상 1명뿐이고 이 패널은 오너에게만 렌더링되므로,
           // role === 'owner'인 행이 곧 "나"다 — 읽기 전용으로 표시하고 컨트롤을 뺀다.
