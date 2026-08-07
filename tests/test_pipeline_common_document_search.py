@@ -280,6 +280,22 @@ def test_get_document_detail_returns_none_when_storage_object_missing():
     assert detail is None
 
 
+def test_get_document_detail_returns_none_when_markdown_not_utf8():
+    """markdown object가 UTF-8로 디코드 안 되면 예외 없이 None을 반환한다."""
+    supabase = FakeSupabase(
+        tables={
+            "document_versions": [_version_row("ver-1", "doc-1", 1, "processed/ws-1/doc-1/1.md")],
+            "documents": [_document_row("doc-1", "SK하이닉스 ADR 상장", "2026-07-10T00:00:00+00:00")],
+            "sources": [{"id": "source-1", "name": "DART - SK하이닉스"}],
+        },
+        objects={"ws-1/doc-1/1.md": b"\xff\xfe\x00broken"},
+    )
+
+    detail = document_search.get_document_detail(WORKSPACE_ID, "ver-1", supabase=supabase)
+
+    assert detail is None
+
+
 def test_search_documents_orders_by_published_at_with_nulls_last():
     """published_at 정렬에 nullsfirst=False가 명시적으로 전달돼야 한다 — 안 그러면
     Postgres 기본 동작(desc일 때 NULLS FIRST)이 published_at이 비어있는 문서를

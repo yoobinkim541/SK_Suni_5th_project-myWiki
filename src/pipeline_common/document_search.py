@@ -159,9 +159,10 @@ def get_document_detail(
     bucket, path = storage.split_key(version["markdown_object_key"])
     try:
         markdown_bytes = db.storage.from_(bucket).download(path)
+        markdown = markdown_bytes.decode("utf-8")
     except Exception:
         logger.warning(
-            "document_search: markdown 다운로드 실패 (document_version_id=%s)",
+            "document_search: markdown 다운로드/디코드 실패 (document_version_id=%s)",
             document_version_id,
             exc_info=True,
         )
@@ -170,7 +171,7 @@ def get_document_detail(
     return DocumentDetail(
         document_version_id=str(version["id"]),
         title=str(document["title"]),
-        markdown=markdown_bytes.decode("utf-8"),
+        markdown=markdown,
         canonical_url=document.get("canonical_url"),
         source_name=source_name,
         published_at=document.get("published_at"),
