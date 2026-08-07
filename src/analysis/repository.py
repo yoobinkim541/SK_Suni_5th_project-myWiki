@@ -302,7 +302,12 @@ def get_reliability_results(*, workspace_id: str, document_version_ids: list[str
 
 
 def get_documents_ready_for_classification(
-    *, workspace_id: str, limit: int = 20, since_days: int = 7, supabase: Client | None = None
+    *,
+    workspace_id: str,
+    limit: int = 20,
+    since_days: int = 7,
+    restrict_to_document_ids: list[str] | None = None,
+    supabase: Client | None = None,
 ) -> list[str]:
     """document_analysis_results 행이 아예 없는(분류를 한 번도 안 받은) document_version을 찾는다.
 
@@ -310,20 +315,28 @@ def get_documents_ready_for_classification(
     document_analysis_results 행의 상태 필드만 보면 되지만, 분류는 그 행 자체가 생기기
     전 단계라 documents/document_versions에서 직접 찾아야 한다. 전체 이력을 매번 스캔하지
     않도록 최근 since_days일로 창을 제한한다(수집 배치가 2시간마다 도니 충분히 넉넉하다).
+
+    restrict_to_document_ids: 주어지면 이 문서 id 집합으로만 좁힌다 — 백로그가 크면
+    "최근 처리 시각" 기준 정렬(아래 document_versions 정렬)에서 오늘 발행 기사가
+    재정제된 오래된 문서에 밀려날 수 있어서, 야간 배치가 "오늘 발행분부터 먼저"
+    끝내려 할 때 쓴다 (scripts/run_nightly_analysis.py 참조).
     """
     db = supabase or get_supabase()
-    since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
 
-    document_rows = (
-        db.table("documents")
-        .select("id")
-        .eq("workspace_id", workspace_id)
-        .eq("status", "active")
-        .gte("created_at", since)
-        .execute()
-        .data
-    )
-    document_ids = [row["id"] for row in document_rows]
+    if restrict_to_document_ids is not None:
+        document_ids = list(restrict_to_document_ids)
+    else:
+        since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+        document_rows = (
+            db.table("documents")
+            .select("id")
+            .eq("workspace_id", workspace_id)
+            .eq("status", "active")
+            .gte("created_at", since)
+            .execute()
+            .data
+        )
+        document_ids = [row["id"] for row in document_rows]
     if not document_ids:
         return []
 
@@ -358,22 +371,44 @@ def get_documents_ready_for_classification(
     return [vid for vid in version_ids if vid not in already_analyzed][:limit]
 
 
-def get_documents_ready_for_ranking(*, workspace_id: str, limit: int = 20, supabase: Client | None = None) -> list[str]:
+def get_documents_ready_for_ranking(
+    *,
+    workspace_id: str,
+    limit: int = 20,
+    restrict_to_version_ids: list[str] | None = None,
+    supabase: Client | None = None,
+) -> list[str]:
+    """restrict_to_version_ids 설명은 get_documents_ready_for_classification 참조."""
     db = supabase or get_supabase()
     try:
-        rows = (
-            db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
-            .select("document_version_id,status,reliability_status,importance_status,ranking_status")
-            .eq("workspace_id", workspace_id)
-            .eq("status", "completed")
-            .eq("reliability_status", "completed")
-            .eq("importance_status", "completed")
-            .order("importance_evaluated_at", desc=True)
-            .order("updated_at", desc=True)
-            .limit(limit * 5)
-            .execute()
-            .data
-        )
+        if restrict_to_version_ids is not None:
+            rows = []
+            for chunk in _chunked(list(restrict_to_version_ids)):
+                rows.extend(
+                    db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+                    .select("document_version_id,status,reliability_status,importance_status,ranking_status")
+                    .eq("workspace_id", workspace_id)
+                    .eq("status", "completed")
+                    .eq("reliability_status", "completed")
+                    .eq("importance_status", "completed")
+                    .in_("document_version_id", chunk)
+                    .execute()
+                    .data
+                )
+        else:
+            rows = (
+                db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+                .select("document_version_id,status,reliability_status,importance_status,ranking_status")
+                .eq("workspace_id", workspace_id)
+                .eq("status", "completed")
+                .eq("reliability_status", "completed")
+                .eq("importance_status", "completed")
+                .order("importance_evaluated_at", desc=True)
+                .order("updated_at", desc=True)
+                .limit(limit * 5)
+                .execute()
+                .data
+            )
     except Exception as exc:
         raise ClassificationLoadFailedError("RANKING_LOAD_FAILED") from exc
 
@@ -391,20 +426,40 @@ def get_documents_ready_for_ranking(*, workspace_id: str, limit: int = 20, supab
     return results
 
 
-def get_documents_ready_for_reliability(*, workspace_id: str, limit: int = 20, supabase: Client | None = None) -> list[str]:
+def get_documents_ready_for_reliability(
+    *,
+    workspace_id: str,
+    limit: int = 20,
+    restrict_to_version_ids: list[str] | None = None,
+    supabase: Client | None = None,
+) -> list[str]:
+    """restrict_to_version_ids 설명은 get_documents_ready_for_classification 참조."""
     db = supabase or get_supabase()
     try:
-        rows = (
-            db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
-            .select("document_version_id,status,reliability_status")
-            .eq("workspace_id", workspace_id)
-            .eq("status", "completed")
-            .order("classified_at", desc=True)
-            .order("updated_at", desc=True)
-            .limit(limit * 5)
-            .execute()
-            .data
-        )
+        if restrict_to_version_ids is not None:
+            rows = []
+            for chunk in _chunked(list(restrict_to_version_ids)):
+                rows.extend(
+                    db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+                    .select("document_version_id,status,reliability_status")
+                    .eq("workspace_id", workspace_id)
+                    .eq("status", "completed")
+                    .in_("document_version_id", chunk)
+                    .execute()
+                    .data
+                )
+        else:
+            rows = (
+                db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+                .select("document_version_id,status,reliability_status")
+                .eq("workspace_id", workspace_id)
+                .eq("status", "completed")
+                .order("classified_at", desc=True)
+                .order("updated_at", desc=True)
+                .limit(limit * 5)
+                .execute()
+                .data
+            )
     except Exception as exc:
         raise ClassificationLoadFailedError("RELIABILITY_LOAD_FAILED") from exc
 
@@ -626,21 +681,42 @@ def get_analysis_results_for_report(*, workspace_id: str, document_version_ids: 
     return results
 
 
-def get_documents_ready_for_importance(*, workspace_id: str, limit: int = 20, supabase: Client | None = None) -> list[str]:
+def get_documents_ready_for_importance(
+    *,
+    workspace_id: str,
+    limit: int = 20,
+    restrict_to_version_ids: list[str] | None = None,
+    supabase: Client | None = None,
+) -> list[str]:
+    """restrict_to_version_ids 설명은 get_documents_ready_for_classification 참조."""
     db = supabase or get_supabase()
     try:
-        rows = (
-            db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
-            .select("document_version_id,status,reliability_status,importance_status")
-            .eq("workspace_id", workspace_id)
-            .eq("status", "completed")
-            .eq("reliability_status", "completed")
-            .order("reliability_evaluated_at", desc=True)
-            .order("updated_at", desc=True)
-            .limit(limit * 5)
-            .execute()
-            .data
-        )
+        if restrict_to_version_ids is not None:
+            rows = []
+            for chunk in _chunked(list(restrict_to_version_ids)):
+                rows.extend(
+                    db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+                    .select("document_version_id,status,reliability_status,importance_status")
+                    .eq("workspace_id", workspace_id)
+                    .eq("status", "completed")
+                    .eq("reliability_status", "completed")
+                    .in_("document_version_id", chunk)
+                    .execute()
+                    .data
+                )
+        else:
+            rows = (
+                db.table(DOCUMENT_ANALYSIS_RESULTS_TABLE)
+                .select("document_version_id,status,reliability_status,importance_status")
+                .eq("workspace_id", workspace_id)
+                .eq("status", "completed")
+                .eq("reliability_status", "completed")
+                .order("reliability_evaluated_at", desc=True)
+                .order("updated_at", desc=True)
+                .limit(limit * 5)
+                .execute()
+                .data
+            )
     except Exception as exc:
         raise ClassificationLoadFailedError("IMPORTANCE_LOAD_FAILED") from exc
 

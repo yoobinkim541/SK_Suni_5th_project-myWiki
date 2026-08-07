@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -18,6 +18,15 @@ from src.pipeline_common.db import get_client
 from src.settings.service import get_workspace_settings, mark_data_refreshed
 
 GRACE_MINUTES = 15
+KST = timezone(timedelta(hours=9))
+NIGHTLY_ANALYSIS_WINDOW_KST = (time(0, 0), time(6, 0))
+
+
+def is_within_nightly_analysis_window(now_utc: datetime) -> bool:
+    """Return whether the dedicated nightly analysis job owns this time window."""
+    now_kst_time = now_utc.astimezone(KST).time()
+    start, end = NIGHTLY_ANALYSIS_WINDOW_KST
+    return start <= now_kst_time < end
 
 
 def log(msg: str) -> None:
@@ -59,10 +68,13 @@ def run_scheduled_refresh(*, now: datetime | None = None) -> bool:
     preprocess_summary = run_preprocess(UUID(workspace_id))
     log(f"preprocess complete: {preprocess_summary}")
 
-    analysis_limit = get_adaptive_analysis_limit(workspace_id)
-    log(f"analysis pipeline started (limit={analysis_limit})")
-    if run_analysis_pipeline(workspace_id, limit=analysis_limit) is None:
-        log("analysis did not complete; daily report will wait for its 08:00 schedule")
+    if is_within_nightly_analysis_window(current_time):
+        log("analysis skipped: dedicated nightly analysis job owns this time window")
+    else:
+        analysis_limit = get_adaptive_analysis_limit(workspace_id)
+        log(f"analysis pipeline started (limit={analysis_limit})")
+        if run_analysis_pipeline(workspace_id, limit=analysis_limit) is None:
+            log("analysis did not complete; daily report will wait for its 08:00 schedule")
 
     mark_data_refreshed(workspace_id, at=gate_now)
     log("refresh complete (daily report is generated separately at 08:00 KST)")

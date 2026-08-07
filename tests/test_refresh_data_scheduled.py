@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.refresh_data_scheduled import is_refresh_due, run_scheduled_refresh
+from scripts.refresh_data_scheduled import is_refresh_due, is_within_nightly_analysis_window, run_scheduled_refresh
 from scripts.run_analysis_pipeline import get_adaptive_analysis_limit, run_analysis_pipeline
 
 WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
@@ -38,6 +38,25 @@ def test_is_refresh_due_false_just_outside_grace_window():
     last = (now - timedelta(minutes=104)).isoformat()
     assert is_refresh_due(last, 120, now=now) is False
 
+
+def test_is_within_nightly_analysis_window_true_at_kst_midnight():
+    now_utc = datetime(2026, 8, 6, 15, 0, tzinfo=timezone.utc)
+    assert is_within_nightly_analysis_window(now_utc) is True
+
+
+def test_is_within_nightly_analysis_window_true_just_before_kst_6am():
+    now_utc = datetime(2026, 8, 6, 20, 59, tzinfo=timezone.utc)
+    assert is_within_nightly_analysis_window(now_utc) is True
+
+
+def test_is_within_nightly_analysis_window_false_at_kst_6am():
+    now_utc = datetime(2026, 8, 6, 21, 0, tzinfo=timezone.utc)
+    assert is_within_nightly_analysis_window(now_utc) is False
+
+
+def test_is_within_nightly_analysis_window_false_during_daytime():
+    now_utc = datetime(2026, 8, 6, 5, 0, tzinfo=timezone.utc)
+    assert is_within_nightly_analysis_window(now_utc) is False
 
 def test_adaptive_analysis_limit_expands_only_when_backlog_exceeds_normal_capacity(monkeypatch):
     for function_name in (
