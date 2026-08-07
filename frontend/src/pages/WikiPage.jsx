@@ -90,7 +90,7 @@ export default function WikiPage({ docId }) {
   if (!tree || !doc) {
     return (
       <section className="view on" id="v-wiki">
-        <div className="ph"><h2>불러오는 중…</h2></div>
+        <Spinner />
       </section>
     );
   }
