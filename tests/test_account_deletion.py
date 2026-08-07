@@ -76,10 +76,10 @@ class FakeTable:
 
 class FakeAuthAdmin:
     def __init__(self):
-        self.deleted_user_ids: list[str] = []
+        self.ban_calls: list[tuple[str, dict]] = []
 
-    def delete_user(self, user_id: str):
-        self.deleted_user_ids.append(user_id)
+    def update_user_by_id(self, user_id: str, attributes: dict):
+        self.ban_calls.append((user_id, attributes))
 
 
 class FakeAuth:
@@ -132,10 +132,14 @@ def test_delete_push_subscriptions_for_user_removes_rows(fake_db):
     assert fake_db._data["push_subscriptions"] == []
 
 
-def test_delete_auth_user_calls_admin_api(fake_db):
-    db.delete_auth_user(USER_ID)
+def test_ban_auth_user_calls_admin_api_with_ban_duration(fake_db):
+    """auth.users 행을 지우면 fk_profiles_auth_user(ON DELETE CASCADE)가 profiles까지
+    지워버려(그리고 이어서 chat_sessions까지) soft_delete_profile로 피하려던 문제를
+    뒷문으로 재현한다(2026-08-07 프로덕션에서 확인) — 그래서 delete_user 대신
+    ban_duration으로 로그인만 막는다."""
+    db.ban_auth_user(USER_ID)
 
-    assert fake_db.auth.admin.deleted_user_ids == [USER_ID]
+    assert fake_db.auth.admin.ban_calls == [(USER_ID, {"ban_duration": db.PERMANENT_BAN_DURATION})]
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +160,7 @@ def test_delete_account_calls_all_cleanup_steps_and_returns_204(client_as, monke
     monkeypatch.setattr(db, "soft_delete_profile", lambda uid: calls.append(f"soft_delete:{uid}"))
     monkeypatch.setattr(db, "remove_all_workspace_memberships", lambda uid: calls.append(f"remove_memberships:{uid}"))
     monkeypatch.setattr(db, "delete_push_subscriptions_for_user", lambda uid: calls.append(f"delete_push:{uid}"))
-    monkeypatch.setattr(db, "delete_auth_user", lambda uid: calls.append(f"delete_auth:{uid}"))
+    monkeypatch.setattr(db, "ban_auth_user", lambda uid: calls.append(f"ban_auth:{uid}"))
 
     response = client_as(USER_ID).delete("/account")
 
@@ -165,7 +169,7 @@ def test_delete_account_calls_all_cleanup_steps_and_returns_204(client_as, monke
         f"soft_delete:{USER_ID}",
         f"remove_memberships:{USER_ID}",
         f"delete_push:{USER_ID}",
-        f"delete_auth:{USER_ID}",
+        f"ban_auth:{USER_ID}",
     ]
 
 
@@ -176,7 +180,7 @@ def test_delete_account_soft_delete_happens_before_cleanup_steps(client_as, monk
     monkeypatch.setattr(db, "soft_delete_profile", lambda uid: order.append("soft_delete"))
     monkeypatch.setattr(db, "remove_all_workspace_memberships", lambda uid: order.append("memberships"))
     monkeypatch.setattr(db, "delete_push_subscriptions_for_user", lambda uid: order.append("push"))
-    monkeypatch.setattr(db, "delete_auth_user", lambda uid: order.append("auth"))
+    monkeypatch.setattr(db, "ban_auth_user", lambda uid: order.append("auth"))
 
     client_as(USER_ID).delete("/account")
 
@@ -185,14 +189,14 @@ def test_delete_account_soft_delete_happens_before_cleanup_steps(client_as, monk
 
 @pytest.mark.parametrize(
     "failing_step",
-    ["remove_all_workspace_memberships", "delete_push_subscriptions_for_user", "delete_auth_user"],
+    ["remove_all_workspace_memberships", "delete_push_subscriptions_for_user", "ban_auth_user"],
 )
 def test_delete_account_returns_204_even_when_a_cleanup_step_fails(client_as, monkeypatch, failing_step):
     """정리 단계(멤버십/구독/인증) 중 하나가 예외를 던져도, 이미 soft_delete_profile로
     탈퇴 처리는 끝났으므로 요청 자체는 성공(204)해야 한다 — 외부 API 일시 장애 때문에
     탈퇴가 실패한 것처럼 보이면 안 된다."""
     monkeypatch.setattr(db, "soft_delete_profile", lambda uid: None)
-    for step in ["remove_all_workspace_memberships", "delete_push_subscriptions_for_user", "delete_auth_user"]:
+    for step in ["remove_all_workspace_memberships", "delete_push_subscriptions_for_user", "ban_auth_user"]:
         if step == failing_step:
             def _raise(uid):
                 raise RuntimeError("transient failure")
@@ -213,7 +217,7 @@ def test_delete_account_fails_when_soft_delete_itself_fails(client_as, monkeypat
     monkeypatch.setattr(db, "soft_delete_profile", _raise)
     monkeypatch.setattr(db, "remove_all_workspace_memberships", lambda uid: None)
     monkeypatch.setattr(db, "delete_push_subscriptions_for_user", lambda uid: None)
-    monkeypatch.setattr(db, "delete_auth_user", lambda uid: None)
+    monkeypatch.setattr(db, "ban_auth_user", lambda uid: None)
 
     with pytest.raises(RuntimeError):
         client_as(USER_ID).delete("/account")
@@ -226,7 +230,7 @@ def test_delete_account_only_targets_the_authenticated_users_own_id(client_as, m
     monkeypatch.setattr(db, "soft_delete_profile", lambda uid: seen_ids.append(uid))
     monkeypatch.setattr(db, "remove_all_workspace_memberships", lambda uid: None)
     monkeypatch.setattr(db, "delete_push_subscriptions_for_user", lambda uid: None)
-    monkeypatch.setattr(db, "delete_auth_user", lambda uid: None)
+    monkeypatch.setattr(db, "ban_auth_user", lambda uid: None)
 
     client_as(USER_ID).delete("/account")
 
