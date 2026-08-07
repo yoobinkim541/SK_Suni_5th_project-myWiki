@@ -423,14 +423,20 @@ def _add_section_highlight_slide(
 ) -> None:
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     _fill_background(slide, BRAND_MIST)
-    _add_slide_title(slide, f"{index}. {section.title} | Highlights", document.layout)
+    _add_slide_title(
+        slide,
+        f"{index}. {section.title} | Highlights",
+        document.layout,
+        title_height=1.05,
+        divider_top=1.45,
+    )
 
     columns = [
         ("\ud575\uc2ec \uc0ac\uc2e4", list(section.key_facts[:3])),
         ("SK\ud558\uc774\ub2c9\uc2a4 \uc601\ud5a5", list(section.implications[:3])),
         ("\ub2e4\uc74c \ud655\uc778 \uc0ac\ud56d", list(section.watch_points[:3]) or list(section.historical_context[:3])),
     ]
-    positions = [(0.9, 1.55), (4.45, 1.55), (8.0, 1.55)]
+    positions = [(0.9, 1.7), (4.45, 1.7), (8.0, 1.7)]
     for (title, items), (left, top) in zip(columns, positions):
         _add_bullet_card(slide, left=left, top=top, width=3.0, height=4.6, title=title, items=items or ["\ud45c\uc2dc\ud560 \ud56d\ubaa9\uc774 \uc5c6\uc2b5\ub2c8\ub2e4."])
 
@@ -597,20 +603,33 @@ def _fill_background(slide, color: RGBColor) -> None:
     fill.fore_color.rgb = color
 
 
-def _add_slide_title(slide, text: str, layout: PptLayout) -> None:
+def _add_slide_title(
+    slide,
+    text: str,
+    layout: PptLayout,
+    *,
+    title_height: float = 0.6,
+    divider_top: float = 1.0,
+) -> None:
     _add_text_block(
         slide,
         left=0.7,
         top=0.35,
         width=11.9,
-        height=0.6,
+        height=title_height,
         text=text,
         font_size=layout.slide_title_font_size,
         bold=True,
         color=BRAND_NAVY,
         layout=layout,
     )
-    line = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.RECTANGLE, Inches(0.7), Inches(1.0), Inches(11.7), Inches(0.03))
+    line = slide.shapes.add_shape(
+        MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+        Inches(0.7),
+        Inches(divider_top),
+        Inches(11.7),
+        Inches(0.03),
+    )
     line.fill.solid()
     line.fill.fore_color.rgb = BRAND_ORANGE
     line.line.fill.background()
