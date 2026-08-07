@@ -115,16 +115,25 @@ export function fetchKpiSummary() {
 // 목업 항목은 fetch* 함수를 거치지 않고 상수를 그대로 씁니다. 실연동된 둘만
 // 병렬로 호출해서, 화면이 두 응답을 순차로 기다리지 않게 합니다.
 //
-// 추이가 실패해도 KPI는 살립니다. Promise.all로 묶으면 둘 중 하나만 실패해도
-// DashboardPage의 .catch가 걸려 KPI·뉴스·이슈까지 전부 빈 화면이 됩니다.
-// 차트 한 칸 때문에 화면 전체를 잃지 않게 여기서 갈라둡니다.
+// 실연동된 둘 다 각자 실패해도 서로, 그리고 목업 항목을 물고 들어가지 않게 합니다.
+// Promise.all로 그냥 묶으면 하나만 실패해도 DashboardPage의 .catch가 걸려서
+// KPI·차트·뉴스·이슈까지 전부 빈 화면이 됩니다(예: 게스트는 /dashboard/summary가
+// 401을 냅니다). 그래서 각자 자기 실패만 책임지도록 개별 try/catch로 갈라둡니다.
 //
-// 실패를 목업으로 메우지는 않습니다 — 빈 배열이면 차트가 "표시할 추이 데이터가
-// 없습니다"를 그리고, 원인은 콘솔에 남습니다. 목업으로 덮으면 백엔드가 죽은 걸
-// 정상 화면처럼 보이게 만듭니다.
+// KPI 실패는 카드에 "—"를 채우고, 추이 실패는 목업으로 메우지 않고 빈 배열을
+// 돌려줍니다(차트는 "표시할 추이 데이터가 없습니다"를 그립니다) — 목업으로 덮으면
+// 백엔드가 죽은 걸 정상 화면처럼 보이게 만듭니다.
 export async function fetchDashboard() {
   const [kpiSummary, trend] = await Promise.all([
-    fetchKpiSummary(),
+    fetchKpiSummary().catch((err) => {
+      console.error('[dashboardApi] KPI 조회 실패(게스트이거나 인증 만료) — KPI만 빈 상태로 둡니다:', err);
+      return {
+        collectedDocs: { value: '—', desc: '' },
+        generatedReports: { value: '—', desc: '' },
+        wikiDocs: { value: '—', desc: '' },
+        avgConfidence: { value: '—', desc: '' },
+      };
+    }),
     fetchTrend().catch((err) => {
       console.error('[dashboardApi] 추이 조회 실패 — 차트만 빈 상태로 둡니다:', err);
       return [];
