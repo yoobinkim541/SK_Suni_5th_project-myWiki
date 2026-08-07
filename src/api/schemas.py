@@ -92,6 +92,11 @@ class SaveToWikiResponse(BaseModel):
 # Wiki 조회 — 프론트엔드 WikiPage 전용 (src/wiki/interface.py DTO를 그대로 반영)
 # ---------------------------------------------------------------------------
 
+class WikiKeywordCatalogOut(BaseModel):
+    word: str
+    category: str
+
+
 class WikiPageSummaryOut(BaseModel):
     model_config = {"from_attributes": True}
 
