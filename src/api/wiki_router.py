@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from . import db
 from .auth import get_current_user
-from .schemas import WikiKeywordCountOut, WikiPageContentOut, WikiPageSummaryOut, WikiVersionSummaryOut
+from .schemas import WikiKeywordCatalogOut, WikiPageContentOut, WikiPageSummaryOut, WikiVersionSummaryOut
 from ..wiki import query as wiki_query
 from ..wiki.interface import PageType
 
@@ -61,8 +61,8 @@ def get_versions(page_id: str, profile: dict = Depends(get_current_user)):
     return wiki_query.list_wiki_versions(workspace_id, page_id)
 
 
-@router.get("/keywords", response_model=list[WikiKeywordCountOut])
+@router.get("/keywords", response_model=list[WikiKeywordCatalogOut])
 def list_keywords(profile: dict = Depends(get_current_user)):
-    """위키 목록 화면의 키워드 필터 칩 바용 — 실제 사용 중인 키워드+건수."""
-    workspace_id = _require_workspace(profile)
-    return wiki_query.list_workspace_keyword_counts(workspace_id)
+    """위키 본문 키워드 하이라이트/키워드 바용 — 고정 카탈로그 전체(word, category)."""
+    _require_workspace(profile)
+    return wiki_query.list_keyword_catalog()

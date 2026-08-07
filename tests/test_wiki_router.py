@@ -147,11 +147,11 @@ def test_list_pages_with_keyword_filter(client, monkeypatch):
 
 def test_list_keywords(client, monkeypatch):
     monkeypatch.setattr(
-        wiki_query, "list_workspace_keyword_counts",
-        lambda workspace_id: [{"keyword": "HBM", "count": 12}, {"keyword": "수출통제", "count": 5}],
+        wiki_query, "list_keyword_catalog",
+        lambda: [{"word": "HBM", "category": "제품·기술"}, {"word": "삼성전자", "category": "경쟁사"}],
     )
 
     res = client.get("/wiki/keywords")
 
     assert res.status_code == 200
-    assert res.json() == [{"keyword": "HBM", "count": 12}, {"keyword": "수출통제", "count": 5}]
+    assert res.json() == [{"word": "HBM", "category": "제품·기술"}, {"word": "삼성전자", "category": "경쟁사"}]

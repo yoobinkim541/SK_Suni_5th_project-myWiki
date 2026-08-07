@@ -1,6 +1,7 @@
 """src/wiki/query.py의 list_published_wiki_pages() 단위 테스트 — DB는 FakeTable로 대체한다."""
 from __future__ import annotations
 
+from src.categories.keywords import CATEGORY_KEYWORDS
 from src.wiki import query as wiki_query
 
 WORKSPACE_ID = "ws-1"
@@ -98,3 +99,18 @@ def test_list_published_wiki_pages_keyword_no_match_returns_empty(monkeypatch):
     results = wiki_query.list_published_wiki_pages(WORKSPACE_ID, keyword="수출통제")
 
     assert results == []
+
+
+def test_list_keyword_catalog_flattens_full_dictionary():
+    catalog = wiki_query.list_keyword_catalog()
+
+    expected_total = sum(len(words) for words in CATEGORY_KEYWORDS.values())
+    assert len(catalog) == expected_total
+
+    category_by_word = {
+        word: category
+        for category, words in CATEGORY_KEYWORDS.items()
+        for word in words
+    }
+    for entry in catalog:
+        assert category_by_word[entry["word"]] == entry["category"]

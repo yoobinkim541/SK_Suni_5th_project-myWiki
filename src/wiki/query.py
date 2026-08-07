@@ -16,6 +16,7 @@ from typing import Optional
 
 from supabase import Client, create_client
 
+from ..categories.keywords import CATEGORY_KEYWORDS
 from .interface import (
     PageType,
     WikiPageContent,
@@ -65,33 +66,16 @@ def list_published_wiki_pages(
     return [WikiPageSummary(**row) for row in res.data]
 
 
-def list_workspace_keyword_counts(workspace_id: str) -> list[dict]:
-    """워크스페이스 안에서 published 페이지에 걸린 키워드별 건수. 건수 내림차순."""
-    db = _get_client()
-    published_res = (
-        db.table("wiki_pages")
-        .select("id")
-        .eq("workspace_id", workspace_id)
-        .eq("status", "published")
-        .execute()
-    )
-    published_ids = {row["id"] for row in published_res.data}
-    if not published_ids:
-        return []
+def list_keyword_catalog() -> list[dict]:
+    """카테고리 키워드 사전 전체를 {word, category} 형태로 평탄화한다.
 
-    keywords_res = (
-        db.table("wiki_page_keywords")
-        .select("page_id, keyword")
-        .in_("page_id", list(published_ids))
-        .execute()
-    )
-    counts: dict[str, int] = {}
-    for row in keywords_res.data:
-        counts[row["keyword"]] = counts.get(row["keyword"], 0) + 1
-
+    실사용 여부와 무관한 고정 카탈로그 — 프론트가 본문 키워드 하이라이트/집계에 쓴다.
+    DB 조회 없음(워크스페이스 무관, 항상 같은 값).
+    """
     return [
-        {"keyword": keyword, "count": count}
-        for keyword, count in sorted(counts.items(), key=lambda pair: -pair[1])
+        {"word": word, "category": category}
+        for category, words in CATEGORY_KEYWORDS.items()
+        for word in words
     ]
 
 
