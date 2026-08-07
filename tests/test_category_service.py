@@ -528,3 +528,68 @@ def test_level은_소문자_3종만_나온다():
     stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
 
     assert all(c.level in {"high", "mid", "low"} for c in stats.categories)
+
+
+# ------------------------------------------------------------
+# .in_() 분할 — 문서가 쌓여도 화면이 죽지 않아야 한다
+#
+# PostgREST는 필터를 쿼리스트링으로 보내서, id를 통째로 넣으면 데이터가 늘수록
+# 요청 URL이 길어지다가 400 Bad Request로 떨어진다. 2026-08-07에 실제로 이 화면이
+# 통째로 죽었고(#145), 화면에는 이유 없이 "Failed to fetch"로만 보였다.
+#
+# 그 수정(#145)이 한 번 리버트됐다가 재적용된(#146 -> #147) 이력이 있는데 회귀
+# 테스트가 없어서, 되돌아가도 아무도 못 잡는 상태였다. 그래서 뒤늦게 덧붙인다.
+# ------------------------------------------------------------
+
+
+class RecordingTable(FakeTable):
+    """.in_()에 한 번에 넘어온 id 개수를 기록한다."""
+
+    def __init__(self, rows, batches):
+        super().__init__(rows)
+        self._batches = batches
+
+    def in_(self, field, values):
+        self._batches.append(len(values))
+        return super().in_(field, values)
+
+
+class RecordingSupabase(FakeSupabase):
+    def __init__(self, tables):
+        super().__init__(tables)
+        self.in_batches: list[int] = []
+
+    def table(self, name):
+        return RecordingTable(self.tables.setdefault(name, []), self.in_batches)
+
+
+def _many(count):
+    rows = [_analysis(f"v{i}", "제품·기술", score=80) for i in range(count)]
+    docs = [_doc(f"v{i}", f"기사 {i}") for i in range(count)]
+    versions = [{"id": f"v{i}", "document_id": f"d-v{i}"} for i in range(count)]
+    return RecordingSupabase({
+        "document_analysis_results": rows,
+        "document_versions": versions,
+        "documents": docs,
+        "sources": SOURCES,
+    })
+
+
+def test_id가_많아도_in_에_한도_넘게_넣지_않는다():
+    db = _many(service._IN_CLAUSE_CHUNK_SIZE * 2 + 37)
+
+    service.get_category_stats(WORKSPACE_ID, supabase=db, now=NOW)
+
+    assert db.in_batches, ".in_()이 한 번도 안 불렸다 — 테스트가 경로를 못 탔다"
+    assert max(db.in_batches) <= service._IN_CLAUSE_CHUNK_SIZE
+
+
+def test_분할해서_조회해도_건수가_맞는다():
+    """나눠 부른 결과를 합치지 않으면 뒷 묶음이 통째로 사라진다."""
+    count = service._IN_CLAUSE_CHUNK_SIZE * 2 + 37
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_many(count), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert stats.total_documents == count
+    assert by_id["product-tech"].count == count
