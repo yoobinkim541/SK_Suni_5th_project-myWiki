@@ -71,7 +71,7 @@ export default function IssueList({ items, onSelectWiki, onOpenIssue, downloadFo
             }
           >
             <div className={`tr${LEVEL_CLASS[issue.level] ? ` ${LEVEL_CLASS[issue.level]}` : ''}`}>
-              <div className="l">신뢰도 : {LEVEL_LABEL[issue.level]}</div>
+              <div className="l"><span className="lb">신뢰도 :</span> <span className="v">{LEVEL_LABEL[issue.level]}</span></div>
             </div>
             <div>
               <div className="ct">{issue.category}</div>

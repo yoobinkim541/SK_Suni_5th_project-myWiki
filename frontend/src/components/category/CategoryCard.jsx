@@ -35,13 +35,11 @@ export default function CategoryCard({ name, count, topIssue, tags = [], level, 
       <div className="top-issue">{topIssue}</div>
       {tags.length > 0 && (
         <div className="tags">
-          {tags.map((t) => (
-            <span className="tag" key={t}>{t}</span>
-          ))}
+          <span className="tag">{tags.join(' · ')}</span>
         </div>
       )}
       <div className="cat-foot">
-        <span className={`trust ${LEVEL_CLASS[level] || ''}`}>신뢰도 : {LEVEL_LABEL[level]}</span>
+        <span className={`trust ${LEVEL_CLASS[level] || ''}`}><span className="lb">신뢰도 :</span> <span className="v">{LEVEL_LABEL[level]}</span></span>
       </div>
     </div>
   );
