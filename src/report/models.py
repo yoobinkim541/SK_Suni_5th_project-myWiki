@@ -195,6 +195,7 @@ class ReportCitationDraft(BaseModel):
     document_title: str | None = None
     source_name: str | None = None
     published_at: str | None = None
+    source_url: str | None = None
 
     @field_validator("analysis_result_id", "document_version_id")
     @classmethod
@@ -203,7 +204,7 @@ class ReportCitationDraft(BaseModel):
             raise ValueError("citation identifiers must not be empty.")
         return value.strip()
 
-    @field_validator("citation_role", "evidence_text", "document_title", "source_name", "published_at", mode="before")
+    @field_validator("citation_role", "evidence_text", "document_title", "source_name", "published_at", "source_url", mode="before")
     @classmethod
     def normalize_optional_text(cls, value: object) -> str | None:
         if value is None:
@@ -244,6 +245,7 @@ class ReportSectionDraft(BaseModel):
     representative_analysis_result_id: str
     category: Category
     importance_score: int | None = Field(default=None, ge=0, le=100)
+    reliability_score: int | None = Field(default=None, ge=0, le=100)
     impact_direction: ImpactDirection | None = None
     time_horizon: TimeHorizon | None = None
     title: str
@@ -348,6 +350,7 @@ class ReportNewsSource(BaseModel):
     document_title: str | None = None
     source_name: str | None = None
     published_at: str | None = None
+    source_url: str | None = None
 
     @field_validator("document_version_id")
     @classmethod
@@ -356,7 +359,7 @@ class ReportNewsSource(BaseModel):
             raise ValueError("document_version_id must not be empty.")
         return value.strip()
 
-    @field_validator("document_title", "source_name", "published_at", mode="before")
+    @field_validator("document_title", "source_name", "published_at", "source_url", mode="before")
     @classmethod
     def normalize_optional_text(cls, value: object) -> str | None:
         if value is None:

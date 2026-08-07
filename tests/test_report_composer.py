@@ -20,7 +20,7 @@ from src.report.composer import (
     compose_report_section,
     compose_report_sections,
 )
-from src.report.models import EnrichedIssueGroup, IssueGroup, ReportCandidate, WikiContext
+from src.report.models import EnrichedIssueGroup, IssueGroup, ReportCandidate, ReportSectionStatus, WikiContext
 
 
 def make_candidate(
@@ -142,6 +142,7 @@ def test_compose_report_section_maps_valid_output_to_section_draft() -> None:
     assert section.importance_score == 88
     assert section.impact_direction == ImpactDirection.OPPORTUNITY
     assert section.time_horizon == TimeHorizon.MID_TERM
+    assert section.status == ReportSectionStatus.COMPLETED
     assert section.news_citations[0].document_version_id == "doc-ver-a"
     assert section.wiki_references[0].wiki_version_id == "wiki-ver-1"
     # 렌더러가 document_version_id/wiki_page_id 원문을 그대로 노출하지 않도록,

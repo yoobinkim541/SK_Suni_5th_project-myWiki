@@ -35,8 +35,8 @@ def test_report_generation_config_has_component_configs() -> None:
     config = ReportGenerationConfig()
 
     assert config.selection.max_candidates is None
-    assert config.selection.min_reliability_score == 40
-    assert config.selection.min_importance_score == 40
+    assert config.selection.min_reliability_score == 20
+    assert config.selection.min_importance_score == 20
     assert config.wiki.limit_per_group >= 0
     assert config.composer.prompt_version
 
@@ -139,6 +139,9 @@ def _patch_pipeline_stages(monkeypatch: pytest.MonkeyPatch, sections: list[Repor
     )
     monkeypatch.setattr("src.report.interface.save_report_sections", lambda **kwargs: [object()])
     monkeypatch.setattr("src.report.interface.create_and_save_markdown_artifact", lambda **kwargs: _make_artifact())
+    monkeypatch.setattr("src.report.interface.create_and_save_pdf_artifact", lambda **kwargs: _make_artifact())
+    monkeypatch.setattr("src.report.interface.create_and_save_docx_artifact", lambda **kwargs: _make_artifact())
+    monkeypatch.setattr("src.report.interface.create_and_save_pptx_artifact", lambda **kwargs: _make_artifact())
     monkeypatch.setattr("src.report.interface.mark_report_completed", lambda **kwargs: None)
 
 

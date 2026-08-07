@@ -28,6 +28,7 @@ def test_scheduled_daily_report_uses_korean_date(monkeypatch):
             "workspace_id": "00000000-0000-0000-0000-000000000001",
             "report_date": datetime(2026, 8, 7, 8, tzinfo=timezone.utc).date(),
             "requested_by": None,
+            "formats": ["pdf"],
             "analysis_document_version_ids": ["doc-version-1"],
         }
     ]

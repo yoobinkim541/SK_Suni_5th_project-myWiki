@@ -17,6 +17,7 @@ from .models import (
     ReportCandidate,
     ReportCitationDraft,
     ReportSectionDraft,
+    ReportSectionStatus,
     ReportWikiReferenceDraft,
     WikiContext,
 )
@@ -88,6 +89,7 @@ class ReportSectionComposerInput(BaseModel):
     representative_analysis_result_id: str
     language: str
     importance_score: int | None = None
+    reliability_score: int | None = None
     impact_direction: ImpactDirection | None = None
     time_horizon: TimeHorizon | None = None
     news_sources: list[ComposerNewsSource]
@@ -212,6 +214,7 @@ def build_composer_input(
         representative_analysis_result_id=representative.analysis_result_id,
         language=config.language,
         importance_score=representative.importance_score,
+        reliability_score=representative.reliability_score,
         impact_direction=representative.impact_direction,
         time_horizon=representative.time_horizon,
         news_sources=news_sources,
@@ -289,6 +292,7 @@ def to_report_section_draft(
         representative_analysis_result_id=composer_input.representative_analysis_result_id,
         category=composer_input.category,
         importance_score=composer_input.importance_score,
+        reliability_score=composer_input.reliability_score,
         impact_direction=composer_input.impact_direction,
         time_horizon=composer_input.time_horizon,
         title=payload.title,
@@ -299,6 +303,7 @@ def to_report_section_draft(
         watch_points=[point.text for point in payload.watch_points],
         news_citations=news_citations,
         wiki_references=wiki_references,
+        status=ReportSectionStatus.COMPLETED,
     )
 
 
@@ -321,6 +326,7 @@ def build_report_citation_drafts(
                 document_title=source.title,
                 source_name=source.source_name,
                 published_at=source.published_at,
+                source_url=source.canonical_url,
             )
         )
     return drafts
