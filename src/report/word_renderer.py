@@ -138,12 +138,18 @@ def render_daily_report_word(document: WordReportDocument) -> bytes:
     doc.add_paragraph("", style="MyWikiBody")
 
     if not normalized_document.sections:
-        doc.add_paragraph("No completed sections available.", style="MyWikiBody")
+        doc.add_paragraph("\uc644\ub8cc\ub41c \uc139\uc158\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.", style="MyWikiBody")
     else:
         for index, section in enumerate(normalized_document.sections, start=1):
             if index > 1:
                 doc.add_page_break()
             _render_section(doc, index, section)
+        all_evidences = tuple(
+            evidence for section in normalized_document.sections for evidence in section.evidences
+        )
+        if all_evidences:
+            doc.add_page_break()
+            _render_sources_section(doc, all_evidences)
 
     buffer = BytesIO()
     doc.save(buffer)
@@ -247,11 +253,13 @@ def _configure_page_layout(doc, layout: WordLayout) -> None:
 def _configure_styles(doc, layout: WordLayout) -> None:
     normal = doc.styles["Normal"]
     normal.font.name = DEFAULT_WORD_FONT_NAME
+    _set_style_font_name(normal)
     normal.font.size = Pt(layout.body_font_size)
 
     if "MyWikiTitle" not in doc.styles:
         style = doc.styles.add_style("MyWikiTitle", WD_STYLE_TYPE.PARAGRAPH)
         style.font.name = DEFAULT_WORD_FONT_NAME
+        _set_style_font_name(style)
         style.font.bold = True
         style.font.size = Pt(layout.title_font_size)
         style.paragraph_format.space_after = Pt(4)
@@ -259,6 +267,7 @@ def _configure_styles(doc, layout: WordLayout) -> None:
     if "MyWikiTitleDate" not in doc.styles:
         style = doc.styles.add_style("MyWikiTitleDate", WD_STYLE_TYPE.PARAGRAPH)
         style.font.name = DEFAULT_WORD_FONT_NAME
+        _set_style_font_name(style)
         style.font.size = Pt(layout.title_date_font_size)
         style.font.color.rgb = RGBColor(107, 114, 128)
         style.paragraph_format.space_after = Pt(14)
@@ -266,6 +275,7 @@ def _configure_styles(doc, layout: WordLayout) -> None:
     if "MyWikiHeading" not in doc.styles:
         style = doc.styles.add_style("MyWikiHeading", WD_STYLE_TYPE.PARAGRAPH)
         style.font.name = DEFAULT_WORD_FONT_NAME
+        _set_style_font_name(style)
         style.font.bold = True
         style.font.size = Pt(layout.heading_font_size)
         style.paragraph_format.space_before = Pt(10)
@@ -274,12 +284,14 @@ def _configure_styles(doc, layout: WordLayout) -> None:
     if "MyWikiBody" not in doc.styles:
         style = doc.styles.add_style("MyWikiBody", WD_STYLE_TYPE.PARAGRAPH)
         style.font.name = DEFAULT_WORD_FONT_NAME
+        _set_style_font_name(style)
         style.font.size = Pt(layout.body_font_size)
         style.paragraph_format.space_after = Pt(3)
 
     if "MyWikiMuted" not in doc.styles:
         style = doc.styles.add_style("MyWikiMuted", WD_STYLE_TYPE.PARAGRAPH)
         style.font.name = DEFAULT_WORD_FONT_NAME
+        _set_style_font_name(style)
         style.font.size = Pt(max(layout.body_font_size - 1, 8))
         style.paragraph_format.space_after = Pt(3)
 
@@ -306,23 +318,20 @@ def _configure_header(doc, document: WordReportDocument) -> None:
         left_para.paragraph_format.space_after = Pt(0)
         left_para.paragraph_format.space_before = Pt(0)
         left_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-
-        logo_path = _resolve_logo_path()
-        if logo_path is not None:
-            picture_run = left_para.add_run()
-            picture_run.add_picture(str(logo_path), height=Mm(document.layout.header_logo_height_mm))
-            left_para.add_run("  ")
-
-        brand_run = left_para.add_run("Mywiki")
-        _set_run_font(brand_run, size=document.layout.header_brand_font_size, bold=True)
+        date_run = left_para.add_run(_format_header_date_dots(document.report_date))
+        _set_run_font(date_run, size=document.layout.header_date_font_size)
 
         right_para = right_cell.paragraphs[0]
         right_para.paragraph_format.space_after = Pt(0)
         right_para.paragraph_format.space_before = Pt(0)
         right_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        brand_run = right_para.add_run("Mywiki  ")
+        _set_run_font(brand_run, size=document.layout.header_brand_font_size, bold=True)
 
-        date_run = right_para.add_run(_format_header_date_dots(document.report_date))
-        _set_run_font(date_run, size=document.layout.header_date_font_size)
+        logo_path = _resolve_logo_path()
+        if logo_path is not None:
+            picture_run = right_para.add_run()
+            picture_run.add_picture(str(logo_path), height=Mm(document.layout.header_logo_height_mm))
 
 
 def _resolve_logo_path() -> Path | None:
@@ -368,6 +377,16 @@ def _set_row_bottom_border(row, *, color: str, size: str) -> None:
         bottom.set(qn("w:color"), color)
 
 
+def _set_style_font_name(style) -> None:
+    r_pr = style._element.get_or_add_rPr()
+    r_fonts = r_pr.find(qn("w:rFonts"))
+    if r_fonts is None:
+        r_fonts = OxmlElement("w:rFonts")
+        r_pr.append(r_fonts)
+    for font_key in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        r_fonts.set(qn(font_key), DEFAULT_WORD_FONT_NAME)
+
+
 def _set_run_font(run, *, size: float, bold: bool = False) -> None:
     run.bold = bold
     run.font.name = DEFAULT_WORD_FONT_NAME
@@ -404,33 +423,45 @@ def _parse_date_text(value: str) -> date | None:
 
 def _render_section(doc, index: int, section: WordSection) -> None:
     doc.add_paragraph(f"{index}. {section.title}", style="MyWikiHeading")
-    meta_bits = [f"Category: {section.category}", f"Status: {section.status}"]
+    meta_bits = [f"\uce74\ud14c\uace0\ub9ac: {section.category}", f"\uc0c1\ud0dc: {section.status}"]
     if section.importance_score is not None:
-        meta_bits.append(f"Importance: {section.importance_score}")
+        meta_bits.append(f"\uc911\uc694\ub3c4: {section.importance_score}")
     if section.impact_direction:
-        meta_bits.append(f"Impact: {section.impact_direction}")
+        meta_bits.append(f"\uc601\ud5a5: {section.impact_direction}")
     if section.time_horizon:
-        meta_bits.append(f"Time horizon: {section.time_horizon}")
+        meta_bits.append(f"\uc2dc\uac04 \ubc94\uc704: {section.time_horizon}")
     doc.add_paragraph(" | ".join(meta_bits), style="MyWikiMuted")
 
-    _add_labeled_paragraph(doc, "Current summary", section.current_summary)
-    _add_bullet_block(doc, "Key facts", section.key_facts)
-    _add_bullet_block(doc, "Historical context", section.historical_context)
-    _add_bullet_block(doc, "Implications", section.implications)
-    _add_bullet_block(doc, "Watch points", section.watch_points)
-
-    if section.evidences:
-        doc.add_paragraph("Evidence", style="MyWikiHeading")
-        table = doc.add_table(rows=1, cols=2)
-        table.style = "Table Grid"
-        table.rows[0].cells[0].text = "Document"
-        table.rows[0].cells[1].text = "Evidence"
-        for evidence in section.evidences:
-            row = table.add_row().cells
-            row[0].text = evidence.document_version_id
-            row[1].text = _format_evidence_line(evidence)
+    _add_labeled_paragraph(doc, "\ud604\uc7ac \uc694\uc57d", section.current_summary)
+    _add_bullet_block(doc, "\ud575\uc2ec \uc0ac\uc2e4", section.key_facts)
+    _add_bullet_block(doc, "\uacfc\uac70 \ub9e5\ub77d", section.historical_context)
+    _add_bullet_block(doc, "SK\ud558\uc774\ub2c9\uc2a4 \uc601\ud5a5", section.implications)
+    _add_bullet_block(doc, "\ub2e4\uc74c \ud655\uc778 \uc0ac\ud56d", section.watch_points)
 
     doc.add_paragraph("", style="MyWikiBody")
+
+
+
+def _render_sources_section(doc, evidences: tuple[WordEvidenceLine, ...]) -> None:
+    doc.add_paragraph("\uc804\uccb4 \ucd9c\ucc98 \ubaa9\ub85d", style="MyWikiHeading")
+    table = doc.add_table(rows=1, cols=3)
+    table.style = "Table Grid"
+    headers = ("\ubc88\ud638", "\ubb38\uc11c", "\uadfc\uac70")
+    for cell, header in zip(table.rows[0].cells, headers):
+        _set_cell_text(cell, header, bold=True)
+    for index, evidence in enumerate(evidences, start=1):
+        row = table.add_row().cells
+        _set_cell_text(row[0], str(index))
+        _set_cell_text(row[1], evidence.document_version_id)
+        _set_cell_text(row[2], _format_evidence_line(evidence))
+
+
+
+def _set_cell_text(cell, text: str, *, bold: bool = False) -> None:
+    cell.text = ""
+    paragraph = cell.paragraphs[0]
+    run = paragraph.add_run(text)
+    _set_run_font(run, size=9, bold=bold)
 
 
 def _add_labeled_paragraph(doc, label: str, value: Optional[str]) -> None:
@@ -453,7 +484,7 @@ def _add_bullet_block(doc, label: str, items: tuple[str, ...]) -> None:
 
 
 def _format_evidence_line(evidence: WordEvidenceLine) -> str:
-    base = evidence.evidence_text or "Citation reference"
+    base = evidence.evidence_text or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c"
     if evidence.relevance_score is None:
         return base
-    return f"{base} (relevance: {evidence.relevance_score:.2f})"
+    return f"{base} (\uad00\ub828\ub3c4: {evidence.relevance_score:.2f})"

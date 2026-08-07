@@ -16,7 +16,7 @@ from .repository import (
     get_report_artifact,
     save_report_artifact_metadata,
 )
-from .pdf_renderer import PdfEvidenceLine, PdfReportDocument, PdfSection, normalize_pdf_text, render_daily_report_pdf
+from .pdf_renderer import PdfEvidenceLine, PdfReportDocument, PdfSection, PdfSourceLine, normalize_pdf_text, render_daily_report_pdf
 from .ppt_renderer import build_daily_report_ppt_document, render_daily_report_ppt
 from .word_renderer import build_daily_report_word_document, render_daily_report_word
 
@@ -493,34 +493,122 @@ def _normalize_path_segment(value: str, *, field_name: str) -> str:
 
 def _render_generated_report_pdf(report: GeneratedReport) -> bytes:
     generated_at = report.generated_at.isoformat() if report.generated_at is not None else report.report_date.isoformat()
-    title = normalize_pdf_text(report.title or "일일 산업 동향 보고서")
-    subtitle = normalize_pdf_text(f"{report.report_type.value}:{report.workspace_id}:{report.report_date.isoformat()}")
-    sections = tuple(
+    title = normalize_pdf_text(report.title or "\uc77c\uc77c \uc0b0\uc5c5 \ub3d9\ud5a5 \ubcf4\uace0\uc11c")
+    sections = [
+        PdfSection(category="", title="\uc624\ub298\uc758 \ud575\uc2ec \uc694\uc57d", body=_build_pdf_executive_summary(report), confidence_label="", section_type="executive"),
+        PdfSection(category="", title="\uc774\uc288\ubcc4 \ubd84\uc11d", body="", confidence_label="", section_type="issues_heading"),
+    ]
+    sections.extend(
         PdfSection(
-            category=normalize_pdf_text(section.category.value),
-            title=normalize_pdf_text(section.title),
-            body=normalize_pdf_text(section.current_summary or "No content"),
-            confidence_label=normalize_pdf_text(_build_pdf_confidence_label(section)),
-            evidences=tuple(
-                PdfEvidenceLine(
-                    document_version_id=normalize_pdf_text(citation.document_version_id),
-                    quoted_text=normalize_pdf_text((citation.evidence_text or "Citation reference").strip() or "Citation reference"),
-                    relevance_score=citation.relevance_score,
-                )
-                for citation in section.news_citations[:3]
-            ),
+            category=section.category.value,
+            title=f"ISSUE {index:02d}. {section.title}",
+            body=_build_pdf_issue_body(section),
+            confidence_label="",
+            evidences=_build_pdf_evidences(section),
+            section_type="issue",
+            importance_score=section.importance_score,
+            reliability_score=section.reliability_score,
         )
-        for section in report.sections
+        for index, section in enumerate(report.sections, start=1)
         if getattr(section.status, "value", section.status) == "completed"
     )
-    document = PdfReportDocument(
-        title=title,
-        subtitle=subtitle,
-        generated_at=generated_at,
-        version=report.version,
-        sections=sections,
+    sections.extend(
+        [
+            PdfSection(category="", title="\uce74\ud14c\uace0\ub9ac\ubcc4 \uc815\ub9ac", body=_build_pdf_category_summary(report), confidence_label="", section_type="categories"),
+            PdfSection(category="", title="\uc885\ud569 \uc2dc\uc0ac\uc810", body=_build_pdf_overall_implications(report), confidence_label="", section_type="implications"),
+            PdfSection(category="", title="\uc804\uccb4 \ucd9c\ucc98 \ubaa9\ub85d", body="", confidence_label="", section_type="sources", source_rows=_build_pdf_source_rows(report)),
+        ]
     )
-    return render_daily_report_pdf(document)
+    return render_daily_report_pdf(
+        PdfReportDocument(
+            title=title,
+            subtitle=normalize_pdf_text(report.report_date.isoformat()),
+            generated_at=generated_at,
+            version=report.version,
+            sections=tuple(sections),
+        )
+    )
+
+
+def _build_pdf_executive_summary(report: GeneratedReport) -> str:
+    summaries = [item.summary for item in report.executive_summaries if item.summary][:5]
+    if not summaries:
+        return f"- \uc8fc\uc694 \uc774\uc288 \uc815\ubcf4 \uc5c6\uc74c"
+    return "\n".join(f"{index}. {summary}" for index, summary in enumerate(summaries, start=1))
+
+
+def _build_pdf_issue_body(section) -> str:
+    facts = [item for item in section.key_facts if item] or ["- \uc815\ubcf4 \uc5c6\uc74c"]
+    implications = [item for item in section.implications if item] or ["- \uc815\ubcf4 \uc5c6\uc74c"]
+    watch_points = [item for item in section.watch_points if item] or ["- \uc815\ubcf4 \uc5c6\uc74c"]
+    lines = ["\uc0ac\uc2e4", *[f"- {item}" for item in facts], "", "\uc758\ubbf8", section.current_summary or "\uc815\ubcf4 \uc5c6\uc74c", "", "SK\ud558\uc774\ub2c9\uc2a4 \uc601\ud5a5", *[f"- {item}" for item in implications], "", "\ub2e4\uc74c \ud655\uc778 \uc0ac\ud56d", *[f"- {item}" for item in watch_points]]
+    return "\n".join(lines)
+
+
+def _build_pdf_evidences(section) -> tuple[PdfEvidenceLine, ...]:
+    return tuple(
+        PdfEvidenceLine(
+            document_version_id=normalize_pdf_text(_format_pdf_citation_label(citation)),
+            quoted_text=normalize_pdf_text((citation.evidence_text or citation.document_title or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c").strip()),
+            relevance_score=citation.relevance_score,
+        )
+        for citation in section.news_citations
+    )
+
+
+def _format_pdf_citation_label(citation) -> str:
+    parts = [part for part in (citation.source_name, citation.published_at) if part]
+    return " | ".join(parts) or "\ub274\uc2a4 \ucd9c\ucc98"
+
+
+def _build_pdf_category_summary(report: GeneratedReport) -> str:
+    category_order = ("\uc81c\ud488\u00b7\uae30\uc220", "\uacbd\uc7c1\uc0ac", "\uace0\uac1d\u00b7\uc218\uc694\uc0b0\uc5c5", "\uacf5\uae09\ub9dd\u00b7\uc0dd\uc0b0", "\uc815\ucc45\u00b7\uaddc\uc81c", "\uc2dc\uc7a5\u00b7\uacbd\uc601")
+    groups = {group.category.value: group.sections for group in report.category_groups}
+    lines: list[str] = []
+    for category in category_order:
+        lines.append(category)
+        sections = groups.get(category, [])
+        if not sections:
+            lines.append(f"- \uc8fc\uc694 \ub3d9\ud5a5 \uc5c6\uc74c")
+        else:
+            lines.extend(f"- {item.title}: {item.current_summary or '\uc815\ubcf4 \uc5c6\uc74c'}" for item in sections[:3])
+    return "\n".join(lines)
+
+
+def _build_pdf_overall_implications(report: GeneratedReport) -> str:
+    overall = report.overall_implications
+    opportunities = [f"- {item}" for item in (overall.opportunities if overall is not None else [])] or ["- \uc815\ubcf4 \uc5c6\uc74c"]
+    risks = [f"- {item}" for item in (overall.risks if overall is not None else [])] or ["- \uc815\ubcf4 \uc5c6\uc74c"]
+    monitoring = [f"- {item}" for item in (overall.monitoring_points if overall is not None else [])] or ["- \uc815\ubcf4 \uc5c6\uc74c"]
+    return "\n".join([
+        "\uae30\ud68c", *opportunities,
+        "", "\uc704\ud5d8", *risks,
+        "", "\uc9c0\uc18d \uad00\ucc30", *monitoring,
+    ])
+
+
+def _format_pdf_source_date(value: str | None) -> str:
+    if not value:
+        return ""
+    return value[:10].replace("-", ".")
+
+
+def _build_pdf_source_rows(report: GeneratedReport) -> tuple[PdfSourceLine, ...]:
+    rows: list[PdfSourceLine] = []
+    seen: set[tuple[str, str, str]] = set()
+    for source in report.news_sources:
+        key = ("\ub274\uc2a4", source.source_name or "", source.document_title or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(PdfSourceLine(source_type=f"\ub274\uc2a4 | {source.source_name or '\uc815\ubcf4 \uc5c6\uc74c'}", source_name=source.source_name or "", title=source.document_title or "\uc815\ubcf4 \uc5c6\uc74c", published_at=_format_pdf_source_date(source.published_at), url=source.source_url))
+    for source in report.wiki_sources:
+        key = ("\ub0b4\ubd80 Wiki", source.wiki_page_id, source.wiki_title or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(PdfSourceLine(source_type="\ub0b4\ubd80 Wiki", source_name="", title=source.wiki_title or "\uc815\ubcf4 \uc5c6\uc74c", published_at=""))
+    return tuple(rows)
 
 
 def _build_pdf_confidence_label(section) -> str:

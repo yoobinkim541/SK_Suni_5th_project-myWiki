@@ -129,14 +129,14 @@ def render_daily_report_ppt(document: PptReportDocument) -> bytes:
     if not normalized_document.sections:
         slide = presentation.slides.add_slide(presentation.slide_layouts[6])
         _fill_background(slide, BRAND_MIST)
-        _add_slide_title(slide, "Completed Sections", normalized_document.layout)
+        _add_slide_title(slide, "\uc644\ub8cc\ub41c \uc139\uc158", normalized_document.layout)
         _add_text_block(
             slide,
             left=0.9,
             top=1.8,
             width=6.5,
             height=1.2,
-            text="No completed sections available.",
+            text="\uc644\ub8cc\ub41c \uc139\uc158\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.",
             font_size=20,
             layout=normalized_document.layout,
             color=BRAND_TEXT,
@@ -145,19 +145,10 @@ def render_daily_report_ppt(document: PptReportDocument) -> bytes:
         for index, section in enumerate(normalized_document.sections, start=1):
             _add_section_overview_slide(presentation, normalized_document, index, section)
             _add_section_highlight_slide(presentation, normalized_document, index, section)
-            if section.evidences:
-                for chunk_index, evidence_chunk in enumerate(
-                    _chunked(section.evidences, normalized_document.layout.max_evidences_per_slide),
-                    start=1,
-                ):
-                    _add_section_evidence_slide(
-                        presentation,
-                        normalized_document,
-                        index,
-                        section,
-                        chunk_index,
-                        evidence_chunk,
-                    )
+        all_source_items = _collect_source_items(normalized_document.sections)
+        if all_source_items:
+            for chunk_index, source_chunk in enumerate(_chunked_text(all_source_items, 5), start=1):
+                _add_sources_slide(presentation, normalized_document, chunk_index, source_chunk)
 
     buffer = BytesIO()
     presentation.save(buffer)
@@ -364,7 +355,7 @@ def _add_agenda_slides(presentation: Presentation, document: PptReportDocument) 
             top=1.8,
             width=5.0,
             height=1.0,
-            text="No completed sections available.",
+            text="\uc644\ub8cc\ub41c \uc139\uc158\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.",
             font_size=18,
             layout=document.layout,
             color=BRAND_TEXT,
@@ -386,11 +377,11 @@ def _add_agenda_slides(presentation: Presentation, document: PptReportDocument) 
             top=1.45,
             width=5.05,
             height=4.95,
-            title="Reading Flow",
+            title="\ubcf4\uae30 \ud750\ub984",
             items=[
                 "섹션 요약 슬라이드로 이슈를 파악합니다.",
-                "Highlights 슬라이드에서 핵심 사실과 시사점을 봄니다.",
-                "Evidence 슬라이드에서 근거 문장을 나누어 확인합니다.",
+                "Highlights \uc2ac\ub77c\uc774\ub4dc\uc5d0\uc11c \ud575\uc2ec \uc0ac\uc2e4\uacfc \uc2dc\uc0ac\uc810\uc744 \ubd05\ub2c8\ub2e4.",
+                "\ub9c8\uc9c0\ub9c9 \ucd9c\ucc98 \ubaa9\ub85d\uc5d0\uc11c \uadfc\uac70\ub97c \ud55c\ubc88\uc5d0 \ud655\uc778\ud569\ub2c8\ub2e4.",
             ],
         )
 
@@ -414,12 +405,12 @@ def _add_section_overview_slide(
         top=1.95,
         width=3.8,
         height=4.5,
-        title="Quick Signals",
+        title="\ud575\uc2ec \uc2e0\ud638",
         items=[
-            f"Importance: {section.importance_score}" if section.importance_score is not None else "Importance: n/a",
-            f"Impact: {section.impact_direction}" if section.impact_direction else "Impact: n/a",
-            f"Time horizon: {section.time_horizon}" if section.time_horizon else "Time horizon: n/a",
-            f"Evidence count: {len(section.evidences)}",
+            f"\uc911\uc694\ub3c4: {section.importance_score}" if section.importance_score is not None else "\uc911\uc694\ub3c4: n/a",
+            f"\uc601\ud5a5: {section.impact_direction}" if section.impact_direction else "\uc601\ud5a5: n/a",
+            f"\uc2dc\uac04 \ubc94\uc704: {section.time_horizon}" if section.time_horizon else "\uc2dc\uac04 \ubc94\uc704: n/a",
+            f"\ucd9c\ucc98 \uac1c\uc218: {len(section.evidences)}",
         ],
     )
 
@@ -435,28 +426,44 @@ def _add_section_highlight_slide(
     _add_slide_title(slide, f"{index}. {section.title} | Highlights", document.layout)
 
     columns = [
-        ("Key Facts", list(section.key_facts[:3])),
-        ("Implications", list(section.implications[:3])),
-        ("Watch Points", list(section.watch_points[:3]) or list(section.historical_context[:3])),
+        ("\ud575\uc2ec \uc0ac\uc2e4", list(section.key_facts[:3])),
+        ("SK\ud558\uc774\ub2c9\uc2a4 \uc601\ud5a5", list(section.implications[:3])),
+        ("\ub2e4\uc74c \ud655\uc778 \uc0ac\ud56d", list(section.watch_points[:3]) or list(section.historical_context[:3])),
     ]
     positions = [(0.9, 1.55), (4.45, 1.55), (8.0, 1.55)]
     for (title, items), (left, top) in zip(columns, positions):
-        _add_bullet_card(slide, left=left, top=top, width=3.0, height=4.6, title=title, items=items or ["No notable items"])
+        _add_bullet_card(slide, left=left, top=top, width=3.0, height=4.6, title=title, items=items or ["\ud45c\uc2dc\ud560 \ud56d\ubaa9\uc774 \uc5c6\uc2b5\ub2c8\ub2e4."])
 
 
-def _add_section_evidence_slide(
+def _add_sources_slide(
     presentation: Presentation,
     document: PptReportDocument,
-    index: int,
-    section: PptSection,
     chunk_index: int,
-    evidence_chunk: tuple[PptEvidenceLine, ...],
+    source_chunk: list[str],
 ) -> None:
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     _fill_background(slide, RGBColor(255, 255, 255))
-    _add_slide_title(slide, f"{index}. {section.title} | Evidence {chunk_index}", document.layout)
-    items = [_format_evidence_line(evidence) for evidence in evidence_chunk]
-    _add_bullet_card(slide, left=0.9, top=1.55, width=11.25, height=4.9, title="Evidence Notes", items=items)
+    title = "\uc804\uccb4 \ucd9c\ucc98 \ubaa9\ub85d" if chunk_index == 1 else f"\uc804\uccb4 \ucd9c\ucc98 \ubaa9\ub85d {chunk_index}"
+    _add_slide_title(slide, title, document.layout)
+    _add_bullet_card(slide, left=0.9, top=1.45, width=11.25, height=5.05, title="\ucd9c\ucc98", items=source_chunk)
+
+
+
+def _collect_source_items(sections: tuple[PptSection, ...]) -> list[str]:
+    items: list[str] = []
+    for section in sections:
+        for evidence in section.evidences:
+            items.append(_format_source_line(section.title, evidence, len(items) + 1))
+    return items
+
+
+
+def _format_source_line(section_title: str, evidence: PptEvidenceLine, source_index: int) -> str:
+    base = evidence.evidence_text or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c"
+    suffix = ""
+    if evidence.relevance_score is not None:
+        suffix = f" (\uad00\ub828\ub3c4: {evidence.relevance_score:.2f})"
+    return f"{source_index}. [{section_title}] {evidence.document_version_id} - {base}{suffix}"
 
 
 def _resolve_logo_path() -> Path | None:
@@ -510,13 +517,13 @@ def _add_info_card(slide, *, left: float, top: float, width: float, height: floa
 
 
 def _add_meta_chips(slide, section: PptSection, layout: PptLayout) -> None:
-    items = [f"Category  {section.category}", f"Status  {section.status}"]
+    items = [f"\uce74\ud14c\uace0\ub9ac  {section.category}", f"\uc0c1\ud0dc  {section.status}"]
     if section.importance_score is not None:
-        items.append(f"Importance  {section.importance_score}")
+        items.append(f"\uc911\uc694\ub3c4  {section.importance_score}")
     if section.impact_direction:
-        items.append(f"Impact  {section.impact_direction}")
+        items.append(f"\uc601\ud5a5  {section.impact_direction}")
     if section.time_horizon:
-        items.append(f"Time  {section.time_horizon}")
+        items.append(f"\uc2dc\uac04  {section.time_horizon}")
     left = 0.9
     top = 1.25
     for item in items:
@@ -546,7 +553,7 @@ def _add_summary_panel(slide, summary_text: str, layout: PptLayout) -> None:
     frame.word_wrap = True
     p1 = frame.paragraphs[0]
     r1 = p1.add_run()
-    r1.text = "Current Summary"
+    r1.text = "\ud604\uc7ac \uc694\uc57d"
     r1.font.name = DEFAULT_PPT_FONT_NAME
     r1.font.size = Pt(15)
     r1.font.bold = True
@@ -693,7 +700,7 @@ def _chunked_text(values: list[str], chunk_size: int) -> list[list[str]]:
 
 
 def _format_evidence_line(evidence: PptEvidenceLine) -> str:
-    suffix = ""
-    if evidence.relevance_score is not None:
-        suffix = f" (relevance: {evidence.relevance_score:.2f})"
-    return f"[{evidence.document_version_id}] {evidence.evidence_text}{suffix}"
+    base = evidence.evidence_text or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c"
+    if evidence.relevance_score is None:
+        return f"[{evidence.document_version_id}] {base}"
+    return f"[{evidence.document_version_id}] {base} (\uad00\ub828\ub3c4: {evidence.relevance_score:.2f})"
