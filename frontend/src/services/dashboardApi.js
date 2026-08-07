@@ -113,9 +113,23 @@ export function fetchKpiSummary() {
 // kpiSummary·trend가 실데이터이고 나머지는 목업인 혼합 상태입니다 — 항목별로 하나씩 교체합니다.
 //
 // 목업 항목은 fetch* 함수를 거치지 않고 상수를 그대로 씁니다. 실연동된 둘만
-// Promise.all로 병렬 호출해서, 화면이 두 응답을 순차로 기다리지 않게 합니다.
+// 병렬로 호출해서, 화면이 두 응답을 순차로 기다리지 않게 합니다.
+//
+// 추이가 실패해도 KPI는 살립니다. Promise.all로 묶으면 둘 중 하나만 실패해도
+// DashboardPage의 .catch가 걸려 KPI·뉴스·이슈까지 전부 빈 화면이 됩니다.
+// 차트 한 칸 때문에 화면 전체를 잃지 않게 여기서 갈라둡니다.
+//
+// 실패를 목업으로 메우지는 않습니다 — 빈 배열이면 차트가 "표시할 추이 데이터가
+// 없습니다"를 그리고, 원인은 콘솔에 남습니다. 목업으로 덮으면 백엔드가 죽은 걸
+// 정상 화면처럼 보이게 만듭니다.
 export async function fetchDashboard() {
-  const [kpiSummary, trend] = await Promise.all([fetchKpiSummary(), fetchTrend()]);
+  const [kpiSummary, trend] = await Promise.all([
+    fetchKpiSummary(),
+    fetchTrend().catch((err) => {
+      console.error('[dashboardApi] 추이 조회 실패 — 차트만 빈 상태로 둡니다:', err);
+      return [];
+    }),
+  ]);
   return {
     news: MOCK_NEWS,
     issues: MOCK_ISSUES,
