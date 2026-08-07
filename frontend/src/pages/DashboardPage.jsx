@@ -55,6 +55,13 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
   const [showAllNews, setShowAllNews] = useState(false);
   // 키워드 칩 필터. null이면 관심사 필터만 적용됩니다.
   const [keywordFilter, setKeywordFilter] = useState(null);
+  // "전체 N건 보기"를 눌러 관심사 필터를 일시적으로 무시하는 상태. 관심사 자체가
+  // 바뀌면(추가·삭제) 그 변경을 다시 반영해야 하니 아래 useEffect에서 초기화한다.
+  const [ignoreInterests, setIgnoreInterests] = useState(false);
+
+  useEffect(() => {
+    setIgnoreInterests(false);
+  }, [interests]);
 
   useEffect(() => {
     let alive = true;
@@ -97,7 +104,7 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
   const articleNews = news.filter((n) => !n.isDoc);
   // 필터 우선순위: 키워드 칩을 누르면 그 키워드만, 아니면 첫 화면(선호조사)에서 고른 관심 키워드 기준.
   // 관심 키워드를 하나도 안 골랐으면 필터 없이 전체 기사를 최신순으로 보여준다.
-  const activeFilters = keywordFilter ? [keywordFilter] : interests;
+  const activeFilters = keywordFilter ? [keywordFilter] : (ignoreInterests ? [] : interests);
   const filteredNews = filterNewsByInterests(articleNews, activeFilters);
   const isFiltered = activeFilters.length > 0;
   const visibleNews = showAllNews || keywordFilter ? filteredNews : filteredNews.slice(0, 4);
@@ -200,7 +207,14 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
             {activeFilters.map((f) => (
               <span className="chip" key={f}>{f}</span>
             ))}
-            <button type="button" className="clr" onClick={() => setKeywordFilter(null)}>
+            <button
+              type="button"
+              className="clr"
+              onClick={() => {
+                if (keywordFilter) setKeywordFilter(null);
+                else setIgnoreInterests(true);
+              }}
+            >
               {keywordFilter ? '키워드 해제' : `전체 ${articleNews.length}건 보기`}
             </button>
           </div>
