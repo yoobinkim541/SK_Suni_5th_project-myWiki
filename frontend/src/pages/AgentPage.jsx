@@ -12,7 +12,7 @@
 //
 // team 세션은 여러 개일 수 있습니다(공유할 때마다 고르거나 새로 만듦) — "팀에 공유"는
 // ShareToTeamModal로 대상을 고르게 하고, 성공하면 팀 탭으로 전환해 그 세션을 보여줍니다.
-
+import Spinner from '../components/common/Spinner';
 import { useEffect, useRef, useState } from 'react';
 import {
   fetchAgentPanes,
@@ -493,12 +493,13 @@ export default function AgentPage({ profile }) {
   }
 
   if (!panes) {
-    return (
-      <section className="view on" id="v-agent">
-        <div className="empty-conv">불러오는 중…</div>
-      </section>
-    );
+     return (
+       <section className="view on" id="v-agent">
+         <Spinner />
+       </section>
+      );
   }
+  
 
   return (
     <section className="view on" id="v-agent">

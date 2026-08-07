@@ -2166,3 +2166,33 @@ a.fn:hover{text-decoration:underline}
  
 .suni-logo { display:block; height:88px; width:auto; }
 .suni-mark { display:block; height:20px; width:auto; }
+
+
+
+
+/* ===== 로딩 스피너 (콘텐츠 영역 정가운데) ===== */
+.spinner-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  min-height: calc(100vh - 160px);  /* 상단바+패딩 제외한 본문 높이. 안 맞으면 숫자만 조정 */
+}
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: #0f5132;        /* 도는 부분 — 브랜드 초록. 딴 색이면 여기 바꿔 */
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.spinner-label {
+  font-size: 13px;
+  color: #8a8f98;
+  letter-spacing: 0.02em;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
