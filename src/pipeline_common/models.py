@@ -41,7 +41,7 @@ class ParsedContent:
     title: str
     published_at: datetime | None
     language: str | None  # BCP-47 소문자 2자 ('ko' | 'en'), 판별 실패 시 None
-    parser_version: str  # '{parser}-v{major}.{minor}' 예: 'html-v1.0'
+    parser_version: str  # '{parser}-v{major}.{minor}' 예: 'html-v1.1'
 
 
 # ------------------------------------------------------------

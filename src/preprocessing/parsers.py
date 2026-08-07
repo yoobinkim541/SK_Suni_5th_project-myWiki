@@ -5,7 +5,9 @@
 분류·요약·신뢰도는 analysis의 책임이다 (프로젝트 지침 §2-5).
 
 content_hash 계산 규칙
-    대상     정제된 Markdown 본문 (원문 바이트가 아니다)
+    대상     정제된 Markdown 본문 (원문 바이트가 아니다).
+             상용구 제거(boilerplate.strip_boilerplate) 결과가 그대로 해시 대상이다 —
+             저장하는 Markdown과 해시하는 Markdown은 언제나 같은 문자열이다.
     알고리즘 SHA-256, 소문자 hex 64자
     정규화   ① 개행을 \\n으로 통일 ② 각 줄 끝 공백 제거 ③ 문서 앞뒤 공백 제거
              ④ 연속 빈 줄이 2줄 이상이면 2줄로 축약 ⑤ UTF-8 인코딩 후 해시
@@ -13,6 +15,11 @@ content_hash 계산 규칙
 
 원문 바이트 기준을 택하지 않은 이유: 광고·내비게이션·타임스탬프 위젯만 바뀌어도
 매 수집마다 새 버전이 쌓인다. 정제본 기준이면 실질 내용이 바뀔 때만 버전이 늘어난다.
+
+단 정제본 기준만으로는 부족했다. 2026-08-07 실측에서 document_versions 1,445행 중
+452행이 관련기사·추천기사 블록 변경만으로 생긴 버전이었다. 태그 단위 노이즈 제거
+(_NOISE_TAGS)는 <nav>·<footer>만 걷어내고, 본문 아래에 <div>로 붙는 관련기사 목록은
+그대로 통과시키기 때문이다. 그래서 boilerplate.strip_boilerplate를 추가했다.
 """
 from __future__ import annotations
 
@@ -23,10 +30,13 @@ from datetime import datetime, timezone
 
 from ..pipeline_common.models import ParsedContent
 from ..pipeline_common.timeutil import parse_datetime  # noqa: F401 - 하위 호환 re-export
+from .boilerplate import strip_boilerplate
 
 # '{parser}-v{major}.{minor}' (명세 §8 확정)
 PARSER_VERSIONS = {
-    "html": "html-v1.0",
+    # v1.1: 상용구(관련기사·추천기사) 제거를 넣었다. 같은 원문이라도 v1.0과 해시가 다르다.
+    # 이 값은 재해시 마이그레이션의 커서이기도 하다 (scripts/run_pipeline.py --rehash).
+    "html": "html-v1.1",
     "pdf": "pdf-v1.0",
     "json": "json-v1.0",
     "text": "text-v1.0",
@@ -195,6 +205,10 @@ def _parse_html(body: bytes, content_type: str) -> tuple[str, str | None, str | 
             break
     if node is None:
         node = soup.body or soup
+
+    # 관련기사·추천기사 블록을 걷어낸다. markdownify 이전이어야 한다 —
+    # strip=["a"]가 앵커를 텍스트로 만들어버려서 Markdown에는 링크 정보가 없다.
+    node, _ = strip_boilerplate(node)
 
     markdown = markdownify(str(node), heading_style="ATX", strip=["a"])
     return markdown, title, published_raw

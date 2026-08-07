@@ -154,7 +154,7 @@ def test_preprocess_skips_when_content_hash_unchanged(
     assert first.is_new_version is True
     assert first.version_no == 1
     assert first.markdown_object_key == f"processed/{workspace_id}/{document_id}/1.md"
-    assert first.parser_version == "html-v1.0"
+    assert first.parser_version == "html-v1.1"
     assert first.language == "ko"
 
     # 재수집 자체는 raw v2를 올린다. 내용이 같아 버전 행이 안 생기므로 미참조

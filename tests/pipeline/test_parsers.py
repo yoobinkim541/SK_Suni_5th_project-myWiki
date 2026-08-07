@@ -40,6 +40,47 @@ NORMAL_HTML = """<!doctype html>
 """.encode("utf-8")
 
 
+# 본문 아래에 관련기사 목록이 붙은 형태. 2026-08-07 기준 노이즈 버전 452행의 원인이다.
+# <nav>·<footer>가 아니라 본문과 같은 <article> 안의 <div>라 _NOISE_TAGS로는 안 걸린다.
+BOILERPLATE_HTML = """<!doctype html>
+<html lang="ko">
+  <head><title>SK하이닉스 HBM4 양산</title></head>
+  <body>
+    <article>
+      <p>SK하이닉스가 HBM4 양산을 시작했다고 밝혔다. 회사는 이번 양산으로 고대역폭 메모리
+         시장에서 기술 우위를 확보했다고 설명했다. 업계는 내년 상반기까지 공급이 빠듯할
+         것으로 본다.</p>
+      <div class="related">
+        <a href="/1">12년 잠든 비트코인 깨어났다…무슨 일?</a>
+        <a href="/2">콩국수 '소금파 vs 설탕파' 그만 싸워라…</a>
+        <a href="/3">주말 날씨, 전국에 비</a>
+      </div>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+
+
+def test_관련기사_블록은_해시에서_빠진다() -> None:
+    """
+    관련기사만 바뀐 두 문서가 같은 content_hash여야 한다.
+
+    이게 안 되면 본문이 그대로여도 새 document_versions 행이 쌓이고,
+    같은 기사가 다시 분석 대기열에 들어간다 (2026-08-07 기준 중복 335행).
+    """
+    changed = BOILERPLATE_HTML.replace(
+        "주말 날씨, 전국에 비".encode("utf-8"),
+        "환율 급등, 수출기업 비상".encode("utf-8"),
+    )
+
+    first = parse(BOILERPLATE_HTML, "text/html")
+    second = parse(changed, "text/html")
+
+    assert "HBM4 양산" in first.markdown
+    assert "비트코인" not in first.markdown
+    assert first.content_hash == second.content_hash
+
+
 def test_빈_셀렉터를_건너뛰고_본문을_찾는다() -> None:
     """#content가 매칭되지만 비어 있다. 매칭만 보면 여기서 멈춰 정제가 실패한다."""
     parsed = parse(EMPTY_SELECTOR_HTML, "text/html")
