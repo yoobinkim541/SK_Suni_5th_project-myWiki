@@ -596,3 +596,42 @@ def delete_auth_user(user_id: str) -> None:
     profiles/chat_sessions 등 우리 테이블에 어떤 CASCADE도 일으키지 않는다 — soft_delete_profile로
     이미 남긴 deleted_at 흔적은 그대로 유지된다."""
     get_supabase().auth.admin.delete_user(user_id)
+
+
+# ---------------------------------------------------------------------------
+# 오너 전용 워크스페이스 관리 — 멤버 방출·역할 변경.
+# 기존 get_chat_session/list_chat_sessions(일반 사용자 접근 제어)는 건드리지 않고
+# 완전히 분리된 함수로 둔다 — 오너 권한 체크는 호출부(main.py)의 몫이다.
+# ---------------------------------------------------------------------------
+
+
+def remove_workspace_member(workspace_id: str, user_id: str) -> None:
+    """workspace_members 행 삭제 + 이 워크스페이스 소속 세션들의 참여자 행도 함께
+    삭제한다 — 방출됐는데 팀 세션엔 계속 참여자로 남는 상태를 방지한다."""
+    session_ids_res = (
+        get_supabase()
+        .table("chat_sessions")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+    session_ids = [row["id"] for row in session_ids_res.data]
+    if session_ids:
+        (
+            get_supabase()
+            .table("chat_session_participants")
+            .delete()
+            .eq("user_id", user_id)
+            .in_("session_id", session_ids)
+            .execute()
+        )
+
+    get_supabase().table("workspace_members").delete().eq(
+        "workspace_id", workspace_id
+    ).eq("user_id", user_id).execute()
+
+
+def update_workspace_member_role(workspace_id: str, user_id: str, role: str) -> None:
+    get_supabase().table("workspace_members").update({"role": role}).eq(
+        "workspace_id", workspace_id
+    ).eq("user_id", user_id).execute()
