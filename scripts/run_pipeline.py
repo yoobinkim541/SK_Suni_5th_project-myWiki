@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -44,9 +45,23 @@ from src.pipeline_common.timeutil import parse_datetime
 from src.preprocessing import parsers
 from src.preprocessing.interface import preprocess
 
-# 재해시에서 "눈으로 봐야 하는" 감소율. 상용구 제거기 자체는 40%를 넘으면 되돌리지만,
-# 그건 본문 노드 텍스트 기준이고 여기는 Markdown 길이 기준이라 값이 다르다.
-_SHRINK_OUTLIER_RATIO = 0.3
+# 본문 문장으로 볼 최소 길이. 관련기사 헤드라인은 이보다 짧고 종결어미로 끝나지도 않는다.
+_BODY_SENTENCE_MIN_LEN = 40
+
+# 본문 문장 보존율 하한. 이보다 낮은 문서는 본문을 건드렸을 수 있으므로 개별 확인한다.
+#
+# 감소율(shrink_ratio)을 기준으로 쓰지 않는 이유: 그건 본문 보존의 지표가 아니다.
+# _MAIN_SELECTORS가 안 맞아 <body>로 폴백하는 사이트는 페이지의 절반 이상이
+# 관련기사 레일이라 정상 제거가 50~90%로 나온다(dailian.co.kr 실측 52%).
+# 2026-08-07 dry-run에서 감소율 0.3 기준으로는 982건 중 379건이 이상치로 잡혀
+# 눈으로 볼 수 있는 규모가 아니었고, 그중 대부분이 정상이었다.
+# 문장 보존율은 "얼마나 줄었나"가 아니라 "본문이 남았나"를 직접 잰다.
+_BODY_RETENTION_MIN = 0.99
+
+_HANGUL_RE = re.compile(r"[가-힣]")
+
+# 한국어 기사 문단의 종결형. 관련기사 목록·메뉴·버튼 텍스트는 여기에 안 걸린다.
+_SENTENCE_ENDINGS = ("다.", "요.", "음.", "다", "됐다", "했다")
 
 
 def get_workspace_id() -> UUID:
@@ -206,6 +221,26 @@ def run_preprocess(workspace_id: UUID) -> dict:
 _CONTENT_TYPE_BY_EXT = {ext: ct for ct, ext in storage.EXT_BY_CONTENT_TYPE.items()}
 
 
+def _body_sentences(markdown: str) -> set[str]:
+    """
+    Markdown에서 '본문 문장'으로 볼 줄을 뽑는다.
+
+    길이 40자 이상 + 한글 포함 + 한국어 종결어미로 끝나는 줄. 관련기사 헤드라인,
+    메뉴, 버튼, 시세 위젯은 이 셋을 동시에 만족하지 않는다. 완벽한 분류는 아니지만
+    "상용구를 지웠는가 본문을 지웠는가"를 가르는 데는 충분하다.
+    """
+    sentences = set()
+    for line in markdown.splitlines():
+        line = line.strip()
+        if len(line) < _BODY_SENTENCE_MIN_LEN:
+            continue
+        if not _HANGUL_RE.search(line):
+            continue
+        if line.endswith(_SENTENCE_ENDINGS):
+            sentences.add(line)
+    return sentences
+
+
 def _content_type_for(raw_object_key: str, collect_result: dict) -> str:
     from_job = collect_result.get("content_type")
     if from_job:
@@ -252,13 +287,15 @@ def _rehash_one(
         return record
     record["raw_downloaded"] = True
 
-    # 게이트 2(본문 보존량)는 구 파서 결과와 길이를 비교해야 한다. 구 파서 결과는
-    # 저장된 Markdown 그 자체다 — 구 파서 코드는 이 시점에 이미 없다.
+    # 게이트 2(본문 보존량)는 구 파서 결과와 비교해야 한다. 구 파서 결과는 저장된
+    # Markdown 그 자체다 — 구 파서 코드는 이 시점에 이미 없다.
+    old_markdown = None
     try:
-        record["old_len"] = len(
-            storage.download(version["markdown_object_key"]).decode("utf-8", errors="replace")
+        old_markdown = storage.download(version["markdown_object_key"]).decode(
+            "utf-8", errors="replace"
         )
-    except Exception:  # noqa: BLE001 - 감소율 집계에서만 빠진다
+        record["old_len"] = len(old_markdown)
+    except Exception:  # noqa: BLE001 - 집계에서만 빠진다
         record["old_len"] = None
 
     try:
@@ -270,6 +307,15 @@ def _rehash_one(
     record["new_content_hash"] = parsed.content_hash
     record["new_parser_version"] = parsed.parser_version
     record["new_len"] = len(parsed.markdown)
+
+    # 본문 문장이 얼마나 남았는가. 이게 게이트 2의 실제 판정 근거다.
+    if old_markdown is not None:
+        old_sentences = _body_sentences(old_markdown)
+        if old_sentences:
+            kept = old_sentences & _body_sentences(parsed.markdown)
+            record["body_sentences"] = len(old_sentences)
+            record["body_retention"] = round(len(kept) / len(old_sentences), 3)
+            record["lost_sentences"] = [s[:100] for s in list(old_sentences - kept)[:3]]
 
     if parsed.content_hash == old_hash:
         # 상용구가 없던 문서. 커서만 전진시킨다.
@@ -389,16 +435,24 @@ def _rehash_gates(records: list[dict], summary: dict) -> dict:
         for r in records
         if r.get("old_len") and r.get("new_len")
     )
+    # 이상치는 감소율이 아니라 '본문 문장을 잃은 문서'다.
     outliers = [
         {
             "document_id": r["document_id"],
-            "shrink_ratio": round(1 - r["new_len"] / r["old_len"], 3),
+            "body_retention": r["body_retention"],
+            "body_sentences": r["body_sentences"],
+            "shrink_ratio": round(1 - r["new_len"] / r["old_len"], 3)
+            if r.get("old_len") and r.get("new_len")
+            else None,
+            "lost_sentences": r.get("lost_sentences", []),
         }
         for r in records
-        if r.get("old_len")
-        and r.get("new_len")
-        and (1 - r["new_len"] / r["old_len"]) >= _SHRINK_OUTLIER_RATIO
+        if r.get("body_retention") is not None
+        and r["body_retention"] < _BODY_RETENTION_MIN
     ]
+    retentions = sorted(
+        r["body_retention"] for r in records if r.get("body_retention") is not None
+    )
 
     def pct(p: float) -> float | None:
         if not shrinks:
@@ -412,12 +466,16 @@ def _rehash_gates(records: list[dict], summary: dict) -> dict:
     return {
         "gate2_body_preserved": {
             "verdict": "REVIEW" if outliers else "PASS",
-            "p50": pct(0.5),
-            "p90": pct(0.9),
-            "p99": pct(0.99),
-            "max": round(shrinks[-1], 3) if shrinks else None,
+            "measured": len(retentions),
+            "body_retention_min": round(retentions[0], 3) if retentions else None,
+            "body_retention_p01": round(retentions[len(retentions) // 100], 3)
+            if len(retentions) >= 100
+            else None,
+            "shrink_p50": pct(0.5),
+            "shrink_p90": pct(0.9),
+            "shrink_max": round(shrinks[-1], 3) if shrinks else None,
             "outliers": outliers,
-            "note": "이상치는 개별 확인 후에만 PASS로 닫는다",
+            "note": "이상치는 '본문 문장을 잃은 문서'다. 개별 확인 후에만 PASS로 닫는다",
         },
         "gate4_rollback": {
             "verdict": "PASS" if gate4 else "FAIL",
@@ -447,12 +505,19 @@ def print_rehash_summary(summary: dict) -> None:
     print("\n--- 게이트 ---")
     print(
         f"게이트 2 (본문 보존량): {g2['verdict']} — "
-        f"감소율 p50 {g2['p50']} / p90 {g2['p90']} / p99 {g2['p99']} / max {g2['max']}"
+        f"본문 문장 보존율 최소 {g2['body_retention_min']} / 하위 1% {g2['body_retention_p01']} "
+        f"({g2['measured']}건 측정) · 참고: 길이 감소율 p50 {g2['shrink_p50']} / "
+        f"p90 {g2['shrink_p90']} / max {g2['shrink_max']}"
     )
     if g2["outliers"]:
-        print(f"  이상치 {len(g2['outliers'])}건 — 개별 확인 필요:")
+        print(f"  본문 문장을 잃은 문서 {len(g2['outliers'])}건 — 개별 확인 필요:")
         for item in g2["outliers"][:20]:
-            print(f"    {item['document_id']}  감소율 {item['shrink_ratio']}")
+            print(
+                f"    {item['document_id']}  보존율 {item['body_retention']} "
+                f"({item['body_sentences']}문장 중)"
+            )
+            for sentence in item["lost_sentences"][:1]:
+                print(f"      사라진 문장: {sentence[:80]}")
     print(f"게이트 4 (롤백 경로): {g4['verdict']} — raw 누락 {g4['raw_missing']}건")
     print("게이트 1(인용문 보존)·3(접힘)은 별도 하네스에서 판정한다.")
 
