@@ -39,6 +39,7 @@ from .schemas import (
     SendMessageRequest,
     SendMessageResponse,
     ShareToTeamRequest,
+    UpdateMemberRoleRequest,
     WorkspaceMemberOut,
 )
 from .category_router import router as category_router
@@ -108,6 +109,11 @@ def _require_workspace(profile: dict) -> str:
     if not workspace_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="workspace 소속이 없음")
     return workspace_id
+
+
+def _require_owner(profile: dict, workspace_id: str) -> None:
+    if db.get_workspace_role(workspace_id, profile["id"]) != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="오너만 할 수 있음")
 
 
 def _to_message_out(message: dict) -> ChatMessageOut:
@@ -471,6 +477,37 @@ def list_members(profile: dict = Depends(get_current_user)):
         )
         for r in rows
     ]
+
+
+@app.delete("/workspace/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_member(user_id: str, profile: dict = Depends(get_current_user)):
+    """워크스페이스에서 멤버를 방출한다 — 오너 전용, 본인은 방출 대상이 될 수 없다."""
+    workspace_id = _require_workspace(profile)
+    _require_owner(profile, workspace_id)
+    if user_id == profile["id"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="오너 본인은 방출할 수 없음")
+
+    db.remove_workspace_member(workspace_id, user_id)
+
+
+@app.patch("/workspace/members/{user_id}/role", response_model=WorkspaceMemberOut)
+def update_member_role(
+    user_id: str, body: UpdateMemberRoleRequest, profile: dict = Depends(get_current_user)
+):
+    """멤버 역할을 팀장/팀원/게스트로 바꾼다 — 오너 전용, 본인 역할은 이 엔드포인트로
+    바꿀 수 없다(실수로 자기 권한을 낮춰서 아무도 못 돌리는 상황 방지)."""
+    workspace_id = _require_workspace(profile)
+    _require_owner(profile, workspace_id)
+    if user_id == profile["id"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="본인 역할은 이 방법으로 바꿀 수 없음")
+
+    db.update_workspace_member_role(workspace_id, user_id, body.role)
+    rows = db.list_workspace_members(workspace_id)
+    updated = next(r for r in rows if r["user_id"] == user_id)
+    return WorkspaceMemberOut(
+        user_id=updated["user_id"], display_name=updated.get("display_name"),
+        email=updated.get("email"), role=updated.get("role"),
+    )
 
 
 @app.delete("/account", status_code=status.HTTP_204_NO_CONTENT)

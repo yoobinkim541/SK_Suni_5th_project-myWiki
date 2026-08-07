@@ -54,6 +54,10 @@ class WorkspaceMemberOut(BaseModel):
     role: Optional[str] = None
 
 
+class UpdateMemberRoleRequest(BaseModel):
+    role: Literal["admin", "editor", "viewer"]
+
+
 class CitationOut(BaseModel):
     id: str
     document_version_id: str
