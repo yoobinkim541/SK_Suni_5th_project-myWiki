@@ -15,6 +15,7 @@
 //   스케줄러 타임아웃(P1)이 풀리면 채워집니다.
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { formatRelative } from '../../lib/relativeTime';
 
 export default function CategoryNewsModal({ category, newsItems = [], onClose }) {
@@ -24,12 +25,19 @@ export default function CategoryNewsModal({ category, newsItems = [], onClose })
       if (e.key === 'Escape') onClose?.();
     }
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    // 모달이 떠 있는 동안 배경 스크롤을 잠근다(아래 createPortal과 짝 — 자세한 이유는
+    // InterestsModal.jsx의 같은 주석 참고).
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [category, onClose]);
 
   if (!category) return null;
 
-  return (
+  return createPortal(
     <>
       <div className="mw-scrim open" onClick={onClose}></div>
       <div className="mw-modal open" role="dialog" aria-modal="true" aria-label="카테고리 관련 뉴스">
@@ -64,6 +72,7 @@ export default function CategoryNewsModal({ category, newsItems = [], onClose })
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

@@ -906,13 +906,13 @@ a.cite:hover .ex{color:var(--green)}
   cursor:pointer;box-shadow:0 1px 2px rgba(23,82,67,.04);
   transition:border-color var(--dur-fast) var(--ease),box-shadow var(--dur-fast) var(--ease)}
 .cat-card-grid .cd:hover{border-color:#B9C8C2;box-shadow:0 2px 8px rgba(23,82,67,.06)}
-.cat-card-grid .cd .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.cat-card-grid .cd .hd-count{font-size:11px;font-weight:500;color:var(--muted)}
+.cat-card-grid .cd .hd{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px}
+.cat-card-grid .cd .hd-count{font-size:12.5px;font-weight:600;color:var(--ink-2);flex:none;margin-left:12px}
 .cat-card-grid .cd .hd-count b{font-size:13px;font-weight:900;color:var(--ink);margin-right:2px}
-.cat-card-grid .cd .top-issue{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:10px;line-height:1.45;color:var(--ink)}
-.cat-card-grid .cd .tags{margin-bottom:14px}
-.cat-card-grid .cd .cat-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding-top:12px;border-top:1px solid #E5EBE8}
+.cat-card-grid .cd .top-issue{font-size:17px;font-weight:700;letter-spacing:-.015em;margin-bottom:12px;line-height:1.44;color:var(--ink)}
+.cat-card-grid .cd .tags{margin-bottom:16px}
+.cat-card-grid .cd .cat-foot{display:flex;align-items:center;justify-content:flex-start;gap:10px;
+  padding-top:14px;border-top:1px solid #E5EBE8}
 
 /* ---- 공용 컴포넌트: 카테고리 Badge / 인용문 Preview / 출처 버튼 / 원문 링크 / 신뢰도 Badge ---- */
 .badge{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;
