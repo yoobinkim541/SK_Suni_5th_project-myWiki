@@ -610,12 +610,18 @@ svg text{font-family:inherit}
 
 @keyframes drawLine{to{stroke-dashoffset:0}}
 @keyframes fadeIn{to{opacity:1}}
-.chart .line{stroke-dasharray:900;stroke-dashoffset:900;animation:drawLine 1.1s var(--ease) forwards .15s}
-.chart .area{opacity:0;animation:fadeIn .6s var(--ease) forwards .55s}
+/* 스크롤로 화면에 들어오기 전까진 시작 상태(선 안 그려짐/영역·점 투명)로 멈춰 있는다 —
+   TrendChart.jsx가 IntersectionObserver로 실제 노출 시점에 .chart-plot에 .in을 붙이고,
+   그때 비로소 아래 .in 규칙들이 애니메이션을 재생한다(한 번 붙으면 다시 안 뗀다 = 반복 없음). */
+.chart .line{stroke-dasharray:900;stroke-dashoffset:900}
+.chart-plot.in .line{animation:drawLine 1.1s var(--ease) forwards .15s}
+.chart .area{opacity:0}
+.chart-plot.in .area{animation:fadeIn .6s var(--ease) forwards .55s}
 /* 점마다 선이 그 위치에 도착하는 시점에 맞춰 나타나야 하므로, 공용 delay 대신
    TrendChart.jsx가 각 점에 인라인 animation-delay를 따로 준다(위 .line의 1.1s 구간에
    맞춰 0.15~1.25s 사이로 흩뿌림). 여기서는 opacity 0→1 애니메이션 자체만 정의한다. */
-.chart .dots circle{opacity:0;animation:fadeIn .35s var(--ease) forwards}
+.chart .dots circle{opacity:0}
+.chart-plot.in .dots circle{animation:fadeIn .35s var(--ease) forwards}
 
 .trk i,.tr .bar i,.cd .trk i{transition:width .9s var(--ease)}
 .row{transition:background var(--dur-fast) var(--ease)}

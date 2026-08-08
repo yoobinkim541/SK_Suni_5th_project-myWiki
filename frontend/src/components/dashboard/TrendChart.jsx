@@ -10,17 +10,22 @@
 //   선으로 그리고, d.adopted(채택 건수)는 그대로 계산해서 하단 범례 텍스트로만 보여줍니다.
 //   (그래프 계산에 쓰는 원본 데이터/필드는 그대로입니다. 시각화 방식만 바뀌었습니다.)
 //
-// 애니메이션: 마운트 시 한 번만 — stroke-dashoffset으로 선이 왼쪽에서 오른쪽으로
-// 그려지고, 영역이 뒤이어 옅게 페이드인, 마지막으로 각 점이 선이 도착하는 타이밍에 맞춰
-// 순서대로 나타난다(globals.css 참고). loop 없이 한 번 그려지고 끝나면 정적으로 남는다.
+// 애니메이션: 마운트 시가 아니라 "화면에 스크롤돼 들어오는 시점"에 한 번만 —
+// 이 차트는 대시보드 아래쪽(지식 축적화 그래프보다 한참 아래)에 있어서 마운트 시점엔
+// 대개 뷰포트 밖이다. 그래서 IntersectionObserver로 실제로 보이기 시작할 때 .in 클래스를
+// 붙이고(아래 useEffect), CSS 애니메이션은 그 클래스가 붙기 전까진 시작 상태(선 안 그려짐/
+// 영역·점 투명)로 멈춰 있는다(globals.css `.chart-plot.in ...`). 한 번 보이면 다시 스크롤을
+// 왔다갔다 해도 재생하지 않는다(observer를 그 시점에 끊는다) — loop 없이 딱 한 번만.
+// stroke-dashoffset으로 선이 왼쪽에서 오른쪽으로 그려지고, 영역이 뒤이어 옅게 페이드인,
+// 마지막으로 각 점이 선이 도착하는 타이밍에 맞춰 순서대로 나타난다.
 // prefers-reduced-motion이면 전역 규칙(globals.css)이 모든 애니메이션 지속시간을
-// 사실상 0으로 만들어 즉시 완성된 상태로 보인다.
+// 사실상 0으로 만들어 (보이자마자) 즉시 완성된 상태로 보인다.
 //
 // 반응형 참고: 시안 CSS가 `.chart svg{ width:100%; height:auto; }`로 처리하므로
 // viewBox 비율(730:212)을 유지한 채 부모 폭에 맞춰 자동으로 축소됩니다.
 // 범례(.chart-legend)도 flex-wrap:wrap이라 좁은 화면에서 알아서 줄바꿈됩니다.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const CHART_W = 730;
 const CHART_H = 212;
@@ -62,6 +67,49 @@ function formatTipDate(mmdd) {
 
 export default function TrendChart({ data = [] }) {
   const [hoverIdx, setHoverIdx] = useState(null);
+  const [inView, setInView] = useState(false);
+  const plotRef = useRef(null);
+
+  useEffect(() => {
+    const el = plotRef.current;
+    if (!el) return;
+    let done = false;
+    function reveal() {
+      if (done) return;
+      done = true;
+      setInView(true);
+      cleanup();
+    }
+    // IntersectionObserver가 기본 경로다. 다만 이것만 믿지는 않는다 — 탭이 백그라운드거나
+    // 컴포지팅이 지연되는 환경(KnowledgeGraph.jsx 쪽 기존 주석 참고)에서는 콜백 자체가
+    // 아예 안 불릴 수 있다. 그래서 스크롤/리사이즈 때마다 실제 위치(getBoundingClientRect)를
+    // 직접 확인하는 보강 경로를 같이 둔다 — 레이아웃 계산은 컴포지팅과 무관하게 항상
+    // 동작하므로 더 안정적이다. 둘 중 뭐가 먼저 감지하든 한 번만 reveal되고 끝난다.
+    function checkPosition() {
+      const rect = el.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      if (rect.top < vh * 0.85 && rect.bottom > 0) reveal();
+    }
+    let observer = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) reveal();
+        },
+        { threshold: 0.3 }
+      );
+      observer.observe(el);
+    }
+    window.addEventListener('scroll', checkPosition, { passive: true });
+    window.addEventListener('resize', checkPosition);
+    checkPosition(); // 마운트 시점에 이미 화면 안이면(뷰포트가 큰 화면 등) 바로 확인한다.
+    function cleanup() {
+      observer?.disconnect();
+      window.removeEventListener('scroll', checkPosition);
+      window.removeEventListener('resize', checkPosition);
+    }
+    return cleanup;
+  }, []);
 
   // 데이터가 없으면 아래 좌표 계산이 data[0]을 읽다 터진다. 빈 상태로 빠진다.
   if (data.length === 0) {
@@ -99,7 +147,7 @@ export default function TrendChart({ data = [] }) {
 
   return (
     <div className="chart">
-      <div className="chart-plot">
+      <div className={`chart-plot${inView ? ' in' : ''}`} ref={plotRef}>
         <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} role="img" aria-label="최근 7일 뉴스 기사 수 추이">
           <defs>
             {/* 아주 옅은 블루 영역 채우기 — 위쪽만 살짝 진하고 아래로 갈수록 거의 안 보이게. */}
