@@ -21,6 +21,7 @@
 // 하단 "출처" 목록은 별도 데이터가 아니라 issues[]의 sourceUrl을 중복 제거해서 만듭니다.
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { DownloadBadge } from './ReportSection';
 
 const LEVEL_LABEL = { high: '높음', mid: '보통', low: '낮음' };
@@ -55,14 +56,24 @@ export default function ReportDetailModal({
       if (e.key === 'Escape') onClose?.();
     }
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    // 모달이 떠 있는 동안 배경 스크롤을 잠가서 뒤 화면이 같이 움직이지 않게 한다
+    // (.view/.main 조상에 걸린 애니메이션·필터가 fixed 모달의 containing block이
+    //  돼버리는 문제의 근본 해결은 아래 createPortal이 하지만, 스크롤 잠금도 같이 걸어야
+    //  모달이 열려 있는 동안 뒤 페이지가 안 움직인다는 기대에 맞는다). 이 컴포넌트는
+    // 열려 있을 때만 마운트되므로 open 게이트 없이 마운트/언마운트에 걸면 된다.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [onClose]);
 
   const issues = detail?.issues ?? [];
   const sources = collectSources(issues);
   const canDownload = formats.length > 0 && typeof onDownload === 'function';
 
-  return (
+  return createPortal(
     <>
       <div className="mw-scrim open" onClick={onClose}></div>
       <div className="mw-modal open rdm" role="dialog" aria-modal="true" aria-label="전체 리포트">
@@ -191,7 +202,8 @@ export default function ReportDetailModal({
           )}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
 
