@@ -14,9 +14,11 @@ DART Open API는 자유 검색어를 지원하지 않는다 — corp_code(회사
 """
 from __future__ import annotations
 
+import html
 import io
 import logging
 import os
+import re
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -34,6 +36,13 @@ _TIMEOUT_SEC = 10.0
 
 _STATUS_OK = "000"
 _STATUS_NO_DATA = "013"
+
+_HTML_TAG = re.compile(r"<[^>]+>")
+_MAX_TEXT_CHARS = 30_000  # 모델 컨텍스트 안에 안전하게 들어가는 상한
+
+
+def _strip_tags(text: str) -> str:
+    return html.unescape(_HTML_TAG.sub("", text)).strip()
 
 DEFAULT_LOOKBACK_DAYS = 14
 """
@@ -105,6 +114,7 @@ def search_recent_disclosures(
     end_de = now.strftime("%Y%m%d")
 
     hits: list[DisclosureHit] = []
+    failed = 0
     for corp_code in corp_codes:
         try:
             response = httpx.get(
@@ -120,6 +130,7 @@ def search_recent_disclosures(
             )
             payload = response.json()
         except Exception as exc:  # noqa: BLE001
+            failed += 1
             logger.warning(
                 "dart_lookup: 공시 목록 조회 실패, 이 회사만 건너뜀 (corp_code=%s)",
                 corp_code,
@@ -131,6 +142,7 @@ def search_recent_disclosures(
         if status == _STATUS_NO_DATA:
             continue
         if status != _STATUS_OK:
+            failed += 1
             logger.warning(
                 "dart_lookup: 공시검색 API 응답 오류, 이 회사만 건너뜀 (corp_code=%s, status=%s, message=%s)",
                 corp_code, status, payload.get("message"),
@@ -150,6 +162,13 @@ def search_recent_disclosures(
                     published_at=published.isoformat() if published else None,
                 )
             )
+
+    # 등록된 회사 전부가 실패하면(네트워크/인증/한도 초과 등) "공시 0건"으로 조용히
+    # 넘어가지 않는다 — fetchers.py의 네이버 관련 교훈과 같은 함정: 인증 실패도
+    # items가 빈 리스트라 정상 호출인데 0건으로 보이면 모델에게는 "근거 없음"으로
+    # 오인된다. 일부만 실패한 경우(failed < len(corp_codes))는 그대로 부분 결과를 낸다.
+    if failed and failed == len(corp_codes):
+        raise DartLookupError(f"등록된 disclosure 소스 {failed}건 전부 조회 실패")
     return hits
 
 
@@ -185,4 +204,18 @@ def read_disclosure(rcept_no: str) -> str | None:
         return None
     if not html_body:
         return None
-    return html_body.decode("utf-8", errors="replace")
+
+    try:
+        raw_text = html_body.decode("utf-8")
+    except UnicodeDecodeError:
+        # DART 문서 인코딩이 항상 UTF-8은 아니다(preprocessing/parsers.py::decode_body와
+        # 같은 이유로 cp949도 시도) — 그래도 안 되면 손실 허용 디코드로 마지막 방어.
+        try:
+            raw_text = html_body.decode("cp949")
+        except UnicodeDecodeError:
+            raw_text = html_body.decode("utf-8", errors="replace")
+
+    text = _strip_tags(raw_text)
+    if not text:
+        return None
+    return text[:_MAX_TEXT_CHARS]

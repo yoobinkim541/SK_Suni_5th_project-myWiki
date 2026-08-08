@@ -137,7 +137,30 @@ def test_search_recent_disclosures_treats_no_data_status_as_empty_not_error(monk
     assert hits == []
 
 
-def test_search_recent_disclosures_skips_corp_code_on_error_status(monkeypatch):
+def test_search_recent_disclosures_skips_corp_code_on_error_status_when_others_succeed(monkeypatch):
+    """부분 실패는 여전히 허용된다 — 등록된 회사 중 일부만 오류 상태를 반환하면 그
+    회사만 건너뛰고 나머지 회사의 결과는 정상 반환해야 한다(전부 실패일 때만 예외)."""
+    supabase = FakeSupabase(tables={"sources": [_source_row("00164779"), _source_row("00126380")]})
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+
+    def fake_get(url, *, params, timeout):
+        if params["corp_code"] == "00164779":
+            return FakeListResponse({"status": "020", "message": "일일 요청 한도 초과"})
+        return FakeListResponse({
+            "status": "000",
+            "list": [{"rcept_no": "B", "report_nm": "삼성전자 공시", "corp_name": "삼성전자", "rcept_dt": "20260806"}],
+        })
+
+    monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
+
+    hits = dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
+
+    assert {h.rcept_no for h in hits} == {"B"}
+
+
+def test_search_recent_disclosures_raises_when_only_registered_corp_code_fails(monkeypatch):
+    """등록된 corp_code가 1개뿐이고 그게 실패하면(=등록된 소스 전부 실패) 인증 만료/
+    한도 초과 같은 오류가 "공시 0건"으로 조용히 둔갑하면 안 되므로 예외를 올려야 한다."""
     supabase = FakeSupabase(tables={"sources": [_source_row("00164779")]})
     monkeypatch.setenv("DART_API_KEY", "test-key")
 
@@ -146,9 +169,27 @@ def test_search_recent_disclosures_skips_corp_code_on_error_status(monkeypatch):
 
     monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
 
+    with pytest.raises(dart_lookup.DartLookupError):
+        dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
+
+
+def test_search_recent_disclosures_keeps_hits_from_succeeding_corp_code_when_another_fails(monkeypatch):
+    supabase = FakeSupabase(tables={"sources": [_source_row("00164779"), _source_row("00126380")]})
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+
+    def fake_get(url, *, params, timeout):
+        if params["corp_code"] == "00164779":
+            raise RuntimeError("network error")
+        return FakeListResponse({
+            "status": "000",
+            "list": [{"rcept_no": "B", "report_nm": "삼성전자 공시", "corp_name": "삼성전자", "rcept_dt": "20260806"}],
+        })
+
+    monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
+
     hits = dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
 
-    assert hits == []  # 예외 대신 그 회사만 건너뛰고 빈 결과
+    assert {h.rcept_no for h in hits} == {"B"}
 
 
 def test_search_recent_disclosures_raises_when_credentials_missing(monkeypatch):
@@ -159,8 +200,8 @@ def test_search_recent_disclosures_raises_when_credentials_missing(monkeypatch):
         dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
 
 
-def test_read_disclosure_extracts_html_from_zip(monkeypatch):
-    zip_content = _zip_bytes("0001.xml", "<p>본문 내용</p>".encode("utf-8"))
+def test_read_disclosure_strips_html_tags_from_zip(monkeypatch):
+    zip_content = _zip_bytes("0001.xml", "<p>본문 <b>내용</b></p>".encode("utf-8"))
 
     def fake_get(url, *, params, timeout):
         assert params["rcept_no"] == "20260805000123"
@@ -169,9 +210,25 @@ def test_read_disclosure_extracts_html_from_zip(monkeypatch):
     monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
     monkeypatch.setenv("DART_API_KEY", "test-key")
 
-    markdown = dart_lookup.read_disclosure("20260805000123")
+    text = dart_lookup.read_disclosure("20260805000123")
 
-    assert markdown == "<p>본문 내용</p>"
+    assert text == "본문 내용"
+
+
+def test_read_disclosure_truncates_text_over_max_chars(monkeypatch):
+    long_body = "가" * (dart_lookup._MAX_TEXT_CHARS + 5_000)
+    zip_content = _zip_bytes("0001.xml", f"<p>{long_body}</p>".encode("utf-8"))
+
+    def fake_get(url, *, params, timeout):
+        return FakeDocResponse(200, zip_content)
+
+    monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+
+    text = dart_lookup.read_disclosure("20260805000123")
+
+    assert len(text) == dart_lookup._MAX_TEXT_CHARS
+    assert text == long_body[: dart_lookup._MAX_TEXT_CHARS]
 
 
 def test_read_disclosure_returns_none_when_not_found(monkeypatch):
