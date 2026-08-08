@@ -16,7 +16,7 @@ from .repository import (
     get_report_artifact,
     save_report_artifact_metadata,
 )
-from .pdf_renderer import PdfEvidenceLine, PdfReportDocument, PdfSection, PdfSourceLine, normalize_pdf_text, render_daily_report_pdf
+from .pdf_renderer import PdfEvidenceLine, PdfExecutiveSummaryLine, PdfReportDocument, PdfSection, PdfSourceLine, normalize_pdf_text, render_daily_report_pdf
 from .ppt_renderer import build_daily_report_ppt_document, render_daily_report_ppt
 from .word_renderer import build_daily_report_word_document, render_daily_report_word
 
@@ -515,7 +515,14 @@ def _render_generated_report_pdf(report: GeneratedReport) -> bytes:
     generated_at = report.generated_at.isoformat() if report.generated_at is not None else report.report_date.isoformat()
     title = normalize_pdf_text(report.title or "\uc77c\uc77c \uc0b0\uc5c5 \ub3d9\ud5a5 \ubcf4\uace0\uc11c")
     sections = [
-        PdfSection(category="", title="\uc624\ub298\uc758 \ud575\uc2ec \uc694\uc57d", body=_build_pdf_executive_summary(report), confidence_label="", section_type="executive"),
+        PdfSection(
+            category="",
+            title="\uc624\ub298\uc758 \ud575\uc2ec \uc694\uc57d",
+            body=_build_pdf_executive_summary(report),
+            confidence_label="",
+            section_type="executive",
+            executive_items=_build_pdf_executive_items(report),
+        ),
         PdfSection(category="", title="\uc774\uc288\ubcc4 \ubd84\uc11d", body="", confidence_label="", section_type="issues_heading"),
     ]
     sections.extend(
@@ -528,6 +535,8 @@ def _render_generated_report_pdf(report: GeneratedReport) -> bytes:
             section_type="issue",
             importance_score=section.importance_score,
             reliability_score=section.reliability_score,
+            impact_direction=_enum_value(section.impact_direction),
+            time_horizon=_enum_value(section.time_horizon),
         )
         for index, section in enumerate(report.sections, start=1)
         if getattr(section.status, "value", section.status) == "completed"
@@ -555,6 +564,21 @@ def _build_pdf_executive_summary(report: GeneratedReport) -> str:
     if not summaries:
         return f"- \uc8fc\uc694 \uc774\uc288 \uc815\ubcf4 \uc5c6\uc74c"
     return "\n".join(f"{index}. {summary}" for index, summary in enumerate(summaries, start=1))
+
+
+def _build_pdf_executive_items(report: GeneratedReport) -> tuple[PdfExecutiveSummaryLine, ...]:
+    category_by_issue = {row.issue_key: row.category.value for row in report.issue_summary_rows}
+    return tuple(
+        PdfExecutiveSummaryLine(
+            title=item.title,
+            summary=item.summary,
+            category=category_by_issue.get(item.issue_key, ""),
+            importance_score=item.importance_score,
+            impact_direction=_enum_value(item.impact_direction),
+            time_horizon=_enum_value(item.time_horizon),
+        )
+        for item in report.executive_summaries[:5]
+    )
 
 
 def _build_pdf_issue_body(section) -> str:
@@ -621,13 +645,13 @@ def _build_pdf_source_rows(report: GeneratedReport) -> tuple[PdfSourceLine, ...]
         if key in seen:
             continue
         seen.add(key)
-        rows.append(PdfSourceLine(source_type=f"\ub274\uc2a4 | {source.source_name or '\uc815\ubcf4 \uc5c6\uc74c'}", source_name=source.source_name or "", title=source.document_title or "\uc815\ubcf4 \uc5c6\uc74c", published_at=_format_pdf_source_date(source.published_at), url=source.source_url))
+        rows.append(PdfSourceLine(source_type="\ub274\uc2a4", source_name=source.source_name or "", title=source.document_title or "", published_at=_format_pdf_source_date(source.published_at), url=source.source_url))
     for source in report.wiki_sources:
         key = ("\ub0b4\ubd80 Wiki", source.wiki_page_id, source.wiki_title or "")
         if key in seen:
             continue
         seen.add(key)
-        rows.append(PdfSourceLine(source_type="\ub0b4\ubd80 Wiki", source_name="", title=source.wiki_title or "\uc815\ubcf4 \uc5c6\uc74c", published_at=""))
+        rows.append(PdfSourceLine(source_type="\ub0b4\ubd80 Wiki", source_name="", title=source.wiki_title or "", published_at=""))
     return tuple(rows)
 
 
@@ -638,3 +662,9 @@ def _build_pdf_confidence_label(section) -> str:
         if section.importance_score >= 70:
             return "medium"
     return "pending"
+
+
+def _enum_value(value) -> str:
+    if value is None:
+        return ""
+    return normalize_pdf_text(getattr(value, "value", str(value)))
