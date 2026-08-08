@@ -24,11 +24,12 @@ class FakeResult:
 
 
 class FakeTable:
-    """eq / gte / lt / in_ 만 흉내낸다. service가 쓰는 것이 그게 전부다."""
+    """eq / gte / lt / in_ / order / range 만 흉내낸다. service가 쓰는 것이 그게 전부다."""
 
     def __init__(self, rows):
         self.rows = rows
         self.filters = []
+        self._range = None
 
     def select(self, _fields):
         return self
@@ -49,6 +50,15 @@ class FakeTable:
         self.filters.append(("in", field, list(values)))
         return self
 
+    # 페이지 조회(_fetch_all)가 쓴다. 서버의 1,000행 상한 자체는 흉내내지 않는다 —
+    # 여기서 볼 것은 "페이지를 이어 붙여 전건을 받는가"이지 서버 상한이 아니다.
+    def order(self, _column, desc=False):
+        return self
+
+    def range(self, start, end):
+        self._range = (start, end)
+        return self
+
     def execute(self):
         rows = self.rows
         for op, field, value in self.filters:
@@ -60,6 +70,9 @@ class FakeTable:
                 rows = [r for r in rows if r.get(field) and str(r[field]) < str(value)]
             elif op == "in":
                 rows = [r for r in rows if str(r.get(field)) in {str(v) for v in value}]
+        if self._range is not None:
+            start, end = self._range
+            rows = rows[start : end + 1]
         return FakeResult([dict(r) for r in rows])
 
 
