@@ -690,6 +690,68 @@ def test_web_search_answer_grounds_on_disclosure_via_read_disclosure(agent, wiki
     wiki_tools.read_disclosure.assert_called_once_with("20260805000123")
 
 
+def test_web_search_answer_rejects_citation_from_disclosure_list_without_reading(agent, wiki_tools, monkeypatch):
+    """search_recent_disclosures 목록만 보고 read_disclosure 없이 인용하면 그라운딩 실패해야 한다."""
+    wiki_tools.search_web.return_value = []
+    wiki_tools.search_recent_disclosures.return_value = [
+        FakeDisclosureHit(
+            rcept_no="20260805000123",
+            report_name="주요사항보고서",
+            corp_name="SK하이닉스",
+            published_at="2026-08-05T00:00:00+00:00",
+        )
+    ]
+    fake_url = core.dart_lookup.viewer_url("20260805000123")
+    citation = {"source_url": fake_url, "quote": "지어낸 인용"}
+    responses = [
+        tool_call_response(("call-1", "search_recent_disclosures", {"days": 14})),
+        tool_call_response(("call-2", "submit_answer", {
+            "answer": "내용[1]",
+            "citations": [citation],
+        })),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent._web_search_answer("SK하이닉스 최근 공시가 뭐야?")
+
+    assert result.has_answer is False
+    wiki_tools.read_disclosure.assert_not_called()
+
+
+def test_handle_search_recent_disclosures_defaults_when_days_is_non_numeric_string(agent, wiki_tools, monkeypatch):
+    """모델이 스키마를 어기고 days에 숫자로 변환 안 되는 문자열을 보내면
+    timedelta(days=...)의 TypeError로 웹 검색 단계 전체가 죽었다 — 기본값으로 방어해야
+    한다."""
+    wiki_tools.search_web.return_value = []
+    wiki_tools.search_recent_disclosures.return_value = []
+    responses = [
+        tool_call_response(("call-1", "search_recent_disclosures", {"days": "not-a-number"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "근거 없음"})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent._web_search_answer("질문")
+
+    assert result.has_answer is False
+    wiki_tools.search_recent_disclosures.assert_called_once_with(core.dart_lookup.DEFAULT_LOOKBACK_DAYS)
+
+
+def test_handle_search_recent_disclosures_clamps_out_of_range_days(agent, wiki_tools, monkeypatch):
+    """음수/과도하게 큰 days도 크래시 없이 [1, 90] 범위로 clamp해야 한다."""
+    wiki_tools.search_web.return_value = []
+    wiki_tools.search_recent_disclosures.return_value = []
+    responses = [
+        tool_call_response(("call-1", "search_recent_disclosures", {"days": -5})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "근거 없음"})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent._web_search_answer("질문")
+
+    assert result.has_answer is False
+    wiki_tools.search_recent_disclosures.assert_called_once_with(1)
+
+
 def test_web_search_tools_include_disclosure_tools(agent, wiki_tools, monkeypatch):
     wiki_tools.search_web.return_value = []
     captured_tools = []

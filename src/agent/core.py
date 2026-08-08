@@ -20,9 +20,9 @@ from typing import Callable, Optional
 
 from openai import OpenAI
 
+from ..pipeline_common import dart_lookup
 from ..wiki.citation_text import strip_orphaned_citation_markers
 from .wiki_tools import WikiTools
-from ..pipeline_common import dart_lookup
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # 팀 확정 모델(analysis/classifier.py, report/composer.py와 통일)
@@ -229,7 +229,8 @@ WEB_SEARCH_ANSWER_SYSTEM_PROMPT = """\
    search_recent_disclosures로 최근 DART 공시 목록도 같이 확인하고, 관련 있어
    보이는 제목이 있으면 read_disclosure로 본문을 읽어라.
 2. 찾은 결과(뉴스 요약 또는 공시 본문)에 실제로 있는 내용만 근거로 답변해라.
-   사전 지식이나 추측으로 빈틈을 채우지 마라.
+   사전 지식이나 추측으로 빈틈을 채우지 마라. 검색 결과 요약이 짧아 구체적인 내용이
+   부족하면, 그 부족한 부분은 답변에 넣지 마라.
 3. 답을 뒷받침할 근거를 찾았으면 submit_answer를 호출해라. 문장마다 어떤 근거
    (citations)를 썼는지 반드시 포함하고, citations의 source_url은 실제로 본
    결과(search_web의 url 또는 read_disclosure로 읽은 공시)에서만 골라라(지어내지
@@ -483,22 +484,30 @@ class WikiAgent:
             return [h.__dict__ for h in hits]
 
         def handle_search_recent_disclosures(args: dict, seen: set[str]) -> object:
-            days = args.get("days") or dart_lookup.DEFAULT_LOOKBACK_DAYS
+            try:
+                days = int(args.get("days") or dart_lookup.DEFAULT_LOOKBACK_DAYS)
+            except (TypeError, ValueError):
+                # 모델이 스키마를 어기고 숫자로 변환 안 되는 값(예: "not-a-number")을
+                # 보내면 timedelta(days=...)가 TypeError를 던져 웹 검색 단계 전체가
+                # 유실된다 — 이 파일의 다른 곳(JSON 파싱 실패, Citation(**c) TypeError)과
+                # 같은 원칙으로 기본값으로 방어한다.
+                days = dart_lookup.DEFAULT_LOOKBACK_DAYS
+            days = max(1, min(days, 90))
             hits = self.wiki_tools.search_recent_disclosures(days)
             disclosure_hits.update({h.rcept_no: h for h in hits})
             return [h.__dict__ for h in hits]
 
         def handle_read_disclosure(args: dict, seen: set[str]) -> object:
             rcept_no = args["rcept_no"]
-            markdown = self.wiki_tools.read_disclosure(rcept_no)
-            if markdown is None:
+            text = self.wiki_tools.read_disclosure(rcept_no)
+            if text is None:
                 return {"error": "공시를 찾을 수 없음"}
             url = dart_lookup.viewer_url(rcept_no)
             hit = disclosure_hits.get(rcept_no)
             seen.add(url)
             hit_by_url[url] = (hit.report_name if hit else None, hit.published_at if hit else None)
             return {
-                "markdown": markdown,
+                "text": text,
                 "canonical_url": url,
                 "report_name": hit.report_name if hit else None,
                 "corp_name": hit.corp_name if hit else None,

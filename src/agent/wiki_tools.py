@@ -112,5 +112,5 @@ class WikiTools:
         return dart_lookup.search_recent_disclosures(self.workspace_id, days)
 
     def read_disclosure(self, rcept_no: str) -> Optional[str]:
-        """공시 1건의 실제 본문(HTML)."""
+        """공시 1건의 실제 본문(태그 제거·길이 상한 적용된 일반 텍스트)."""
         return dart_lookup.read_disclosure(rcept_no)
