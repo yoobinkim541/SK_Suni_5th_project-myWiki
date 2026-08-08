@@ -172,7 +172,7 @@ export default function KnowledgeGraph() {
 
       {/* 허브 로고 오버레이 — viewBox 정중앙(CX=500/1000, CY=390/780 → 50%/50%)에 항상 겹친다.
           로고는 SVG 안에 직접 넣는 것보다 <img>로 얹는 쪽이 다크모드 전환에 더 간단하다. */}
-      <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-1">
+      <div className="kg-hub-overlay pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-1">
         <img
           src={myWikiLogoFull}
           alt="my Wiki"

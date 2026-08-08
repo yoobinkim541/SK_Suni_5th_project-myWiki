@@ -1696,10 +1696,18 @@ a.fn:hover{text-decoration:underline}
 .kg-hub-grad{fill:url(#kgHubGrad)}
 /* 허브 원(지름 = viewBox 폭의 14.4%) 안에 들어가도록 폭을 그보다 살짝 작게 %로 고정 —
    .kg-wrap이 viewBox 비율 그대로 반응형으로 커지므로 %값이 화면 크기와 무관하게 맞습니다. */
+/* .kg-hub-logo-full 자체에 %width를 주면, 그 부모(.kg-hub-overlay)가 명시적 너비 없이
+   flex 컨텐츠에 맞춰 shrink-to-fit되면서 "부모 너비 = 자식 max-width" 순환 참조가 생겨
+   실제로는 .kg-wrap 크기와 무관하게 항상 min-width에 고정돼버린다(반응형이 안 먹힘).
+   그래서 %/min/max는 명시적 너비를 가질 수 있는 .kg-hub-overlay(.kg-wrap의 포지션 자식)
+   쪽에 걸고, 이미지 자신은 그 박스를 100% 채우기만 한다. */
+.kg-hub-overlay{
+  width:25%;
+  min-width:90px;
+  max-width:280px;
+}
 .kg-hub-logo-full{
-  width:21%;
-  min-width:150px;
-  max-width:360px;
+  width:100%;
   height:auto;
   object-fit:contain;
   display:block;
