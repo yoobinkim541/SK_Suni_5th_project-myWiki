@@ -1,10 +1,19 @@
 name: Daily Report Analysis Catch-up
 
-# 22:00 UTC is 07:00 Korea Standard Time. Finish the previous 24 hours'
-# analysis backlog before the 08:00 daily-report generation begins.
+# 21:00 UTC는 KST 06:00 — nightly-analysis.yml(00:00 KST 시작, 최대 355분)이
+# 아무리 늦어도 05:55 KST까지는 끝나므로 그 직후에 시작한다.
+#
+# scripts/run_daily_report_analysis_catchup.py가 07:15 KST를 내부 마감으로
+# 잡고, 최소 후보 수(기본 6건, selected_for_report=True)를 못 채웠으면 그때까지
+# 백로그를 이어서 처리한다. nightly-analysis.yml만으로 이미 충분하면 이
+# 워크플로우는 LLM 호출 없이 바로 끝난다.
+#
+# scheduled-daily-report.yml과 concurrency group을 공유하므로(cancel-in-progress:
+# false), 07:30 KST 리포트 생성 전에 반드시 끝나야 한다 — timeout-minutes는
+# 내부 마감(06:00~07:15, 75분) + 안전마진 10분.
 on:
   schedule:
-    - cron: "0 22 * * *"
+    - cron: "0 21 * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -14,7 +23,7 @@ concurrency:
 jobs:
   catch-up:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@v4
 
