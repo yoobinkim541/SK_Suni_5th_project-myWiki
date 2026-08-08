@@ -12,6 +12,7 @@
 // 잘못 뜨지 않습니다. error가 있으면 조회 실패를 그대로 보여줍니다(빈 결과로 둔갑시키지 않음).
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Spinner from '../common/Spinner';
 
 export default function WikiKeywordDocsModal({ word, docs, category, error, onSelect, onClose }) {
@@ -21,7 +22,16 @@ export default function WikiKeywordDocsModal({ word, docs, category, error, onSe
       if (e.key === 'Escape') onClose?.();
     }
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    // 모달이 떠 있는 동안 배경 스크롤을 잠가서 뒤 화면이 같이 움직이지 않게 한다
+    // (.view/.main 조상에 걸린 애니메이션·필터가 fixed 모달의 containing block이
+    //  돼버리는 문제의 근본 해결은 아래 createPortal이 하지만, 스크롤 잠금도 같이 걸어야
+    //  모달이 열려 있는 동안 뒤 페이지가 안 움직인다는 기대에 맞는다).
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [word, onClose]);
 
   if (!word) return null;
@@ -29,7 +39,7 @@ export default function WikiKeywordDocsModal({ word, docs, category, error, onSe
   const loading = docs === null;
   const rows = docs || [];
 
-  return (
+  return createPortal(
     <>
       <div className="mw-scrim open" onClick={onClose}></div>
       <div className="mw-modal open" role="dialog" aria-modal="true" aria-label={`${word} 관련 문서`}>
@@ -77,6 +87,7 @@ export default function WikiKeywordDocsModal({ word, docs, category, error, onSe
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
