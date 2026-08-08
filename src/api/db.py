@@ -347,9 +347,12 @@ def _citation_rows(message_id: str, citations: list) -> list[dict]:
 
 def save_agent_message(session_id: str, result: AgentResult, prompt_version: str = "v1") -> dict:
     """
-    Agent 응답을 chat_messages에 저장하고, has_answer=True면 citations도
-    message_citations에 같이 저장한다. 근거 없음 상태(has_answer=False)는
-    content에 그 사유를 그대로 남겨서, 화면에서 "근거 부족" 상태를 그대로 렌더링할 수 있게 한다.
+    Agent 응답을 chat_messages에 저장하고, citations가 있으면 has_answer 여부와
+    무관하게 message_citations에도 같이 저장한다 — submit_no_answer도 이제
+    참고할 만큼만 읽은 문서를 citations로 선택적으로 실어 보낼 수 있어서(완전한
+    답은 아니지만 reason의 [N] 각주가 실제 문서로 연결되게), has_answer=False라고
+    citations를 버리면 안 된다. 근거 없음 상태(has_answer=False)는 content에 그
+    사유를 그대로 남겨서, 화면에서 "근거 부족" 상태를 그대로 렌더링할 수 있게 한다.
     """
     db = get_supabase()
     content = result.answer if result.has_answer else (
@@ -370,7 +373,7 @@ def save_agent_message(session_id: str, result: AgentResult, prompt_version: str
     )
     message = msg_res.data[0]
 
-    if result.has_answer and result.citations:
+    if result.citations:
         rows = _citation_rows(message["id"], result.citations)
         db.table("message_citations").insert(rows).execute()
 
@@ -401,7 +404,7 @@ def update_agent_message(message_id: str, result: AgentResult, prompt_version: s
     message = msg_res.data[0]
 
     db.table("message_citations").delete().eq("message_id", message_id).execute()
-    if result.has_answer and result.citations:
+    if result.citations:
         rows = _citation_rows(message_id, result.citations)
         db.table("message_citations").insert(rows).execute()
 

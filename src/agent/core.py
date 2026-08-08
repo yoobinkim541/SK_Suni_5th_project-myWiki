@@ -59,7 +59,11 @@ SYSTEM_PROMPT = """\
    번호는 절대 쓰지 마라.
 4. 근거를 찾지 못했거나, 질문에 답하기에 근거가 불충분하거나 상호 확인이 안 되면
    submit_answer 대신 반드시 submit_no_answer를 호출해라. 애매하게 답하지 말고 이 상태로
-   명시적으로 전환해라.
+   명시적으로 전환해라. 그래도 read_wiki_page로 실제 읽어본 문서 중 참고할 만한 게
+   있으면 citations로 같이 제출해라(실제로 읽은 것만 — 지어내지 마라) — reason
+   안에서 그 문서를 언급할 땐 citations 배열의 N번째(1부터) 항목과 정확히 대응하는
+   [N] 표기를 써라; citations에 없는 번호는 절대 쓰지 마라. 참고할 문서가 없으면
+   citations는 생략해라.
 5. 톤은 직접적이고 전문적으로, 가벼운 대화체는 쓰지 마라.
 6. 이전 대화 히스토리에 관련 내용이 있어 보여도, 그 텍스트 자체를 근거로 쓰지 마라.
    짧은 후속 질문("그러면~", "그건 뭐야?" 등)이라도 이번 턴에 read_wiki_page로 다시
@@ -89,7 +93,11 @@ DART 공시) 중에 관련 있는 게 있는지 찾는 단계다. 규칙:
    본문에 쓰는 근거 번호 [N]은 반드시 citations 배열의 N번째(1부터 시작) 항목과
    정확히 대응해야 한다 — citations에 없는 번호는 절대 쓰지 마라.
 4. 근거를 찾지 못했거나 근거가 불충분하면 submit_answer 대신 반드시
-   submit_no_answer를 호출해라.
+   submit_no_answer를 호출해라. 그래도 read_document로 실제 읽어본 문서 중 참고할
+   만한 게 있으면 citations로 같이 제출해라(실제로 읽은 것만 — 지어내지 마라) —
+   reason 안에서 언급할 땐 citations 배열의 N번째(1부터) 항목과 정확히 대응하는
+   [N] 표기를 써라; citations에 없는 번호는 절대 쓰지 마라. 참고할 문서가 없으면
+   citations는 생략해라.
 5. 톤은 직접적이고 전문적으로, 가벼운 대화체는 쓰지 마라.
 """
 
@@ -171,10 +179,34 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "submit_no_answer",
-            "description": "축적된 위키에서 답을 뒷받침할 근거를 찾지 못했을 때 호출한다.",
+            "description": (
+                "충분한 근거를 찾지 못해 답을 낼 수 없을 때 호출한다. 완전한 답은 못 내도"
+                " 실제로 읽어본 문서 중 참고할 만한 게 있으면 citations로 같이 제출할 수"
+                " 있다(선택 사항)."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"reason": {"type": "string"}},
+                "properties": {
+                    "reason": {"type": "string"},
+                    "citations": {
+                        "type": "array",
+                        "description": (
+                            "선택 사항 — reason에서 [N]으로 언급한 문서가 있으면, 실제로 조회한"
+                            " 것만 여기에 채워라. 없으면 생략해라."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "document_version_id": {"type": "string"},
+                                "wiki_slug": {"type": "string"},
+                                "source_url": {"type": "string"},
+                                "quote": {"type": "string"},
+                                "relevance_score": {"type": "number"},
+                            },
+                            "required": ["quote"],
+                        },
+                    },
+                },
                 "required": ["reason"],
             },
         },
@@ -242,7 +274,12 @@ WEB_SEARCH_ANSWER_SYSTEM_PROMPT = """\
    번호 [N]은 반드시 citations 배열의 N번째(1부터 시작) 항목과 정확히 대응해야 한다
    — citations에 없는 번호는 절대 쓰지 마라.
 4. 근거를 찾지 못했거나 근거가 불충분하면 submit_answer 대신 반드시
-   submit_no_answer를 호출해라.
+   submit_no_answer를 호출해라. 그래도 실제로 읽어본 결과(뉴스 요약 또는 공시
+   본문) 중 참고할 만한 게 있으면 citations로 같이 제출해라(실제로 본 것만 —
+   지어내지 마라). document_version_id는 비워둬라. reason 안에서 언급할 땐
+   citations 배열의 N번째(1부터) 항목과 정확히 대응하는 [N] 표기를 써라;
+   citations에 없는 번호는 절대 쓰지 마라. 참고할 결과가 없으면 citations는
+   생략해라.
 5. 톤은 직접적이고 전문적으로, 가벼운 대화체는 쓰지 마라.
 """
 
@@ -470,8 +507,9 @@ class WikiAgent:
         # 필드 자체를 막지 못한다 — 프롬프트로만 "원문 단계엔 wiki_slug 없음"을 바라는
         # 대신, 모델이 실수로(또는 이전 위키 조회 결과를 착각해) wiki_slug를 채워 보내도
         # 여기서 강제로 지운다. Citation은 non-frozen dataclass이지만 원본 객체를
-        # 그대로 변형하지 않고 새로 만든다.
-        if result.has_answer and result.citations:
+        # 그대로 변형하지 않고 새로 만든다. has_answer 여부와 무관하게 적용한다 —
+        # submit_no_answer도 이제 citations를 선택적으로 실어 보낼 수 있다.
+        if result.citations:
             result.citations = [replace(c, wiki_slug=None) for c in result.citations]
         return result
 
@@ -537,11 +575,8 @@ class WikiAgent:
         # submit_answer 스키마를 다른 단계와 공유하므로 document_version_id/wiki_slug
         # 필드 자체를 막지 못한다 — 모델이 실수로(또는 검색 결과 URL을) document_version_id
         # 칸에 채워 보내도 그 값이 이번 검색에서 실제로 본 URL(hit_by_url의 키)이면
-        # source_url로 승격시킨다. source_url도 비어 있고 document_version_id도 이번
-        # 검색 결과에 없는 값이면(식별자가 통째로 없는 것과 같다) 그 citation은 근거
-        # 없음으로 취급해 답변 전체를 has_answer=False로 강등한다 — 지어낸/형식이
-        # 어긋난 근거를 저장하면 안 된다는 이 파일의 기존 원칙과 동일하다.
-        if result.has_answer and result.citations:
+        # source_url로 승격시킨다.
+        if result.citations:
             def _enrich(c: Citation) -> Citation:
                 url = c.source_url or (c.document_version_id if c.document_version_id in hit_by_url else None)
                 title, published_at = hit_by_url.get(url, (None, None))
@@ -555,12 +590,24 @@ class WikiAgent:
                 )
 
             enriched = [_enrich(c) for c in result.citations]
-            if any(c.source_url is None for c in enriched):
-                return AgentResult(
-                    has_answer=False,
-                    no_answer_reason="인용 근거가 실제로 조회한 검색 결과와 일치하지 않음",
-                )
-            result.citations = enriched
+            if result.has_answer:
+                # source_url도 비어 있고 document_version_id도 이번 검색 결과에 없는
+                # 값이면(식별자가 통째로 없는 것과 같다) 그 citation은 근거 없음으로
+                # 취급해 답변 전체를 has_answer=False로 강등한다 — 지어낸/형식이 어긋난
+                # 근거를 저장하면 안 된다는 이 파일의 기존 원칙과 동일하다.
+                if any(c.source_url is None for c in enriched):
+                    return AgentResult(
+                        has_answer=False,
+                        no_answer_reason="인용 근거가 실제로 조회한 검색 결과와 일치하지 않음",
+                    )
+                result.citations = enriched
+            else:
+                # submit_no_answer 경로 — 강등할 "정상 답변"이 없으므로, 식별이 안 되는
+                # (지어낸) citation만 조용히 버리고 검증된 것만 남긴다. _run_grounded_answer의
+                # _filter_grounded_citations가 이미 seen_identifiers로 한 번 걸렀지만,
+                # hit_by_url에 없는(예: document_version_id로 잘못 채워 보낸) 케이스가
+                # 남아있을 수 있어 enrich 이후 한 번 더 확인한다.
+                result.citations = [c for c in enriched if c.source_url is not None]
         return result
 
     def _run_grounded_answer(
@@ -651,13 +698,20 @@ class WikiAgent:
                     messages.append(self._tool_result(tool_call.id, {"status": "recorded"}))
 
                 elif name == "submit_no_answer":
-                    # citations가 아예 없는 경로라, LLM이 reason에서 자기가 읽은 문서를
-                    # 언급하며 습관적으로 섞어 쓰는 [N] 각주 표기는 전부 죽은 링크다 —
-                    # submit_answer와 동일하게 strip_orphaned_citation_markers로 제거한다
-                    # (citation_count=0이므로 모든 [N]이 제거 대상).
+                    # citations는 선택 사항이다 — 완전한 답은 못 내도(has_answer=False는
+                    # 그대로) 실제로 읽어본 문서 중 참고할 만한 게 있으면 reason의 [N]과
+                    # 연결해서 보여준다. submit_answer와 달리 citations가 비어있거나
+                    # 일부가 무효해도 전체를 거부하지 않는다 — 여기는 애초에 "정상 답변"이
+                    # 아니라 강등할 대상이 없으므로, 검증을 통과한 것만 조용히 남긴다.
+                    try:
+                        raw_citations = [Citation(**c) for c in args.get("citations", [])]
+                    except (TypeError, ValueError):
+                        raw_citations = []
+                    citations = self._filter_grounded_citations(raw_citations, seen_identifiers)
                     terminal_result = AgentResult(
                         has_answer=False,
-                        no_answer_reason=strip_orphaned_citation_markers(args["reason"], 0),
+                        no_answer_reason=strip_orphaned_citation_markers(args["reason"], len(citations)),
+                        citations=citations,
                     )
                     messages.append(self._tool_result(tool_call.id, {"status": "recorded"}))
 
@@ -680,6 +734,24 @@ class WikiAgent:
             if citation.relevance_score is not None and not (0.0 <= citation.relevance_score <= 1.0):
                 return False
         return True
+
+    @staticmethod
+    def _filter_grounded_citations(
+        citations: list[Citation], seen_identifiers: set[str]
+    ) -> list[Citation]:
+        """_is_grounded와 같은 기준(seen_identifiers에 있는 식별자, 0~1 범위의
+        relevance_score)으로 각 citation을 개별 검증하되, submit_no_answer처럼
+        "일부가 무효하면 통째로 거부"가 아니라 "무효한 것만 조용히 버리고 유효한 것만
+        남기는" 관대한 필터가 필요한 경로에서 쓴다."""
+        valid = []
+        for citation in citations:
+            identifier = citation.document_version_id or citation.source_url
+            if identifier is None or identifier not in seen_identifiers:
+                continue
+            if citation.relevance_score is not None and not (0.0 <= citation.relevance_score <= 1.0):
+                continue
+            valid.append(citation)
+        return valid
 
     def _call_model(self, messages: list[dict], *, use_tools: bool = True, tools: list[dict] | None = None):
         try:

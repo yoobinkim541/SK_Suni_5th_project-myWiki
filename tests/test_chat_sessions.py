@@ -485,6 +485,30 @@ def test_save_agent_message_persists_web_search_citation_without_document_versio
     assert citations[0]["document_title"] is None  # source_title을 안 채웠으므로
 
 
+def test_save_agent_message_persists_citations_even_when_has_answer_is_false(monkeypatch):
+    """submit_no_answer도 이제 참고할 만큼만 읽은 문서를 citations로 선택적으로 실어
+    보낼 수 있다 — has_answer=False라고 citations를 버리면 reason의 [N] 각주가 죽은
+    링크가 되므로, has_answer 여부와 무관하게 citations가 있으면 저장돼야 한다."""
+    client = FakeAgentMessageClient()
+    monkeypatch.setattr(db, "get_supabase", lambda: client)
+
+    result = AgentResult(
+        has_answer=False,
+        no_answer_reason="ADR 상장은 확인했지만[1] 최근 실적 정보는 없음",
+        citations=[Citation(
+            quote="SK하이닉스가 나스닥에 ADR을 상장했다.",
+            document_version_id="doc-ver-1",
+        )],
+        model_name="test-model",
+    )
+
+    saved = db.save_agent_message("sess-1", result)
+    citations = db.list_message_citations(saved["id"])
+
+    assert len(citations) == 1
+    assert citations[0]["document_version_id"] == "doc-ver-1"
+
+
 def test_update_agent_message_persists_web_search_citation_without_document_version_id(monkeypatch):
     """update_agent_message(재생성 경로)가 저장하는 웹 검색 citation도 save_agent_message와
     대칭으로 동작해야 한다 — document_version_id가 없는(웹 검색) citation도 여기서
@@ -869,6 +893,25 @@ def test_save_to_wiki_rejects_llm_fallback_answer(make_client, monkeypatch):
 
     assert res.status_code == 400
     assert "LLM" in res.json()["detail"]
+
+
+def test_save_to_wiki_rejects_no_answer_message_even_with_citations(make_client, monkeypatch):
+    """submit_no_answer도 이제 참고할 만큼만 읽은 문서를 citations로 선택적으로 실어
+    보낼 수 있다 — "citations가 있으면 저장 가능"으로만 판단하면 근거 부족(불완전한)
+    응답이 위키에 확정된 지식처럼 저장될 수 있으므로, content가 NO_ANSWER_PREFIX로
+    시작하는 메시지는 citations 유무와 무관하게 거부해야 한다."""
+    no_answer_message = {**ASSISTANT_MESSAGE, "content": f"{db.NO_ANSWER_PREFIX} 위키에 관련 문서 없음"}
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: no_answer_message if mid == ASSISTANT_MESSAGE["id"] else None)
+    # citations가 있어도(참고용으로 실어 보낸 것) 근거 부족 체크가 먼저 걸려야 한다.
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [SAMPLE_CITATION])
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/save-to-wiki"
+    )
+
+    assert res.status_code == 400
+    assert "근거" in res.json()["detail"]
 
 
 def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypatch):
