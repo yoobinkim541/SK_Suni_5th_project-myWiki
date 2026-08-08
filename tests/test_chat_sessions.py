@@ -1512,9 +1512,12 @@ def test_send_message_private_session_first_message_also_retitles(make_client, m
     assert res.status_code == 200
 
 
-def test_send_message_passes_allow_web_search_true_to_agent(make_client, monkeypatch, send_message_setup):
-    """첫 질문부터 위키·원문 근거가 없으면 버튼 클릭 없이 웹/DART 검색과 LLM 폴백까지
-    자동으로 이어가야 한다 — agent.answer()에 allow_web_search=True가 전달돼야 한다."""
+def test_send_message_does_not_opt_into_web_search(make_client, monkeypatch, send_message_setup):
+    """실시간 웹/DART 검색은 실제 외부 API를 호출해 비용·시간이 크므로 "웹에서 찾아줘"
+    클릭(POST .../regenerate?allow_web_search=true)에만 옵트인한다 — 첫 질문
+    (send_message)은 agent.answer()에 allow_web_search=True를 넘기면 안 된다.
+    (위키·원문 실패 후에도 일반 지식 폴백은 agent.answer()가 항상 자동으로 시도하므로
+    새로고침 없이 답이 오는 동작 자체는 유지된다 — 이건 test_agent_core.py에서 검증.)"""
     monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION)
     monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])
 
@@ -1532,7 +1535,7 @@ def test_send_message_passes_allow_web_search_true_to_agent(make_client, monkeyp
     )
 
     assert res.status_code == 200
-    assert captured["allow_web_search"] is True
+    assert captured["allow_web_search"] is False
     assert send_message_setup["titled"] == [(PRIVATE_SESSION["id"], "HBM4가 뭐야?")]
 
 
