@@ -28,6 +28,10 @@ from src.pipeline_common.db import get_client
 NAVER_QUERIES = ["SK하이닉스", "HBM", "DRAM", "반도체 수출"]
 GNEWS_QUERIES = ["semiconductor", "HBM memory", "SK Hynix"]
 GOOGLE_RSS_QUERIES = ["SK하이닉스"]
+# DART는 검색어가 아니라 회사 단위다 — Open API가 corp_code + 날짜 범위로만 조회되고
+# 자유 검색어를 지원하지 않는다(fetch_disclosure()도 config.corp_code만 읽음).
+# (회사명, DART 고유번호 8자리) 쌍으로 등록한다.
+DART_COMPANIES = [("SK하이닉스", "00164779")]
 
 
 def google_news_rss_url(query: str) -> str:
@@ -61,6 +65,15 @@ def build_source_specs() -> list[dict]:
                 "source_type": "rss",
                 "base_url": google_news_rss_url(query),
                 "config": None,
+            }
+        )
+    for name, corp_code in DART_COMPANIES:
+        specs.append(
+            {
+                "name": f"DART - {name}",
+                "source_type": "disclosure",
+                "base_url": None,
+                "config": {"corp_code": corp_code},
             }
         )
     return specs
