@@ -158,6 +158,18 @@ export default function App() {
     };
   }, []);
 
+  // 페이지 전환 시 스크롤 최상단 초기화.
+  // ⚠ 이 앱은 react-router가 아니라 view 상태(navigateTo → setView)로 화면을 바꾸는
+  //   구조라 URL이 안 바뀌고, 그래서 브라우저가 스크롤을 알아서 복원/초기화해주지 않는다
+  //   (react-router라면 history 변화에 맞춰 자동으로 처리됐을 부분).
+  //   실제로 스크롤되는 대상은 .main이 아니라 window다 — .side(사이드바)만 자체
+  //   overflow-y:auto를 갖고 있고 .main은 그냥 문서 흐름을 따라 늘어나며 body가 스크롤된다
+  //   (globals.css .app/.side/.main 참고). 그래서 컨테이너의 scrollTop이 아니라
+  //   window.scrollTo로 초기화한다.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [view]);
+
   // notiWiki 토글의 실제 상태 — 지금까지는 하드코딩된 true였는데, 실제 구독이
   // 없으면(권한 거부됐거나 애초에 켠 적 없으면) 거짓말을 하고 있었던 셈이라 실제로 확인한다.
   useEffect(() => {
