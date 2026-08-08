@@ -168,7 +168,9 @@ def send_message(
 
     wiki_tools = WikiTools(workspace_id=workspace_id)
     agent = WikiAgent(wiki_tools)
-    result = agent.answer(body.content, history=history)
+    # allow_web_search=True: 위키·원문에 근거 없으면 "웹에서 찾아줘" 클릭 없이 바로
+    # 웹/DART 검색, 그것도 실패하면 출처 없는 일반 지식 폴백까지 자동으로 이어간다.
+    result = agent.answer(body.content, history=history, allow_web_search=True)
 
     assistant_message = db.save_agent_message(session_id, result)
 
