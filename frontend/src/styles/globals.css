@@ -197,29 +197,34 @@ svg text{font-family:inherit}
 .chart svg{width:100%;height:auto;display:block;max-height:300px}
 @media (max-width:1020px){.chart svg{max-height:260px}}
 @media (max-width:520px){.chart svg{max-height:220px}}
+.chart-plot{position:relative}
 .chart .grid line{stroke:var(--hair-3);stroke-width:1}
 .chart .grid line.ax{stroke:var(--hair)}
 .chart text.yl,.chart text.xl{font-size:9.5px;font-weight:300;fill:var(--faint)}
 .chart text.yl{text-anchor:end}
 .chart text.xl{text-anchor:middle}
-.chart .bars rect{fill:var(--track)}
-.chart .bars rect.now{fill:var(--hair)}
 /* TrendChart.jsx의 <defs> 안 <linearGradient id="trend-area-gradient">를 가리킨다 —
-   위에서 진하고 아래로 갈수록 투명해지는 TailAdmin 스타일 채우기. CSS가 SVG
+   위쪽만 살짝 진하고 아래로 갈수록 거의 안 보이는 아주 옅은 블루 채우기. CSS가 SVG
    presentation attribute(fill)보다 우선 적용되므로, 그라데이션은 여기서 지정해야 한다. */
 .chart .area{fill:url(#trend-area-gradient)}
-.chart .line{fill:none;stroke:#86AABD;stroke-width:1.8;
+.chart .line{fill:none;stroke:#347FA3;stroke-width:1.8;
   stroke-linejoin:round;stroke-linecap:round}
-.chart .dots circle{fill:var(--panel);stroke:#86AABD;stroke-width:1.4}
-.chart .now-dot{fill:#86AABD}
-.chart text.now{font-size:11px;font-weight:900;fill:#86AABD;text-anchor:end}
+.chart .dots circle{fill:var(--panel);stroke:#347FA3;stroke-width:1.4}
+.chart .now-dot{fill:#347FA3}
+/* hover/포커스 히트 영역 — 화면엔 안 보이고 넉넉한 원으로만 존재한다. */
+.chart circle.hit{fill:transparent;stroke:none;cursor:pointer;outline:none}
+.chart-tip{position:absolute;transform:translate(-50%,-100%) translateY(-10px);
+  background:#17201E;color:#EFF4F1;font-size:11px;line-height:1.5;
+  padding:7px 11px;border-radius:8px;white-space:nowrap;pointer-events:none;
+  box-shadow:0 8px 20px rgba(0,0,0,.2);z-index:3}
+.chart-tip b{display:block;font-size:10px;font-weight:600;opacity:.72}
+.chart-tip span{display:block;font-weight:700}
 .chart-legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;
   padding-top:12px;border-top:1px solid var(--hair-3);
   font-size:10.5px;font-weight:300;color:var(--muted)}
 .chart-legend b{font-weight:700;color:var(--ink-2)}
-.chart-legend .mk{display:inline-block;width:14px;height:2px;background:#86AABD;
+.chart-legend .mk{display:inline-block;width:14px;height:2px;background:#347FA3;
   vertical-align:3px;margin-right:6px}
-.chart-legend .mk.bar{height:8px;width:8px;background:var(--track);vertical-align:0}
 
 /* ---------- 분할 ---------- */
 .split{display:grid;grid-template-columns:1fr 1fr;gap:46px}
@@ -607,7 +612,10 @@ svg text{font-family:inherit}
 @keyframes fadeIn{to{opacity:1}}
 .chart .line{stroke-dasharray:900;stroke-dashoffset:900;animation:drawLine 1.1s var(--ease) forwards .15s}
 .chart .area{opacity:0;animation:fadeIn .6s var(--ease) forwards .55s}
-.chart .dots circle,.chart .now-dot{opacity:0;animation:fadeIn .4s var(--ease) forwards .9s}
+/* 점마다 선이 그 위치에 도착하는 시점에 맞춰 나타나야 하므로, 공용 delay 대신
+   TrendChart.jsx가 각 점에 인라인 animation-delay를 따로 준다(위 .line의 1.1s 구간에
+   맞춰 0.15~1.25s 사이로 흩뿌림). 여기서는 opacity 0→1 애니메이션 자체만 정의한다. */
+.chart .dots circle{opacity:0;animation:fadeIn .35s var(--ease) forwards}
 
 .trk i,.tr .bar i,.cd .trk i{transition:width .9s var(--ease)}
 .row{transition:background var(--dur-fast) var(--ease)}
