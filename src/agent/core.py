@@ -29,6 +29,12 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MODEL_NAME = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
 # 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
 FALLBACK_MODEL_NAME = os.getenv("OPENROUTER_FALLBACK_MODEL", "").strip() or "deepseek/deepseek-v4-pro"
+# OpenAI SDK 기본 read timeout(600초)을 그대로 두면, primary 모델이 막혔을 때 폴백으로
+# 넘어가기까지 라운드 하나가 몇 분씩 걸릴 수 있다(실측: 2026-08-09, primary 반복 실패로
+# 답변 하나에 190~200초+ 소요 — 프론트가 기다릴 수 있는 시간을 훨씬 넘겨 "완전 무응답"
+# 처럼 보였다). 이 값을 짧게 잡으면 실제로 느릴 뿐인 정상 응답도 폴백으로 넘어갈 수
+# 있다는 트레이드오프가 있다 — 배포 후 폴백 전환 빈도·답변 품질 체감을 지켜봐야 한다.
+OPENROUTER_TIMEOUT_SECONDS = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "25"))
 MAX_TOOL_ROUNDS = 10  # 위키 단계 전용 — 무한루프 방지. 실사용 로그에서 6일 때 답변의
 # 17%가 라운드 초과로 근거 없음 처리됐다(2026-08-05, chat_messages 66건 중 11건).
 # search_wiki_pages 도입으로 첫 라운드부터 관련도 순 후보를 받게 됐지만, 복합 질문의
@@ -373,6 +379,7 @@ class WikiAgent:
         self.client = openrouter_client or OpenAI(
             base_url=OPENROUTER_BASE_URL,
             api_key=os.environ["OPENROUTER_API_KEY"],
+            timeout=OPENROUTER_TIMEOUT_SECONDS,
         )
 
     def answer(
@@ -759,9 +766,12 @@ class WikiAgent:
         except Exception:
             if FALLBACK_MODEL_NAME == MODEL_NAME:
                 raise
+            # exc_info=True — 이 경고만 보고는 원인(타임아웃/429/5xx 등)을 알 수 없어서
+            # 실제 장애 조사 때 추측만 하게 됐다(2026-08-09). 예외 스택을 같이 남긴다.
             logger.warning(
                 "openrouter_primary_model_failed_using_fallback",
                 extra={"primary_model": MODEL_NAME, "fallback_model": FALLBACK_MODEL_NAME},
+                exc_info=True,
             )
             return self._complete(FALLBACK_MODEL_NAME, messages, use_tools=use_tools, tools=tools)
 

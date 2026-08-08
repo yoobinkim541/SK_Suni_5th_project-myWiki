@@ -152,6 +152,16 @@ def agent(wiki_tools: MagicMock) -> WikiAgent:
     return WikiAgent(wiki_tools=wiki_tools, openrouter_client=MagicMock())
 
 
+def test_default_openai_client_uses_configured_timeout(wiki_tools, monkeypatch):
+    """실측 버그: OpenAI SDK 기본 read timeout(600초)을 그대로 두면, primary 모델이
+    막혔을 때 폴백으로 넘어가기까지 라운드 하나가 몇 분씩 걸려 프론트에서 완전
+    무응답처럼 보였다(2026-08-09) — openrouter_client를 안 넘겨서 WikiAgent가 직접
+    OpenAI 클라이언트를 만들 때 OPENROUTER_TIMEOUT_SECONDS가 실제로 적용돼야 한다."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    agent = WikiAgent(wiki_tools=wiki_tools)
+    assert agent.client.timeout == core.OPENROUTER_TIMEOUT_SECONDS
+
+
 # ---------------------------------------------------------------------------
 # 정상 흐름: list_wiki_topics → read_wiki_page → submit_answer
 # ---------------------------------------------------------------------------
@@ -1304,9 +1314,10 @@ def test_init_uses_env_var_and_openrouter_base_url(monkeypatch, wiki_tools):
     captured = {}
 
     class FakeOpenAI:
-        def __init__(self, base_url, api_key):
+        def __init__(self, base_url, api_key, timeout=None):
             captured["base_url"] = base_url
             captured["api_key"] = api_key
+            captured["timeout"] = timeout
 
     monkeypatch.setattr("src.agent.core.OpenAI", FakeOpenAI)
 
@@ -1314,6 +1325,7 @@ def test_init_uses_env_var_and_openrouter_base_url(monkeypatch, wiki_tools):
 
     assert captured["api_key"] == "test-key"
     assert captured["base_url"] == "https://openrouter.ai/api/v1"
+    assert captured["timeout"] == core.OPENROUTER_TIMEOUT_SECONDS
 
 
 def test_init_raises_when_api_key_missing(monkeypatch, wiki_tools):
