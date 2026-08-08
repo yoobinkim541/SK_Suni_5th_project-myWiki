@@ -1702,9 +1702,9 @@ a.fn:hover{text-decoration:underline}
    그래서 %/min/max는 명시적 너비를 가질 수 있는 .kg-hub-overlay(.kg-wrap의 포지션 자식)
    쪽에 걸고, 이미지 자신은 그 박스를 100% 채우기만 한다. */
 .kg-hub-overlay{
-  width:25%;
-  min-width:90px;
-  max-width:280px;
+  width:18%;
+  min-width:70px;
+  max-width:190px;
 }
 .kg-hub-logo-full{
   width:100%;
