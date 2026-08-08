@@ -735,6 +735,7 @@ def test_llm_fallback_answer_calls_model_without_tools(agent, wiki_tools, monkey
     responses = [
         tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
         tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
+        tool_call_response(("call-3", "submit_no_answer", {"reason": "웹 검색에도 근거 없음"})),
         plain_text_response("일반 지식 답변"),
     ]
     call_mock = MagicMock(side_effect=responses)
@@ -742,6 +743,7 @@ def test_llm_fallback_answer_calls_model_without_tools(agent, wiki_tools, monkey
 
     agent.answer("아무 질문", allow_web_search=True)
 
+    assert call_mock.call_count == 4
     fallback_call = call_mock.call_args_list[-1]
     assert fallback_call.kwargs.get("use_tools") is False
 
