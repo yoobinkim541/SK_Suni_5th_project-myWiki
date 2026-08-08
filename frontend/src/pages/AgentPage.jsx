@@ -32,6 +32,7 @@ import {
   listWorkspaceMembers,
   mergeEvidenceLists,
 } from '../services/agentApi';
+import { ApiError } from '../api/client';
 import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
 import ShareToTeamModal from '../components/agent/ShareToTeamModal';
@@ -188,6 +189,24 @@ export default function AgentPage({ profile }) {
     }));
   }
 
+  // 위키·원문·웹·DART까지 자동으로 이어가는 답변은 라운드마다 실제 API를 호출해서
+  // 수십 초~1분 넘게 걸릴 수 있다. 백엔드는 끝까지 처리해 DB에 저장하지만, 그보다
+  // 짧은 네트워크/프록시 타임아웃에 fetch가 먼저 끊기면(TypeError: Failed to fetch,
+  // status 없음) 브라우저만 실패로 보인다 — 몇 초 뒤 대화를 다시 불러와서 이미 도착한
+  // 답을 새로고침 없이 보여준다. ApiError(4xx/5xx 등 실제 백엔드 응답)는 재시도해도
+  // 같은 결과라 바로 실패로 보여준다.
+  async function recoverAfterFetchFailure(sessionId, pane) {
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    try {
+      const { messages, evidence } = await fetchConversation(sessionId, pane);
+      updateConversation(pane, sessionId, (c) => ({ ...c, messages, evidence, _loaded: true }));
+      setError(null);
+    } catch {
+      setError('답변을 가져오지 못했습니다.');
+      updateConversation(pane, sessionId, (c) => ({ ...c, messages: c.messages.slice(0, -1) }));
+    }
+  }
+
   async function handleSend(text) {
     if (!current || sending) return;
     setSending(true);
@@ -199,19 +218,26 @@ export default function AgentPage({ profile }) {
       text,
       ...(activePane === 'team' ? { author: { initial: authorInitial, name: authorName } } : {}),
     };
-    updateConversation(activePane, current.id, (c) => ({ ...c, messages: [...c.messages, optimistic] }));
+    const sessionId = current.id;
+    const pane = activePane;
+    updateConversation(pane, sessionId, (c) => ({ ...c, messages: [...c.messages, optimistic] }));
 
     try {
-      const { aiMessage, evidence } = await askAgent(current.id, text, activePane);
-      updateConversation(activePane, current.id, (c) => ({
+      const { aiMessage, evidence } = await askAgent(sessionId, text, pane);
+      updateConversation(pane, sessionId, (c) => ({
         ...c,
         messages: [...c.messages, aiMessage],
         evidence: mergeEvidenceLists(c.evidence, evidence),
       }));
     } catch (e) {
-      setError(e.message || '답변을 가져오지 못했습니다.');
-      // 실패한 질문은 되돌립니다.
-      updateConversation(activePane, current.id, (c) => ({ ...c, messages: c.messages.slice(0, -1) }));
+      if (!(e instanceof ApiError)) {
+        setError('응답을 기다리는 중입니다…');
+        recoverAfterFetchFailure(sessionId, pane);
+      } else {
+        setError(e.message || '답변을 가져오지 못했습니다.');
+        // 실패한 질문은 되돌립니다.
+        updateConversation(pane, sessionId, (c) => ({ ...c, messages: c.messages.slice(0, -1) }));
+      }
     } finally {
       setSending(false);
     }
@@ -421,12 +447,14 @@ export default function AgentPage({ profile }) {
     const messageId = message._id;
     if (!messageId || !current) return;
     const actionKind = allowWebSearch ? 'websearch' : 'regen';
+    const sessionId = current.id;
+    const pane = activePane;
     setMessageAction(messageId, actionKind, { status: 'loading' });
     try {
       const { message: updated, evidence } = await regenerateMessage(
-        current.id, messageId, activePane, allowWebSearch
+        sessionId, messageId, pane, allowWebSearch
       );
-      updateConversation(activePane, current.id, (c) => ({
+      updateConversation(pane, sessionId, (c) => ({
         ...c,
         messages: c.messages.map((m) => (m._id === messageId ? updated : m)),
         evidence: mergeEvidenceLists(c.evidence, evidence),
@@ -434,6 +462,15 @@ export default function AgentPage({ profile }) {
       setMessageAction(messageId, actionKind, { status: 'done' });
       setTimeout(() => setMessageAction(messageId, actionKind, { status: 'idle' }), 1500);
     } catch (e) {
+      if (!(e instanceof ApiError)) {
+        // handleSend와 같은 이유(다중 라운드 실시간 조회로 처리 시간이 길어져 fetch가
+        // 먼저 끊김) — 몇 초 뒤 대화를 다시 불러와서 이미 도착한 답을 반영한다.
+        setMessageAction(messageId, actionKind, { status: 'loading' });
+        recoverAfterFetchFailure(sessionId, pane).then(() => {
+          setMessageAction(messageId, actionKind, { status: 'idle' });
+        });
+        return;
+      }
       setMessageAction(messageId, actionKind, {
         status: 'error',
         message: e.message || (allowWebSearch ? '웹 검색에 실패했습니다.' : '다시 생성하지 못했습니다.'),
