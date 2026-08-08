@@ -651,8 +651,13 @@ class WikiAgent:
                     messages.append(self._tool_result(tool_call.id, {"status": "recorded"}))
 
                 elif name == "submit_no_answer":
+                    # citations가 아예 없는 경로라, LLM이 reason에서 자기가 읽은 문서를
+                    # 언급하며 습관적으로 섞어 쓰는 [N] 각주 표기는 전부 죽은 링크다 —
+                    # submit_answer와 동일하게 strip_orphaned_citation_markers로 제거한다
+                    # (citation_count=0이므로 모든 [N]이 제거 대상).
                     terminal_result = AgentResult(
-                        has_answer=False, no_answer_reason=args["reason"],
+                        has_answer=False,
+                        no_answer_reason=strip_orphaned_citation_markers(args["reason"], 0),
                     )
                     messages.append(self._tool_result(tool_call.id, {"status": "recorded"}))
 

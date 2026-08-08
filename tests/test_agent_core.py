@@ -297,7 +297,27 @@ def test_answer_returns_no_answer_when_model_calls_submit_no_answer(agent, wiki_
     assert result.has_answer is False
     assert result.answer is None
     assert result.citations == []
-    assert result.no_answer_reason == "원문에도 관련 문서 없음"
+
+
+def test_answer_strips_dead_citation_markers_from_no_answer_reason(agent, wiki_tools, monkeypatch):
+    """실사용 버그: submit_no_answer 경로는 citations가 아예 없는데도, LLM이 reason에서
+    자기가 읽은 문서를 언급하며 습관적으로 [1] 같은 각주 표기를 섞어 쓰는 경우가 있다 —
+    그대로 프론트로 나가면 클릭해도 아무 데도 안 걸리는 죽은 각주가 된다.
+    submit_answer가 strip_orphaned_citation_markers를 쓰는 것과 동일하게, reason도
+    citation_count=0으로 모든 [N]을 제거해야 한다."""
+    responses = [
+        tool_call_response(
+            ("call-1", "submit_no_answer", {"reason": "HBM4 로드맵을 선보였습니다[1]만 실적은 확인 못함"})
+        ),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 근거 없음[2]"})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4 양산 로드맵과 실적을 종합해서 정리해줘")
+
+    assert result.has_answer is False
+    assert result.no_answer_reason == "원문에도 근거 없음"
+    assert "[" not in result.no_answer_reason
 
 
 def test_answer_returns_no_answer_when_model_ends_without_tool_calls(agent, wiki_tools, monkeypatch):
