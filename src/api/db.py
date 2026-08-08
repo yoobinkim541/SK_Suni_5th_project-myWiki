@@ -325,6 +325,26 @@ def save_user_message(session_id: str, content: str, user_id: str) -> dict:
     return res.data[0]
 
 
+def _citation_rows(message_id: str, citations: list) -> list[dict]:
+    """message_citations insert용 행을 만든다 — save_agent_message/update_agent_message가
+    공유한다(예전엔 두 함수가 이 9줄을 각각 중복해서 갖고 있었다)."""
+    now = datetime.now(timezone.utc).isoformat()
+    return [
+        {
+            "message_id": message_id,
+            "document_version_id": c.document_version_id,
+            "source_url": c.source_url,
+            "source_title": c.source_title,
+            "published_at": c.source_published_at,
+            "quoted_text": c.quote,
+            "relevance_score": c.relevance_score,
+            "citation_order": i,
+            "created_at": now,
+        }
+        for i, c in enumerate(citations, start=1)
+    ]
+
+
 def save_agent_message(session_id: str, result: AgentResult, prompt_version: str = "v1") -> dict:
     """
     Agent 응답을 chat_messages에 저장하고, has_answer=True면 citations도
@@ -351,17 +371,7 @@ def save_agent_message(session_id: str, result: AgentResult, prompt_version: str
     message = msg_res.data[0]
 
     if result.has_answer and result.citations:
-        rows = [
-            {
-                "message_id": message["id"],
-                "document_version_id": c.document_version_id,
-                "quoted_text": c.quote,
-                "relevance_score": c.relevance_score,
-                "citation_order": i,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            for i, c in enumerate(result.citations, start=1)
-        ]
+        rows = _citation_rows(message["id"], result.citations)
         db.table("message_citations").insert(rows).execute()
 
     return message
@@ -392,17 +402,7 @@ def update_agent_message(message_id: str, result: AgentResult, prompt_version: s
 
     db.table("message_citations").delete().eq("message_id", message_id).execute()
     if result.has_answer and result.citations:
-        rows = [
-            {
-                "message_id": message_id,
-                "document_version_id": c.document_version_id,
-                "quoted_text": c.quote,
-                "relevance_score": c.relevance_score,
-                "citation_order": i,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            for i, c in enumerate(result.citations, start=1)
-        ]
+        rows = _citation_rows(message_id, result.citations)
         db.table("message_citations").insert(rows).execute()
 
     return message
@@ -411,15 +411,27 @@ def update_agent_message(message_id: str, result: AgentResult, prompt_version: s
 def _enrich_message_citations(rows: list[dict]) -> list[dict]:
     """message_citations 원본 행에 문서 제목·매체명·게시일·개별 신뢰도를 붙인다.
 
-    src/wiki/query.py의 _enrich_sources와 같은 패턴(순차 조회) — "근거 원문" 사이드바가
-    렌더링하려는 발췌(quoted_text)+제목+매체명+날짜+신뢰도 중 제목/매체명/날짜/신뢰도가
-    이전에는 전혀 채워지지 않아, 프론트가 그 카드를 "출처 정보 확인 중" 상태에서
-    벗어나지 못하는 원인이 됐다.
+    document_version_id가 있는 행(위키/원문 근거)만 documents/document_versions를
+    조인해서 채운다. document_version_id가 없는 행(웹 검색 근거)은 저장 시점에 이미
+    자기 행에 source_url/source_title/published_at을 직접 채워뒀으므로(조인할 DB
+    행 자체가 없음) 그대로 통과시키고 document_title 필드명만 맞춰준다.
     """
     if not rows:
         return rows
 
-    document_version_ids = list({r["document_version_id"] for r in rows})
+    joinable_rows = []
+    for row in rows:
+        if row["document_version_id"] is None:
+            row["document_title"] = row.pop("source_title", None)
+            row["source_name"] = None
+            row["reliability_score"] = None
+        else:
+            joinable_rows.append(row)
+
+    if not joinable_rows:
+        return rows
+
+    document_version_ids = list({r["document_version_id"] for r in joinable_rows})
     db = get_supabase()
 
     versions_res = (
@@ -459,7 +471,7 @@ def _enrich_message_citations(rows: list[dict]) -> list[dict]:
         if row.get("reliability_score") is not None
     }
 
-    for row in rows:
+    for row in joinable_rows:
         document_id = document_id_by_version.get(row["document_version_id"])
         document = documents_by_id.get(document_id) if document_id else None
         row["document_title"] = document.get("title") if document else None

@@ -436,10 +436,13 @@ CREATE TABLE chat_session_participants (
 CREATE TABLE message_citations (
     id                    UUID          NOT NULL DEFAULT gen_random_uuid(),
     message_id            UUID          NOT NULL,
-    document_version_id   UUID          NOT NULL,
+    document_version_id   UUID,
     qmd_uri               TEXT,
     source_start_line     INTEGER,
     source_end_line       INTEGER,
+    source_url            TEXT,
+    source_title          TEXT,
+    published_at          TEXT,
     quoted_text           TEXT,
     relevance_score       NUMERIC,
     citation_order        INTEGER,
@@ -669,6 +672,7 @@ ALTER TABLE artifacts            ADD CONSTRAINT ck_artifacts_version CHECK (vers
 ALTER TABLE daily_report_analysis_batches ADD CONSTRAINT ck_drab_status CHECK (status IN ('running','completed'));
 
 ALTER TABLE message_citations    ADD CONSTRAINT ck_mc_relevance      CHECK (relevance_score >= 0 AND relevance_score <= 1);
+ALTER TABLE message_citations ADD CONSTRAINT ck_mc_has_identifier CHECK (document_version_id IS NOT NULL OR source_url IS NOT NULL);
 
 -- [8/07] job_type/target_type: index_qmd/generate_wiki/generate_report,
 -- document_version/wiki_page/report 추가 — 코드 상수는 src/pipeline_common/constants.py
