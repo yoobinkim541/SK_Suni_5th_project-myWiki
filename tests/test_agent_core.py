@@ -14,7 +14,15 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.agent import core
-from src.agent.core import DOCUMENT_TOOLS, MAX_TOOL_ROUNDS, TOOLS, AgentResult, Citation, WikiAgent
+from src.agent.core import (
+    DOCUMENT_TOOLS,
+    MAX_TOOL_ROUNDS,
+    MAX_TOOL_ROUNDS_SEARCH,
+    TOOLS,
+    AgentResult,
+    Citation,
+    WikiAgent,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -323,19 +331,31 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
     """MAX_TOOL_ROUNDS 초과 시 정확히 "최대 조회 횟수 초과 — 근거 확정 실패" 사유로
     끝나야 한다는 게 이 테스트의 핵심 신호다. 3단계 파이프라인에서 그 신호가 최종
     결과에도 그대로 남으려면(fix round 1에서 이 사유 문자열이 다른 테스트 어디에도
-    안 남고 사라졌던 문제), 원문 단계도 위키 단계와 동일하게 라운드를 소진시켜
-    같은 방식(같은 사유 문자열)으로 끝나게 해야 한다."""
+    안 남고 사라졌던 문제), 원문 단계도 위키 단계와 동일하게(단, 상한은
+    MAX_TOOL_ROUNDS_SEARCH로 더 낮게) 라운드를 소진시켜 같은 방식(같은 사유 문자열)으로
+    끝나게 해야 한다. allow_web_search를 안 넘겼으므로(기본값 False) 웹 검색 단계는
+    아예 시도되지 않지만, 일반 지식 폴백(_llm_fallback_answer)은 이제 웹 검색 여부와
+    무관하게 항상 마지막으로 시도되므로, 그 호출도 (실패하게) 포함해야 한다."""
     wiki_tools.list_wiki_topics.return_value = []
     wiki_tools.search_documents.return_value = []
-    responses = [
-        tool_call_response((f"call-{i}", "list_wiki_topics", {})) for i in range(MAX_TOOL_ROUNDS)
-    ] + [
-        # 위키 단계가 라운드 초과로 끝나면 원문 단계가 이어서 시도된다 — 원문 단계도
-        # search_documents만 반복 호출하고 끝내 submit하지 않아 동일하게 라운드를
-        # 소진시킨다(내용은 중요치 않음, 소진 자체가 목적).
-        tool_call_response((f"call-doc-{i}", "search_documents", {"query": "x"}))
-        for i in range(MAX_TOOL_ROUNDS)
-    ]
+    responses = (
+        [tool_call_response((f"call-{i}", "list_wiki_topics", {})) for i in range(MAX_TOOL_ROUNDS)]
+        + [
+            # 위키 단계가 라운드 초과로 끝나면 원문 단계가 이어서 시도된다 — 원문 단계도
+            # search_documents만 반복 호출하고 끝내 submit하지 않아 동일하게 라운드를
+            # 소진시킨다(내용은 중요치 않음, 소진 자체가 목적). 원문 단계 상한은
+            # MAX_TOOL_ROUNDS_SEARCH라 위키보다 짧다.
+            tool_call_response((f"call-doc-{i}", "search_documents", {"query": "x"}))
+            for i in range(MAX_TOOL_ROUNDS_SEARCH)
+        ]
+        + [
+            # 원문 단계도 소진되면(allow_web_search=False라 웹 검색은 건너뛰고) 일반
+            # 지식 폴백이 마지막으로 시도된다 — 빈 텍스트를 줘서 실패시키면
+            # _llm_fallback_answer가 None을 돌려주고, answer()는 원문 단계의 "최대
+            # 조회 횟수 초과" 결과를 그대로 반환한다.
+            plain_text_response("   ")
+        ]
+    )
     call_mock = MagicMock(side_effect=responses)
     monkeypatch.setattr(agent, "_call_model", call_mock)
 
@@ -343,11 +363,7 @@ def test_answer_exhausts_max_rounds_without_submit(agent, wiki_tools, monkeypatc
 
     assert result.has_answer is False
     assert result.no_answer_reason == "최대 조회 횟수 초과 — 근거 확정 실패"
-    # MAX_TOOL_ROUNDS번은 _wiki_answer(라운드 초과), 다시 MAX_TOOL_ROUNDS번은
-    # _document_answer(마찬가지로 라운드 초과) — allow_web_search를 안 넘겼으므로
-    # (기본값 False) answer()는 원문 단계 결과에서 그대로 멈춘다. 웹 검색/LLM 폴백
-    # 모두 시도되지 않으므로 호출 횟수는 정확히 두 단계 몫만큼이어야 한다.
-    assert call_mock.call_count == MAX_TOOL_ROUNDS * 2
+    assert call_mock.call_count == MAX_TOOL_ROUNDS + MAX_TOOL_ROUNDS_SEARCH + 1
 
 
 # ---------------------------------------------------------------------------
@@ -563,25 +579,28 @@ def test_document_answer_forces_wiki_slug_to_none_even_if_model_sends_one(agent,
     assert result.citations[0].wiki_slug is None
 
 
-def test_answer_does_not_try_web_search_by_default(agent, wiki_tools, monkeypatch):
-    """allow_web_search=False(기본값)면 원문 그라운딩 실패 시 그 자리에서 멈춘다 —
-    웹 검색도 LLM 폴백도 시도하지 않는다."""
+def test_answer_skips_web_search_by_default_but_still_tries_llm_fallback(agent, wiki_tools, monkeypatch):
+    """allow_web_search=False(기본값)면 웹 검색(_web_search_answer)은 실제 외부
+    API(네이버/DART)를 호출하는 비싼 단계라 아예 시도하지 않는다 — 옵트인으로 남겨둔다.
+    다만 일반 지식 폴백(_llm_fallback_answer)은 도구 호출 없는 1회성 호출이라 웹 검색
+    여부와 무관하게 항상 마지막으로 시도한다 — 새로고침 없이 첫 응답에서 바로 답이
+    오게 하려면 이 단계까지는 옵트인으로 두면 안 된다."""
     wiki_tools.search_wiki_pages.return_value = []
     wiki_tools.search_documents.return_value = []
-    call_count = {"n": 0}
-
-    def fake_call_model(messages, use_tools=True, tools=None):
-        call_count["n"] += 1
-        return tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"}))
-
-    monkeypatch.setattr(agent, "_call_model", fake_call_model)
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키 근거 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문 근거 없음"})),
+        plain_text_response("일반 지식 답변"),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
 
     result = agent.answer("질문")  # allow_web_search 기본값 False
 
-    assert result.has_answer is False
-    assert result.is_llm_fallback is False
-    # 위키 1라운드 + 원문 1라운드 = 2회. 웹 검색/LLM 폴백이 시도됐다면 3회 이상이어야 한다.
-    assert call_count["n"] == 2
+    assert result.has_answer is True
+    assert result.is_llm_fallback is True
+    assert result.answer == "일반 지식 답변"
+    wiki_tools.search_web.assert_not_called()
+    wiki_tools.search_recent_disclosures.assert_not_called()
 
 
 def test_answer_tries_web_search_when_allowed(agent, wiki_tools, monkeypatch):

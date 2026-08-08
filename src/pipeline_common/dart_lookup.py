@@ -44,11 +44,12 @@ _MAX_TEXT_CHARS = 30_000  # 모델 컨텍스트 안에 안전하게 들어가는
 def _strip_tags(text: str) -> str:
     return html.unescape(_HTML_TAG.sub("", text)).strip()
 
-DEFAULT_LOOKBACK_DAYS = 14
+DEFAULT_LOOKBACK_DAYS = 90
 """
-파이프라인 수집기(DEFAULT_DART_LOOKBACK_DAYS=30, fetchers.py)보다 짧다 — 이 모듈은
-"아직 파이프라인이 못 커버한 최신 공시"만 메꾸는 용도라 30일 전체를 매번 다시 볼
-필요가 없다.
+파이프라인 수집기(DEFAULT_DART_LOOKBACK_DAYS=30, fetchers.py)보다 길다 — 최대주주
+지분변동처럼 자주 나오지 않는 공시는 14일로는 대부분 놓쳤다. 이 모듈은 "배치가 아직
+못 커버한 최근 공시"를 확실히 메꾸는 안전망 용도라, 배치 lookback(30일)보다 넉넉히
+넓게 잡는다. list.json 호출은 날짜 파라미터만 넓어질 뿐 라운드 수·비용에 영향 없다.
 """
 
 

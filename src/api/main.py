@@ -168,9 +168,11 @@ def send_message(
 
     wiki_tools = WikiTools(workspace_id=workspace_id)
     agent = WikiAgent(wiki_tools)
-    # allow_web_search=True: 위키·원문에 근거 없으면 "웹에서 찾아줘" 클릭 없이 바로
-    # 웹/DART 검색, 그것도 실패하면 출처 없는 일반 지식 폴백까지 자동으로 이어간다.
-    result = agent.answer(body.content, history=history, allow_web_search=True)
+    # allow_web_search를 안 넘긴다(기본값 False) — 실제 외부 API를 호출하는 웹/DART
+    # 검색은 "웹에서 찾아줘" 클릭 시(POST .../regenerate?allow_web_search=true)에만
+    # 시도한다. 위키·원문 실패 후에도 agent.answer()가 일반 지식 폴백은 항상 자동으로
+    # 시도하므로, 새로고침 없이 답이 오는 동작은 그대로 유지된다.
+    result = agent.answer(body.content, history=history)
 
     assistant_message = db.save_agent_message(session_id, result)
 

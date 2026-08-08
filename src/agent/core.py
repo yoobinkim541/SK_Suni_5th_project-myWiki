@@ -29,10 +29,14 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MODEL_NAME = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
 # 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
 FALLBACK_MODEL_NAME = os.getenv("OPENROUTER_FALLBACK_MODEL", "").strip() or "deepseek/deepseek-v4-pro"
-MAX_TOOL_ROUNDS = 10  # 무한루프 방지 — 실사용 로그에서 6일 때 답변의 17%가 라운드 초과로
-# 근거 없음 처리됐다(2026-08-05, chat_messages 66건 중 11건). search_wiki_pages 도입으로
-# 첫 라운드부터 관련도 순 후보를 받게 됐지만, 복합 질문의 교차검증(여러 페이지 읽기)엔
-# 여전히 여유가 필요해 상한을 올린다.
+MAX_TOOL_ROUNDS = 10  # 위키 단계 전용 — 무한루프 방지. 실사용 로그에서 6일 때 답변의
+# 17%가 라운드 초과로 근거 없음 처리됐다(2026-08-05, chat_messages 66건 중 11건).
+# search_wiki_pages 도입으로 첫 라운드부터 관련도 순 후보를 받게 됐지만, 복합 질문의
+# 교차검증(여러 페이지 읽기)엔 여전히 여유가 필요해 상한을 올린다.
+MAX_TOOL_ROUNDS_SEARCH = 4  # 원문/웹검색+DART 단계 전용 — 검색 후 읽기 위주의 단순
+# 작업이라 위키만큼 여유가 필요 없다. 이 두 단계가 위키 단계와 같은 상한(10)을 쓰면
+# 위키에 없는 질문 하나가 최악의 경우 최대 30라운드(10+10+10)를 순차 호출해 응답이
+# 지연되고 매 요청마다 DART·네이버 API까지 자동으로 붙어 비용이 과도해진다.
 
 logger = logging.getLogger(__name__)
 
@@ -343,11 +347,14 @@ class WikiAgent:
         응답 이상 등) 그대로 새 나가지 않고 다음 단계로 넘어간다 — 500으로 죽는 대신
         최소한 다음 단계 결과(또는 일반 지식 폴백)라도 낸다.
 
-        allow_web_search=False(기본값)면 원문 그라운딩 실패 시 그 자리에서 근거 없음을
-        반환한다 — 웹 검색도 일반 지식 폴백도 시도하지 않는다(2턴 흐름의 1턴). 사용자가
-        명시적으로 "웹에서 찾아줘"를 요청했을 때만(allow_web_search=True, 2턴) 웹 검색을
-        시도하고, 그것도 실패하면 자동으로 일반 지식 폴백까지 이어간다 — 한 번 요청한
-        뒤라 추가 확인 없이 진행한다."""
+        위키·원문 두 단계는 DB 조회 위주라 빠르고 저렴해 항상 자동으로 이어간다.
+        웹 검색+DART 실시간 조회(_web_search_answer)만 옵트인이다 — 실제 외부 API를
+        호출하고 라운드마다 컨텍스트도 커져 비용·시간이 크기 때문에, 사용자가 명시적으로
+        "웹에서 찾아줘"를 요청했을 때만(allow_web_search=True) 시도한다. 일반 지식
+        폴백(_llm_fallback_answer)은 도구 호출 없는 1회성 호출이라 빠르고 저렴하므로,
+        allow_web_search 여부와 무관하게 그 앞 단계들이 전부 실패하면 항상 마지막으로
+        시도한다 — 첫 응답에서 새로고침 없이 답이 오게 하려면 이 단계는 옵트인으로 두면
+        안 된다."""
         result = self._safe_run(
             self._wiki_answer, question, history, no_answer_reason="위키 근거 조회 중 오류 발생"
         )
@@ -356,13 +363,14 @@ class WikiAgent:
         result = self._safe_run(
             self._document_answer, question, history, no_answer_reason="원문 문서 조회 중 오류 발생"
         )
-        if result.has_answer or not allow_web_search:
-            return result
-        result = self._safe_run(
-            self._web_search_answer, question, history, no_answer_reason="웹 검색 중 오류 발생"
-        )
         if result.has_answer:
             return result
+        if allow_web_search:
+            result = self._safe_run(
+                self._web_search_answer, question, history, no_answer_reason="웹 검색 중 오류 발생"
+            )
+            if result.has_answer:
+                return result
         fallback = self._llm_fallback_answer(question, history)
         return fallback if fallback is not None else result
 
@@ -456,6 +464,7 @@ class WikiAgent:
                 "search_documents": handle_search_documents,
                 "read_document": handle_read_document,
             },
+            max_rounds=MAX_TOOL_ROUNDS_SEARCH,
         )
         # DOCUMENT_TOOLS는 submit_answer 스키마를 위키 단계와 재사용하므로 wiki_slug
         # 필드 자체를 막지 못한다 — 프롬프트로만 "원문 단계엔 wiki_slug 없음"을 바라는
@@ -523,6 +532,7 @@ class WikiAgent:
                 "search_recent_disclosures": handle_search_recent_disclosures,
                 "read_disclosure": handle_read_disclosure,
             },
+            max_rounds=MAX_TOOL_ROUNDS_SEARCH,
         )
         # submit_answer 스키마를 다른 단계와 공유하므로 document_version_id/wiki_slug
         # 필드 자체를 막지 못한다 — 모델이 실수로(또는 검색 결과 URL을) document_version_id
@@ -561,8 +571,9 @@ class WikiAgent:
         system_prompt: str,
         tools: list[dict],
         tool_handlers: dict[str, Callable[[dict, set[str]], object]],
+        max_rounds: int = MAX_TOOL_ROUNDS,
     ) -> AgentResult:
-        """라운드 루프 본체 — _wiki_answer/_document_answer가 공유한다.
+        """라운드 루프 본체 — _wiki_answer/_document_answer/_web_search_answer가 공유한다.
 
         tool_handlers는 {tool 이름: handler}. handler(args, seen_document_version_ids)는
         JSON 직렬화 가능한 tool 결과를 반환하고, "읽기" 성격의 도구라면
@@ -570,13 +581,18 @@ class WikiAgent:
         submit_answer의 grounding 검증이 이 집합을 기준으로 판정한다). submit_answer/
         submit_no_answer는 두 그라운딩 단계에서 동일하므로 여기서 직접 처리하고
         tool_handlers에 넣지 않는다.
+
+        max_rounds는 단계별로 다르다 — 위키는 다중 페이지 교차검증이 필요해 여유가
+        크고(MAX_TOOL_ROUNDS), 원문/웹검색+DART는 검색 후 읽기 위주라 낮다
+        (MAX_TOOL_ROUNDS_SEARCH). 호출부(_wiki_answer/_document_answer/_web_search_answer)가
+        각자 맞는 값을 넘긴다.
         """
         messages: list[dict] = [{"role": "system", "content": system_prompt}]
         messages.extend(history or [])
         messages.append({"role": "user", "content": question})
         seen_identifiers: set[str] = set()
 
-        for _ in range(MAX_TOOL_ROUNDS):
+        for _ in range(max_rounds):
             response = self._call_model(messages, tools=tools)
             choice = response.choices[0]
             message = choice.message
