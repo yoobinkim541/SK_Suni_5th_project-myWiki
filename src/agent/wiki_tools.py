@@ -4,7 +4,7 @@ Wiki·원문 문서 조회 도구 — Agent 전용 어댑터 (Karpathy LLM Wiki 
 Agent 가 list_wiki_topics() → read_wiki_page() 를 순차 호출해 필요한 문서만 읽는다.
 위키에 근거가 없을 때는 search_documents() → read_document()로 수집된 원문(뉴스+DART,
 위키 발행 여부 무관)에서 근거를 찾는다.
-그마저 없을 때는 search_web()으로 실시간 웹(네이버 검색)에서 찾는다.
+그마저 없을 때는 search_web()으로 웹에서, search_recent_disclosures()/read_disclosure()로 최신 DART 공시를 찾는다.
 실제 DB/Storage 조회는 src/wiki/query.py, src/pipeline_common/document_search.py 에 위임한다.
 
 변경 시 주의:
@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..pipeline_common import document_search, web_search
+from ..pipeline_common import dart_lookup, document_search, web_search
 from ..wiki import query as wiki_query
 from ..wiki.interface import WikiPageContent, WikiPageSummary, WikiSource
 from ..wiki.interface import search_wiki_contexts
@@ -103,3 +103,14 @@ class WikiTools:
         """실시간 웹(네이버 검색)에서 찾는다. 위키·원문 모두 근거가 없을 때(_web_search_answer)만
         쓰는 3차 검색 도구 — workspace 스코프 데이터가 아니라 workspace_id를 받지 않는다."""
         return web_search.search_web(query, limit)
+
+    def search_recent_disclosures(
+        self, days: int = dart_lookup.DEFAULT_LOOKBACK_DAYS
+    ) -> list[dart_lookup.DisclosureHit]:
+        """이 워크스페이스에 등록된 회사들의 최근 N일 DART 공시 목록. 위키·원문·웹
+        검색 어디에도 없을 때(_web_search_answer)만 쓰는 3차 그라운딩 도구."""
+        return dart_lookup.search_recent_disclosures(self.workspace_id, days)
+
+    def read_disclosure(self, rcept_no: str) -> Optional[str]:
+        """공시 1건의 실제 본문(HTML)."""
+        return dart_lookup.read_disclosure(rcept_no)

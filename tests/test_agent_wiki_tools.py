@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from src.agent import wiki_tools as wiki_tools_module
 from src.agent.wiki_tools import WikiTools
 
 
@@ -161,3 +162,36 @@ def test_search_web_delegates_to_web_search_module(monkeypatch):
 
     assert result == ["fake-hit"]
     assert captured == {"query": "SK하이닉스", "limit": 3}
+
+
+def test_search_recent_disclosures_delegates_to_dart_lookup_module(monkeypatch):
+    tools = WikiTools(workspace_id="ws-1")
+    called = {}
+
+    def fake_search(workspace_id, days):
+        called["workspace_id"] = workspace_id
+        called["days"] = days
+        return ["fake-hit"]
+
+    monkeypatch.setattr(wiki_tools_module.dart_lookup, "search_recent_disclosures", fake_search)
+
+    result = tools.search_recent_disclosures(days=7)
+
+    assert result == ["fake-hit"]
+    assert called == {"workspace_id": "ws-1", "days": 7}
+
+
+def test_read_disclosure_delegates_to_dart_lookup_module(monkeypatch):
+    tools = WikiTools(workspace_id="ws-1")
+    called = {}
+
+    def fake_read(rcept_no):
+        called["rcept_no"] = rcept_no
+        return "fake-markdown"
+
+    monkeypatch.setattr(wiki_tools_module.dart_lookup, "read_disclosure", fake_read)
+
+    result = tools.read_disclosure("20260805000123")
+
+    assert result == "fake-markdown"
+    assert called == {"rcept_no": "20260805000123"}
