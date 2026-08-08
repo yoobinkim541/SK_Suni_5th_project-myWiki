@@ -75,7 +75,7 @@ export default function KnowledgeGraph() {
 
   return (
     <div
-      className={`kg-wrap relative mx-auto w-full max-w-full overflow-hidden rounded-2xl px-2 pt-1 pb-2 sm:px-4 sm:pt-2 md:px-6${
+      className={`kg-wrap relative mx-auto w-full max-w-full overflow-hidden rounded-2xl px-1 pt-1 pb-2 sm:px-4 sm:pt-2 md:px-6${
         inView ? ' in' : ''
       }`}
     >

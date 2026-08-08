@@ -1740,10 +1740,11 @@ a.fn:hover{text-decoration:underline}
 }
 /* 모바일에서 PC와 비슷한 존재감을 주려고 최소 크기를 올린다. 다만 그래프 전체가
    작아지는 만큼 카테고리 노드 원과 겹치지 않는 한도 안에서만 키운다 — 실측(iPhone
-   SE 폭 375px)으로 지름 96px부터 카테고리 노드에 닿기 시작해서 그 아래로 여유를
+   SE 폭 375px, KnowledgeGraph.jsx의 좌우 padding을 px-2→px-1로 살짝 줄여 확보한
+   여유 포함)으로 지름 104px부터 카테고리 노드에 닿기 시작해서 그 아래로 여유를
    두고 멈췄다. PC만큼 크게는 못 하더라도 80px보다는 확실히 커 보이는 선이다. */
 @media (max-width:640px){
-  .kg-hub-overlay{min-width:90px}
+  .kg-hub-overlay{min-width:92px}
 }
 .kg-hub-logo-full{
   width:100%;
