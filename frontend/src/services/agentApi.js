@@ -155,7 +155,7 @@ function toViewMessage(msg, scope) {
     return {
       role: 'ai',
       none: parseNoAnswer(msg.content),
-      acts: ['웹에서 찾아줘', '수집 소스 추가', '관련 문서 찾아보기', '다시 생성', '삭제'],
+      acts: ['웹에서 찾아줘', '관련 문서 찾아보기', '다시 생성', '삭제'],
       _id: msg.id,
     };
   }
