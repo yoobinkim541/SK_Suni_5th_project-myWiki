@@ -15,6 +15,7 @@ DART Open API는 자유 검색어를 지원하지 않는다 — corp_code(회사
 from __future__ import annotations
 
 import io
+import logging
 import os
 import zipfile
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from ..analysis.repository import get_supabase
+
+logger = logging.getLogger(__name__)
 
 _DART_LIST_URL = "https://opendart.fss.or.kr/api/list.json"
 _DART_DOCUMENT_URL = "https://opendart.fss.or.kr/api/document.xml"
@@ -116,14 +119,23 @@ def search_recent_disclosures(
                 timeout=_TIMEOUT_SEC,
             )
             payload = response.json()
-        except Exception as exc:  # noqa: BLE001 - httpx 예외 계층이 넓다
-            raise DartLookupError(f"DART 공시검색 API 호출 실패(corp_code={corp_code}): {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "dart_lookup: 공시 목록 조회 실패, 이 회사만 건너뜀 (corp_code=%s)",
+                corp_code,
+                exc_info=True,
+            )
+            continue
 
         status = payload.get("status")
         if status == _STATUS_NO_DATA:
             continue
         if status != _STATUS_OK:
-            raise DartLookupError(f"DART 공시검색 API 응답 오류 {status}: {payload.get('message')}")
+            logger.warning(
+                "dart_lookup: 공시검색 API 응답 오류, 이 회사만 건너뜀 (corp_code=%s, status=%s, message=%s)",
+                corp_code, status, payload.get("message"),
+            )
+            continue
 
         for entry in payload.get("list", []):
             rcept_no = (entry.get("rcept_no") or "").strip()

@@ -137,7 +137,7 @@ def test_search_recent_disclosures_treats_no_data_status_as_empty_not_error(monk
     assert hits == []
 
 
-def test_search_recent_disclosures_raises_on_error_status(monkeypatch):
+def test_search_recent_disclosures_skips_corp_code_on_error_status(monkeypatch):
     supabase = FakeSupabase(tables={"sources": [_source_row("00164779")]})
     monkeypatch.setenv("DART_API_KEY", "test-key")
 
@@ -146,8 +146,9 @@ def test_search_recent_disclosures_raises_on_error_status(monkeypatch):
 
     monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
 
-    with pytest.raises(dart_lookup.DartLookupError):
-        dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
+    hits = dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
+
+    assert hits == []  # 예외 대신 그 회사만 건너뛰고 빈 결과
 
 
 def test_search_recent_disclosures_raises_when_credentials_missing(monkeypatch):
@@ -195,3 +196,25 @@ def test_read_disclosure_returns_none_when_zip_corrupted(monkeypatch):
 
 def test_viewer_url_format():
     assert dart_lookup.viewer_url("20260805000123") == "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260805000123"
+
+
+def test_search_recent_disclosures_merges_hits_from_multiple_corp_codes(monkeypatch):
+    supabase = FakeSupabase(tables={"sources": [_source_row("00164779"), _source_row("00126380")]})
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+
+    def fake_get(url, *, params, timeout):
+        if params["corp_code"] == "00164779":
+            return FakeListResponse({
+                "status": "000",
+                "list": [{"rcept_no": "A", "report_nm": "SK하이닉스 공시", "corp_name": "SK하이닉스", "rcept_dt": "20260805"}],
+            })
+        return FakeListResponse({
+            "status": "000",
+            "list": [{"rcept_no": "B", "report_nm": "삼성전자 공시", "corp_name": "삼성전자", "rcept_dt": "20260806"}],
+        })
+
+    monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
+
+    hits = dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
+
+    assert {h.rcept_no for h in hits} == {"A", "B"}
