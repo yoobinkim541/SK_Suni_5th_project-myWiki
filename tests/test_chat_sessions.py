@@ -1011,10 +1011,10 @@ def test_regenerate_excludes_target_pair_from_agent_history(make_client, monkeyp
     captured = {}
 
     class CapturingFakeAgent(FakeAgent):
-        def answer(self, content, history=None):
+        def answer(self, content, history=None, *, allow_web_search=False):
             captured["content"] = content
             captured["history"] = history
-            return super().answer(content, history=history)
+            return super().answer(content, history=history, allow_web_search=allow_web_search)
 
     monkeypatch.setattr(main_module, "WikiAgent", CapturingFakeAgent)
     monkeypatch.setattr(
@@ -1049,6 +1049,58 @@ def test_regenerate_blocked_for_non_owner(make_client, regenerate_setup):
 
     assert res.status_code == 404
     assert regenerate_setup["calls"] == []
+
+
+def test_regenerate_passes_allow_web_search_to_agent(make_client, monkeypatch):
+    """?allow_web_search=true가 agent.answer()에 allow_web_search=True로 전달돼야 한다."""
+    captured = {}
+
+    class FakeAgentWithWebSearch:
+        def __init__(self, *_a, **_kw): pass
+        def answer(self, question, history=None, *, allow_web_search=False):
+            captured["allow_web_search"] = allow_web_search
+            return AgentResult(has_answer=True, answer="테스트 답변")
+
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+    monkeypatch.setattr(db, "list_chat_messages", lambda sid: [USER_QUESTION, ASSISTANT_MESSAGE])
+    monkeypatch.setattr(main_module, "WikiAgent", FakeAgentWithWebSearch)
+    monkeypatch.setattr(db, "update_agent_message", lambda message_id, result, prompt_version="v1": {**ASSISTANT_MESSAGE, "content": result.answer})
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [])
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/regenerate?allow_web_search=true"
+    )
+
+    assert res.status_code == 200
+    assert captured["allow_web_search"] is True
+
+
+def test_regenerate_defaults_allow_web_search_to_false(make_client, monkeypatch):
+    """allow_web_search 쿼리 파라미터가 없으면 false로 기본값을 사용해야 한다."""
+    captured = {}
+
+    class FakeAgentWithWebSearch:
+        def __init__(self, *_a, **_kw): pass
+        def answer(self, question, history=None, *, allow_web_search=False):
+            captured["allow_web_search"] = allow_web_search
+            return AgentResult(has_answer=True, answer="테스트 답변")
+
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+    monkeypatch.setattr(db, "list_chat_messages", lambda sid: [USER_QUESTION, ASSISTANT_MESSAGE])
+    monkeypatch.setattr(main_module, "WikiAgent", FakeAgentWithWebSearch)
+    monkeypatch.setattr(db, "update_agent_message", lambda message_id, result, prompt_version="v1": {**ASSISTANT_MESSAGE, "content": result.answer})
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [])
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/regenerate"
+    )
+
+    assert res.status_code == 200
+    assert captured["allow_web_search"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -1314,7 +1366,7 @@ class FakeAgent:
     def __init__(self, wiki_tools):
         self.wiki_tools = wiki_tools
 
-    def answer(self, content, history=None):
+    def answer(self, content, history=None, *, allow_web_search=False):
         return type("FakeAgentResult", (), {
             "has_answer": True,
             "answer": "HBM4는 차세대 메모리다.",

@@ -256,10 +256,20 @@ def delete_message(session_id: str, message_id: str, profile: dict = Depends(get
 
 
 @app.post("/chat/sessions/{session_id}/messages/{message_id}/regenerate", response_model=ChatMessageOut)
-def regenerate_message(session_id: str, message_id: str, profile: dict = Depends(get_current_user)):
+def regenerate_message(
+    session_id: str,
+    message_id: str,
+    allow_web_search: bool = False,
+    profile: dict = Depends(get_current_user),
+):
     """다시 생성 — 같은 질문으로 Agent를 다시 호출해 답변 행을 그 자리에서 교체한다.
     (프론트가 새 Q&A를 아래에 덧붙이는 방식도 가능하지만, 그러면 새로고침 시 옛 답변이
-    DB에 남아 있어 다시 나타난다 — 진짜 "다시 생성"이 되려면 in-place 교체가 필요하다.)"""
+    DB에 남아 있어 다시 나타난다 — 진짜 "다시 생성"이 되려면 in-place 교체가 필요하다.)
+
+    allow_web_search=true는 1턴(위키+원문)에서 근거를 못 찾은 뒤, 사용자가 명시적으로
+    "웹에서 찾아줘"를 요청했을 때 프론트가 이 엔드포인트를 다시 호출하며 붙이는
+    쿼리 파라미터다 — 웹 검색 그라운딩(그리고 그것도 실패하면 일반 지식 폴백까지)을
+    허용한다."""
     workspace_id = _require_workspace(profile)
     message = _get_owned_message(session_id, message_id, workspace_id, profile["id"])
 
@@ -277,7 +287,7 @@ def regenerate_message(session_id: str, message_id: str, profile: dict = Depends
 
     wiki_tools = WikiTools(workspace_id=workspace_id)
     agent = WikiAgent(wiki_tools)
-    result = agent.answer(user_message["content"], history=history)
+    result = agent.answer(user_message["content"], history=history, allow_web_search=allow_web_search)
 
     updated = db.update_agent_message(message_id, result)
     return _to_message_out(updated)
