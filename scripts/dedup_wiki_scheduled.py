@@ -1,8 +1,8 @@
 """위키 중복 정리(dedup) 배치 — 이미 발행된 중복 위키 페이지를 LLM이 찾아 병합한다.
 
 scripts/refresh_wiki_scheduled.py와 달리 사용자 설정 주기가 없다 — GitHub Actions
-cron이 매일 1회 도는 것 자체가 실행 주기다(급하지 않은 정리 작업이라 발행 배치의
-30분 주기보다 훨씬 느슨하게 잡는다).
+cron이 12시간 간격으로 도는 것 자체가 실행 주기다(급하지 않은 정리 작업이라 발행
+배치의 30분 주기보다 훨씬 느슨하게 잡는다).
 
 사용법:
     python scripts/dedup_wiki_scheduled.py
