@@ -73,6 +73,7 @@ class _Query:
         self._filters: list[tuple[str, str, Any]] = []
         self._order: tuple[str, bool] | None = None
         self._limit: int | None = None
+        self._range: tuple[int, int] | None = None
         self._single = False
 
     # --- 연산 선택 ---
@@ -115,6 +116,16 @@ class _Query:
         self._limit = count
         return self
 
+    def range(self, start: int, end: int) -> "_Query":
+        """[start, end] 양끝 포함. PostgREST와 같은 규칙이다.
+
+        페이지 조회(repository._PAGE_SIZE)가 이걸 쓴다. 실제 PostgREST는 한 응답에
+        1,000행까지만 주고 넘으면 조용히 자르는데, 그 상한 자체는 흉내내지 않는다 —
+        여기서 재현할 것은 "페이지를 이어 붙여 전건을 받는가"이지 서버 상한이 아니다.
+        """
+        self._range = (start, end)
+        return self
+
     def maybe_single(self) -> "_Query":
         self._single = True
         return self
@@ -143,6 +154,9 @@ class _Query:
         if self._order is not None:
             column, desc = self._order
             selected.sort(key=lambda r: (str(r.get(column) or ""), r["_seq"]), reverse=desc)
+        if self._range is not None:
+            start, end = self._range
+            selected = selected[start : end + 1]
         if self._limit is not None:
             selected = selected[: self._limit]
         copies = [dict(r) for r in selected]

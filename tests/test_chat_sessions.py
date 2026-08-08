@@ -18,6 +18,7 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from src.agent.core import AgentResult, Citation
 from src.analysis.exceptions import OpenRouterTimeoutError
 from src.api import db
 from src.api import main as main_module
@@ -411,6 +412,139 @@ def test_copy_chat_message_preserves_original_author(monkeypatch):
     db.copy_chat_message("target-session", {**USER_QUESTION, "user_id": OWNER_ID})
 
     assert client.inserted["chat_messages"][0]["user_id"] == OWNER_ID
+
+
+# ---------------------------------------------------------------------------
+# 1-b. save_agent_message / list_message_citations 왕복 — 웹 검색 citation
+# (document_version_id 없이 source_url만 있는 행)도 저장/조회돼야 한다.
+# ---------------------------------------------------------------------------
+
+class FakeAgentMessageInsertQuery:
+    def __init__(self, sink: list[dict], data):
+        if isinstance(data, list):
+            self._result_rows = []
+            for row in data:
+                new_row = {**row, "id": f"citation-{len(sink)}"}
+                sink.append(new_row)
+                self._result_rows.append(new_row)
+        else:
+            new_row = {**data, "id": f"generated-{len(sink)}"}
+            sink.append(new_row)
+            self._result_rows = [new_row]
+
+    def execute(self):
+        return FakeResult(self._result_rows)
+
+
+class FakeAgentMessageTable:
+    def __init__(self, sink: list[dict]):
+        self._sink = sink
+
+    def select(self, *_args, **_kwargs):
+        return FakeQuery(list(self._sink))
+
+    def insert(self, data):
+        return FakeAgentMessageInsertQuery(self._sink, data)
+
+    def update(self, patch: dict):
+        return FakeUpdateQuery(self._sink, patch)
+
+    def delete(self):
+        return FakeDeleteQuery(self._sink)
+
+
+class FakeAgentMessageClient:
+    def __init__(self):
+        self.tables: dict[str, list[dict]] = {}
+
+    def table(self, name: str):
+        return FakeAgentMessageTable(self.tables.setdefault(name, []))
+
+
+def test_save_agent_message_persists_web_search_citation_without_document_version_id(monkeypatch):
+    """document_version_id가 없는(웹 검색) citation도 저장돼야 한다."""
+    client = FakeAgentMessageClient()
+    monkeypatch.setattr(db, "get_supabase", lambda: client)
+
+    result = AgentResult(
+        has_answer=True,
+        answer="SK하이닉스가 ADR을 상장했다.[1]",
+        citations=[Citation(
+            quote="ADR을 상장했다",
+            source_url="https://example.com/a",
+        )],
+        model_name="test-model",
+    )
+
+    saved = db.save_agent_message("sess-1", result)
+    citations = db.list_message_citations(saved["id"])
+
+    assert len(citations) == 1
+    assert citations[0]["document_version_id"] is None
+    assert citations[0]["source_url"] == "https://example.com/a"
+    assert citations[0]["document_title"] is None  # source_title을 안 채웠으므로
+
+
+def test_update_agent_message_persists_web_search_citation_without_document_version_id(monkeypatch):
+    """update_agent_message(재생성 경로) — allow_web_search=True가 실제로 저장까지 이어지는
+    유일한 프로덕션 경로다(/regenerate만 allow_web_search를 전달하고, /regenerate는
+    update_agent_message를 호출한다. send_message는 항상 allow_web_search=False라
+    웹 citation이 save_agent_message에 도달할 일이 없다). save_agent_message와
+    대칭으로, document_version_id가 없는(웹 검색) citation도 여기서 저장돼야 한다."""
+    client = FakeAgentMessageClient()
+    monkeypatch.setattr(db, "get_supabase", lambda: client)
+
+    # 재생성 대상이 될 기존 메시지를 미리 심어둔다.
+    existing_message = {
+        "id": "msg-1",
+        "session_id": "sess-1",
+        "role": "assistant",
+        "content": "이전 답변",
+        "model_name": "old-model",
+        "prompt_version": "v1",
+        "is_llm_fallback": False,
+        "created_at": "2026-08-07T00:00:00Z",
+    }
+    client.tables.setdefault("chat_messages", []).append(existing_message)
+
+    result = AgentResult(
+        has_answer=True,
+        answer="SK하이닉스가 ADR을 상장했다.[1]",
+        citations=[Citation(
+            quote="ADR을 상장했다",
+            source_url="https://example.com/a",
+        )],
+        model_name="test-model",
+    )
+
+    saved = db.update_agent_message("msg-1", result)
+    citations = db.list_message_citations(saved["id"])
+
+    assert len(citations) == 1
+    assert citations[0]["document_version_id"] is None
+    assert citations[0]["source_url"] == "https://example.com/a"
+    assert citations[0]["document_title"] is None  # source_title을 안 채웠으므로
+
+
+def test_enrich_message_citations_skips_join_for_web_search_rows():
+    """document_version_id가 None인 행은 documents/document_versions 조인 없이,
+    저장 시점에 채운 source_title을 document_title로 그대로 통과시킨다."""
+    rows = [{
+        "document_version_id": None,
+        "source_url": "https://example.com/a",
+        "source_title": "SK하이닉스 ADR 상장",
+        "published_at": "2026-08-07T09:00:00+09:00",
+        "quoted_text": "ADR을 상장했다",
+        "relevance_score": None,
+        "citation_order": 1,
+    }]
+
+    enriched = db._enrich_message_citations(rows)
+
+    assert enriched[0]["document_title"] == "SK하이닉스 ADR 상장"
+    assert enriched[0]["source_url"] == "https://example.com/a"
+    assert enriched[0]["source_name"] is None
+    assert enriched[0]["reliability_score"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -924,10 +1058,10 @@ def test_regenerate_excludes_target_pair_from_agent_history(make_client, monkeyp
     captured = {}
 
     class CapturingFakeAgent(FakeAgent):
-        def answer(self, content, history=None):
+        def answer(self, content, history=None, *, allow_web_search=False):
             captured["content"] = content
             captured["history"] = history
-            return super().answer(content, history=history)
+            return super().answer(content, history=history, allow_web_search=allow_web_search)
 
     monkeypatch.setattr(main_module, "WikiAgent", CapturingFakeAgent)
     monkeypatch.setattr(
@@ -962,6 +1096,58 @@ def test_regenerate_blocked_for_non_owner(make_client, regenerate_setup):
 
     assert res.status_code == 404
     assert regenerate_setup["calls"] == []
+
+
+def test_regenerate_passes_allow_web_search_to_agent(make_client, monkeypatch):
+    """?allow_web_search=true가 agent.answer()에 allow_web_search=True로 전달돼야 한다."""
+    captured = {}
+
+    class FakeAgentWithWebSearch:
+        def __init__(self, *_a, **_kw): pass
+        def answer(self, question, history=None, *, allow_web_search=False):
+            captured["allow_web_search"] = allow_web_search
+            return AgentResult(has_answer=True, answer="테스트 답변")
+
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+    monkeypatch.setattr(db, "list_chat_messages", lambda sid: [USER_QUESTION, ASSISTANT_MESSAGE])
+    monkeypatch.setattr(main_module, "WikiAgent", FakeAgentWithWebSearch)
+    monkeypatch.setattr(db, "update_agent_message", lambda message_id, result, prompt_version="v1": {**ASSISTANT_MESSAGE, "content": result.answer})
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [])
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/regenerate?allow_web_search=true"
+    )
+
+    assert res.status_code == 200
+    assert captured["allow_web_search"] is True
+
+
+def test_regenerate_defaults_allow_web_search_to_false(make_client, monkeypatch):
+    """allow_web_search 쿼리 파라미터가 없으면 false로 기본값을 사용해야 한다."""
+    captured = {}
+
+    class FakeAgentWithWebSearch:
+        def __init__(self, *_a, **_kw): pass
+        def answer(self, question, history=None, *, allow_web_search=False):
+            captured["allow_web_search"] = allow_web_search
+            return AgentResult(has_answer=True, answer="테스트 답변")
+
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+    monkeypatch.setattr(db, "list_chat_messages", lambda sid: [USER_QUESTION, ASSISTANT_MESSAGE])
+    monkeypatch.setattr(main_module, "WikiAgent", FakeAgentWithWebSearch)
+    monkeypatch.setattr(db, "update_agent_message", lambda message_id, result, prompt_version="v1": {**ASSISTANT_MESSAGE, "content": result.answer})
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [])
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/regenerate"
+    )
+
+    assert res.status_code == 200
+    assert captured["allow_web_search"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -1227,7 +1413,7 @@ class FakeAgent:
     def __init__(self, wiki_tools):
         self.wiki_tools = wiki_tools
 
-    def answer(self, content, history=None):
+    def answer(self, content, history=None, *, allow_web_search=False):
         return type("FakeAgentResult", (), {
             "has_answer": True,
             "answer": "HBM4는 차세대 메모리다.",

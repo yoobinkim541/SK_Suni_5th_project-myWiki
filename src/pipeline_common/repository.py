@@ -38,6 +38,16 @@ def _first(res: Any) -> dict | None:
     return rows[0] if rows else None
 
 
+_PAGE_SIZE = 1000
+"""
+목록 조회를 한 번에 받아올 행 수. PostgREST 기본 응답 상한과 같은 값이다.
+
+이 값보다 적게 오면 마지막 페이지라는 뜻이므로 루프를 끝낸다. 상한을 넘겨 잡으면
+서버가 알아서 잘라 주는데, 그러면 '적게 왔으니 끝'이라는 판정이 틀려서 뒷부분을
+통째로 잃는다 — 잘렸다는 신호가 응답 어디에도 없기 때문이다.
+"""
+
+
 # ------------------------------------------------------------
 # sources
 # ------------------------------------------------------------
@@ -219,16 +229,36 @@ def set_document_status(document_id: UUID, workspace_id: UUID, status: str) -> d
 
 
 def list_active_documents(workspace_id: UUID) -> list[dict]:
-    """워크스페이스의 status='active' 문서 전체. 정제 대기 목록 산출의 1단계다."""
-    res = (
-        db.get_client()
-        .table("documents")
-        .select("*")
-        .eq("workspace_id", str(workspace_id))
-        .eq("status", DOC_STATUS_ACTIVE)
-        .execute()
-    )
-    return _rows(res)
+    """
+    워크스페이스의 status='active' 문서 **전체**. 정제 대기 목록 산출의 1단계다.
+
+    ⚠ 반드시 페이지로 나눠 받는다. PostgREST는 한 응답에 기본 1,000행까지만 주고
+    그 이상은 **에러도 경고도 없이 잘라서** 돌려준다. 2026-08-07 확인: active 문서가
+    1,470건인데 이 함수가 1,000건만 돌려주고 있었다.
+
+    영향이 컸다. find_pending_documents가 이 목록으로 정제 대상을 고르므로 나머지
+    470건은 재정제 대상이 되지 못했고, ORDER BY가 없어 어떤 1,000건이 잡히는지도
+    호출마다 달라진다. 재해시 마이그레이션도 같은 이유로 172건을 놓쳤다.
+    """
+    client = db.get_client()
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        res = (
+            client.table("documents")
+            .select("*")
+            .eq("workspace_id", str(workspace_id))
+            .eq("status", DOC_STATUS_ACTIVE)
+            # 순서를 고정해야 페이지가 겹치거나 빠지지 않는다.
+            .order("id")
+            .range(offset, offset + _PAGE_SIZE - 1)
+            .execute()
+        )
+        page = _rows(res)
+        rows.extend(page)
+        if len(page) < _PAGE_SIZE:
+            return rows
+        offset += _PAGE_SIZE
 
 
 # ------------------------------------------------------------

@@ -14,12 +14,14 @@
 --     반영했다(실행용이 아니라 문맥 참고용 덤프였지만, information_schema 기준
 --     CREATE TABLE 형태라 구조 동기화에는 신뢰 가능한 소스로 판단했다).
 --   - 그 덤프에는 RLS 정책 / 트리거 / 함수 / Storage 버킷 정의가 없다. 이 파일의
---     해당 섹션은 2026-07-29 시점 내용을 그대로 유지한다 — 신규 테이블
+--     해당 섹션은 2026-07-29 시점 내용을 그대로 유지한다. 신규 테이블
 --     (document_analysis_results, workspace_settings, push_subscriptions,
 --     chat_session_participants, daily_report_analysis_batches,
---     wiki_page_keywords, report_wiki_references)에 대한 RLS 정책은 실제
---     운영 DB에서 직접 확인 전까지 이 문서에 추측으로 채우지 않는다 — 아래
---     "6-A. [TODO] RLS 정책 미확인 테이블" 참고.
+--     wiki_page_keywords, report_wiki_references)의 RLS 정책은 2026-08-08
+--     라이브 DB 직접 조회로 전부 확인·반영했다 — "6-A" 참고. 그중
+--     chat_session_participants / daily_report_analysis_batches는 정책이
+--     아예 없어(전체 차단 상태) 그 자리에서 새로 추가했다(마이그레이션
+--     20260808020000).
 --   - VARCHAR 길이: 덤프가 대부분 길이 없는 `character varying`으로 나와서,
 --     실제 컬럼에 길이 제한이 없는 것으로 보고 길이를 붙이지 않았다. 예전
 --     버전의 VARCHAR(n) 값은 검증되지 않은 추정치였을 수 있다.
@@ -436,10 +438,13 @@ CREATE TABLE chat_session_participants (
 CREATE TABLE message_citations (
     id                    UUID          NOT NULL DEFAULT gen_random_uuid(),
     message_id            UUID          NOT NULL,
-    document_version_id   UUID          NOT NULL,
+    document_version_id   UUID,
     qmd_uri               TEXT,
     source_start_line     INTEGER,
     source_end_line       INTEGER,
+    source_url            TEXT,
+    source_title          TEXT,
+    published_at          TEXT,
     quoted_text           TEXT,
     relevance_score       NUMERIC,
     citation_order        INTEGER,
@@ -669,6 +674,7 @@ ALTER TABLE artifacts            ADD CONSTRAINT ck_artifacts_version CHECK (vers
 ALTER TABLE daily_report_analysis_batches ADD CONSTRAINT ck_drab_status CHECK (status IN ('running','completed'));
 
 ALTER TABLE message_citations    ADD CONSTRAINT ck_mc_relevance      CHECK (relevance_score >= 0 AND relevance_score <= 1);
+ALTER TABLE message_citations ADD CONSTRAINT ck_mc_has_identifier CHECK (document_version_id IS NOT NULL OR source_url IS NOT NULL);
 
 -- [8/07] job_type/target_type: index_qmd/generate_wiki/generate_report,
 -- document_version/wiki_page/report 추가 — 코드 상수는 src/pipeline_common/constants.py
@@ -934,26 +940,47 @@ CREATE POLICY qmd_index_entries_select ON qmd_index_entries FOR SELECT
 
 
 -- ------------------------------------------------------------
--- 6-A. [TODO] RLS 정책 미확인 테이블 (2026-08-07 기준)
+-- 6-A. 2026-07-29 이후 신설 테이블 RLS 정책 (2026-08-08 라이브 DB 직접 조회로 확인)
 --
--- 아래 테이블들은 2026-07-29 이후 신설됐고, 이 문서의 RLS 섹션에는
--- 반영되지 않았다. 실제 운영 DB에 정책이 있는지/무엇인지 직접 확인 전까지
--- 여기에 추측으로 CREATE POLICY를 채우지 않는다 — 잘못된 정책을 그대로
--- 실행하면 데이터 노출/차단 사고로 이어질 수 있다.
---   - document_analysis_results  (배치 SERVICE_ROLE_KEY 경유 위주로 보이나 확인 필요)
---   - workspace_settings
---   - push_subscriptions
---   - chat_session_participants
---   - daily_report_analysis_batches
---   - wiki_page_keywords
---   - report_wiki_references
---
--- 확인 방법(Supabase SQL Editor):
---   SELECT tablename, policyname, cmd, qual
---   FROM pg_policies
---   WHERE schemaname = 'public'
---   ORDER BY tablename;
+-- chat_session_participants / daily_report_analysis_batches는 RLS만 켜져 있고
+-- 정책이 하나도 없어(서비스 롤 우회 없이는 전부 거부) 이번에 새로 추가했다
+-- (마이그레이션 20260808020000). 나머지 5개는 이미 정책이 있었음을 확인했다.
 -- ------------------------------------------------------------
+
+CREATE POLICY document_analysis_results_select ON document_analysis_results FOR SELECT
+  USING (is_workspace_member(workspace_id));
+
+CREATE POLICY workspace_settings_select ON workspace_settings FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM workspace_members
+    WHERE workspace_members.workspace_id = workspace_settings.workspace_id
+      AND workspace_members.user_id = auth.uid()
+  ));
+
+-- push_subscriptions: 워크스페이스 공용 조회가 아니라 본인 구독만(SELECT/INSERT/UPDATE/DELETE 전부)
+CREATE POLICY push_subscriptions_own ON push_subscriptions FOR ALL
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY wiki_page_keywords_select ON wiki_page_keywords FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM wiki_pages p WHERE p.id = wiki_page_keywords.page_id AND is_workspace_member(p.workspace_id)
+  ));
+
+CREATE POLICY report_wiki_references_select ON report_wiki_references FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM report_sections rs JOIN reports r ON r.id = rs.report_id
+    WHERE rs.id = report_wiki_references.section_id AND is_workspace_member(r.workspace_id)
+  ));
+
+-- 아래 2개는 RLS는 켜져 있었으나 정책이 없어(전체 차단 상태) 2026-08-08에 추가.
+CREATE POLICY daily_report_analysis_batches_select ON daily_report_analysis_batches FOR SELECT
+  USING (is_workspace_member(workspace_id));
+
+CREATE POLICY chat_session_participants_select ON chat_session_participants FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM chat_sessions cs WHERE cs.id = chat_session_participants.session_id AND is_workspace_member(cs.workspace_id)
+  ));
 
 
 -- ============================================================

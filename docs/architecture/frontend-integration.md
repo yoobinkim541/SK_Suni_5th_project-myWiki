@@ -40,6 +40,11 @@
 | 근거 없음 카드 | `none: {title, desc}` | `sendChatMessage().has_answer === false` | 백엔드는 `content`에 `"[근거 부족] <사유>"` 문자열 하나로만 줌 — title/desc 분리는 프론트에서 파싱 |
 | 인용 칩 | `citations` | `message.citations[]` | `document_version_id`만 있고 출처 라벨 없음(WikiPage와 동일 제약) |
 | 우측 "근거 원문" 카드 | `MOCK_EVIDENCE` (excerpt/footer) | 없음 | 🔴 원문 발췌+날짜+신뢰도 형태의 별도 조회 없음. citations 확장이 필요한지 논의 필요 |
+| "웹에서 찾아볼까요?" 버튼 | 없음(신규) | `regenerateMessage(messageId, { allow_web_search: true })` | 근거 없음 카드가 뜨고(`has_answer === false`) `is_llm_fallback === false`일 때(위키+원문까지만 시도한 1턴 상태)만 노출. 새 함수 아님 — 기존 `regenerateMessage()`에 쿼리 파라미터만 추가해서 `POST .../messages/{message_id}/regenerate?allow_web_search=true` 호출 |
+| 웹 검색 근거 배지 | 없음(신규) | `message.citations[]` | 응답 citation의 `document_version_id`가 `null`이면 "웹 검색 근거" 배지 표시, `source_url`/`document_title`로 링크 렌더링. `document_version_id`가 있으면 지금처럼 위키/원문 근거로 취급 |
+| 출처 없음 표시 | 없음(신규) | `sendChatMessage()/regenerateMessage().is_llm_fallback` | `is_llm_fallback === true`면(웹 검색까지 실패) 기존과 동일하게 "출처 없음" 표시 + 위키 저장 버튼 비활성화 |
+
+**배포 순서 주의:** 이 브랜치 이전에는 위키/원문 근거가 둘 다 없으면 1턴 안에서 자동으로 일반 지식 폴백까지 갔지만, 이제는 그 자동 폴백이 없어지고 사용자가 "웹에서 찾아볼까요?" 버튼을 눌러야만(2턴, `allow_web_search=true` 재생성) 이어진다 — 프론트가 이 버튼을 백엔드와 같이 배포하지 않으면, 기존에는 답이 나오던 질문이 갑자기 "근거 없음"만 뜨는 것으로 보여 기능 후퇴처럼 보인다.
 
 ## 3. ReportPage (`pages/ReportPage.jsx`) — 🟡 담당: 이환희
 

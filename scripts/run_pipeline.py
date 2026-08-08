@@ -190,12 +190,39 @@ def find_pending_documents(workspace_id: UUID) -> tuple[list[UUID], list[UUID]]:
     return new_targets, recollected
 
 
-def run_preprocess(workspace_id: UUID) -> dict:
+DEFAULT_PREPROCESS_LIMIT = 300
+"""
+한 회차에 정제할 문서 수 상한.
+
+무제한 루프였다. 대기가 적을 땐 문제가 안 됐는데, list_active_documents의 1,000행
+잘림을 고치자(#176) 그동안 안 보이던 문서 307건이 한꺼번에 대기로 들어왔다.
+그때 상한이 없다는 게 드러났다.
+
+값의 근거: 2026-08-07 실측으로 문서당 1.12초다(raw 다운로드 + 정제 + 업로드 + INSERT).
+300건이면 약 5.6분이라, 스케줄러 55분 예산을 수집·분석과 나눠 쓰기에 무리가 없다.
+대기가 5,000건까지 불어나도 한 회차가 93분을 쓰는 일은 생기지 않는다.
+
+넘친 대기는 다음 회차가 이어서 처리한다 — find_pending_documents가 매번 다시
+계산하므로 놓치는 문서는 없다.
+
+⚠ 이 값은 스케줄러 timeout(P1, 이환희 담당)과 같은 예산을 나눠 쓴다. 조정이
+필요하면 분석 단계 limit과 함께 봐야 한다.
+"""
+
+
+def run_preprocess(workspace_id: UUID, *, limit: int | None = DEFAULT_PREPROCESS_LIMIT) -> dict:
     new_targets, recollected = find_pending_documents(workspace_id)
     pending = new_targets + recollected
+    total_pending = len(pending)
+    if limit is not None:
+        pending = pending[:limit]
 
     summary = {
-        "pending": len(pending),
+        # 대기열 전체 크기. new + recollected와 합이 맞는다.
+        "pending": total_pending,
+        # 이번 회차에 실제로 처리하는 몫과, 상한에 걸려 미룬 몫.
+        "processing": len(pending),
+        "deferred": total_pending - len(pending),
         "new": len(new_targets),
         "recollected": len(recollected),
         "succeeded": 0,
@@ -557,6 +584,11 @@ def print_summary(collect_summary: dict | None, preprocess_summary: dict | None)
             f"정제 대기 문서: {preprocess_summary['pending']}건 "
             f"(신규 {preprocess_summary['new']}건 / 재정제 대상 {preprocess_summary['recollected']}건)"
         )
+        if preprocess_summary.get("deferred"):
+            print(
+                f"이번 회차 처리: {preprocess_summary['processing']}건 "
+                f"(상한으로 {preprocess_summary['deferred']}건은 다음 회차로 미룸)"
+            )
         print(
             f"정제 성공: {preprocess_summary['succeeded']}건 "
             f"(새 버전 {preprocess_summary['new_versions']}건 / "
@@ -576,6 +608,12 @@ def main() -> int:
     parser.add_argument("--collect-only", action="store_true", help="수집만 하고 정제는 건너뛴다")
     parser.add_argument(
         "--preprocess-only", action="store_true", help="정제만 하고 수집은 건너뛴다"
+    )
+    parser.add_argument(
+        "--preprocess-limit",
+        type=int,
+        default=None,
+        help="한 회차에 정제할 문서 수 상한 (기본 %(default)s → DEFAULT_PREPROCESS_LIMIT). 0이면 무제한",
     )
     parser.add_argument(
         "--rehash",
@@ -622,7 +660,11 @@ def main() -> int:
         collect_summary = run_collect(workspace_id, limit=args.limit, source_id=source_id)
 
     if not args.collect_only:
-        preprocess_summary = run_preprocess(workspace_id)
+        # 0은 '무제한'이다. 대기를 통째로 비우고 싶을 때만 쓴다.
+        preprocess_limit = DEFAULT_PREPROCESS_LIMIT
+        if args.preprocess_limit is not None:
+            preprocess_limit = None if args.preprocess_limit == 0 else args.preprocess_limit
+        preprocess_summary = run_preprocess(workspace_id, limit=preprocess_limit)
 
     print_summary(collect_summary, preprocess_summary)
     return 0

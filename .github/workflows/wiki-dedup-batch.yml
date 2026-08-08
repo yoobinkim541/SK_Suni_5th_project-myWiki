@@ -2,7 +2,7 @@ name: Wiki Dedup Batch
 
 on:
   schedule:
-    - cron: "0 18 * * *" # 매일 1회(한국시간 새벽 3시) — 급하지 않은 정리 작업
+    - cron: "0 6,18 * * *" # 12시간 간격 2회(한국시간 오후 3시·새벽 3시) — 급하지 않은 정리 작업
   workflow_dispatch: {}
 
 jobs:
