@@ -12,9 +12,12 @@
 import { useState } from 'react';
 import CategoryCard from './CategoryCard';
 import CategoryNewsModal from './CategoryNewsModal';
+import useRevealOnScroll from '../../hooks/useRevealOnScroll';
 
 export default function CategoryRow({ categories }) {
   const [selected, setSelected] = useState(null);
+  // 카드 진입 애니메이션 — 스크롤로 실제로 보이는 시점에 한 번만 재생.
+  const [gridRef, gridIn] = useRevealOnScroll();
 
   return (
     <section className="sec">
@@ -23,7 +26,7 @@ export default function CategoryRow({ categories }) {
         <span className="s">비중 순 · 대표 키워드와 대표 이슈</span>
       </div>
 
-      <div className="cat-card-grid">
+      <div className={`cat-card-grid${gridIn ? ' in' : ''}`} ref={gridRef}>
         {categories.map((c) => (
           <CategoryCard
             key={c.id}

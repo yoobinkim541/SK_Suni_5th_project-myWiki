@@ -26,6 +26,7 @@ import InterestsBar from '../components/dashboard/InterestsBar';
 import { fetchDashboard } from '../services/dashboardApi';
 import { filterNewsByInterests } from '../data/mockOnboarding';
 import { formatKoreanDate } from '../lib/formatDate';
+import useRevealOnScroll from '../hooks/useRevealOnScroll';
 
 // [목업] 파이프라인 단계 — 시안 ".pipe" 그대로. 시각이 고정값이라 실제 배치 시각이
 // 아니다. 배치 상태를 실데이터로 바꾸려면 스케줄러가 매 회차 완주해야 하는데
@@ -58,6 +59,9 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
   // "전체 N건 보기"를 눌러 관심사 필터를 일시적으로 무시하는 상태. 관심사 자체가
   // 바뀌면(추가·삭제) 그 변경을 다시 반영해야 하니 아래 useEffect에서 초기화한다.
   const [ignoreInterests, setIgnoreInterests] = useState(false);
+  // 카드 진입 애니메이션 — 스크롤로 실제로 보이는 시점에 한 번만 재생(useRevealOnScroll.js).
+  // ⚠ 최근 산업 이슈(.sec-issues)는 일부러 안 붙인다 — 정적으로 바로 다 보이는 쪽이 낫다는 피드백.
+  const [newsGridRef, newsGridIn] = useRevealOnScroll();
 
   useEffect(() => {
     setIgnoreInterests(false);
@@ -220,7 +224,7 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
           </div>
         )}
 
-        <div className="news-grid">
+        <div className={`news-grid${newsGridIn ? ' in' : ''}`} ref={newsGridRef}>
           {visibleNews.map((n) => (
             <article className="news-card" key={n.title}>
               <div className="card-top">

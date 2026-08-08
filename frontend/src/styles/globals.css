@@ -608,6 +608,24 @@ svg text{font-family:inherit}
 .kpi > div:nth-child(3){animation-delay:.14s}
 .kpi > div:nth-child(4){animation-delay:.2s}
 
+/* 메인 대시보드 카드 진입 페이드인 — .kpi와 같은 패턴(짧고 순차적, 반복 없음).
+   다만 .kpi와 달리 이 목록들은 스크롤을 한참 내려야 보이는 위치라, 마운트하자마자
+   재생하지 않고 실제로 화면에 들어오는 시점까지 기다린다 — DashboardPage.jsx/
+   CategoryRow.jsx가 useRevealOnScroll()로 감지해서 래퍼(.news-grid/.cat-card-grid)에
+   .in을 붙이고, 그 전까진 opacity:0으로 대기한다. 최근 산업 이슈(.sec-issues .row)는
+   일부러 이 애니메이션을 안 쓴다 — 정적으로 바로 다 보이는 쪽이 낫다는 피드백이 있었다.
+   개수가 유동적이라(더보기·필터) 6번째 이후는 공용 delay로 묶는다.
+   카테고리 현황 카드는 최신 뉴스 카드와 같은 목록형이라 delay 값도 그대로 맞췄다
+   (2열 그리드지만 순서는 위→아래 흐름을 그대로 따라간다). */
+.news-grid .news-card,.cat-card-grid .cd{opacity:0}
+.news-grid.in .news-card,.cat-card-grid.in .cd{animation:fadeUp var(--dur-slow) var(--ease) both}
+.news-grid.in .news-card:nth-child(1),.cat-card-grid.in .cd:nth-child(1){animation-delay:.02s}
+.news-grid.in .news-card:nth-child(2),.cat-card-grid.in .cd:nth-child(2){animation-delay:.07s}
+.news-grid.in .news-card:nth-child(3),.cat-card-grid.in .cd:nth-child(3){animation-delay:.12s}
+.news-grid.in .news-card:nth-child(4),.cat-card-grid.in .cd:nth-child(4){animation-delay:.17s}
+.news-grid.in .news-card:nth-child(5),.cat-card-grid.in .cd:nth-child(5){animation-delay:.22s}
+.news-grid.in .news-card:nth-child(n+6),.cat-card-grid.in .cd:nth-child(n+6){animation-delay:.26s}
+
 @keyframes drawLine{to{stroke-dashoffset:0}}
 @keyframes fadeIn{to{opacity:1}}
 /* 스크롤로 화면에 들어오기 전까진 시작 상태(선 안 그려짐/영역·점 투명)로 멈춰 있는다 —
@@ -1716,9 +1734,17 @@ a.fn:hover{text-decoration:underline}
    그래서 %/min/max는 명시적 너비를 가질 수 있는 .kg-hub-overlay(.kg-wrap의 포지션 자식)
    쪽에 걸고, 이미지 자신은 그 박스를 100% 채우기만 한다. */
 .kg-hub-overlay{
-  width:18%;
-  min-width:70px;
-  max-width:190px;
+  width:20%;
+  min-width:80px;
+  max-width:210px;
+}
+/* 모바일에서 PC와 비슷한 존재감을 주려고 최소 크기를 올린다. 다만 그래프 전체가
+   작아지는 만큼 카테고리 노드 원과 겹치지 않는 한도 안에서만 키운다 — 실측(iPhone
+   SE 폭 375px, KnowledgeGraph.jsx의 좌우 padding을 px-2→px-1로 살짝 줄여 확보한
+   여유 포함)으로 지름 104px부터 카테고리 노드에 닿기 시작해서 그 아래로 여유를
+   두고 멈췄다. PC만큼 크게는 못 하더라도 80px보다는 확실히 커 보이는 선이다. */
+@media (max-width:640px){
+  .kg-hub-overlay{min-width:92px}
 }
 .kg-hub-logo-full{
   width:100%;
