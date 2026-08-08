@@ -65,6 +65,42 @@ src/categories/service.py의 동일 상수와 같은 값이다. 값이 갈리면
 """
 
 
+_PAGE_SIZE = 1000
+
+
+def _fetch_all(make_query) -> list[dict]:
+    """
+    PostgREST 1,000행 상한을 넘겨 전건을 받는다.
+
+    ⚠ 이 계층은 목록을 받아 len()으로 세거나 평균을 낸다. 한 응답에 1,000행까지만
+    오고 넘으면 **에러도 경고도 없이 잘리므로**, 페이지로 나눠 받지 않으면 KPI가
+    조용히 틀린다. 2026-08-08 실측: 7일 수집 문서가 1,920건인데 화면에 1000으로
+    떠 있었고, 매일 같은 값이라 눈에 띄지도 않았다. 오늘치 증가분은 더 나빴다 —
+    ORDER BY 없이 임의의 1,000건이 오니 실제 407건 중 2건만 표본에 들어와 "+2"로 떴다.
+
+    같은 버그를 repository.list_active_documents에서 먼저 고쳤는데(#176) 이 파일은
+    repository를 거치지 않고 직접 질의해서 그대로 남아 있었다.
+
+    make_query()는 매 페이지마다 새 빌더를 만들어야 한다 — postgrest 빌더는 재사용하면
+    필터가 누적된다.
+    """
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        # 순서를 고정해야 페이지가 겹치거나 빠지지 않는다.
+        page = (
+            make_query()
+            .order("id")
+            .range(offset, offset + _PAGE_SIZE - 1)
+            .execute()
+            .data
+        ) or []
+        rows.extend(page)
+        if len(page) < _PAGE_SIZE:
+            return rows
+        offset += _PAGE_SIZE
+
+
 def _reliability_label(avg_score: float | None) -> str:
     if avg_score is None:
         return "데이터 없음"
@@ -109,50 +145,42 @@ def get_dashboard_summary(
     today_kst = now.astimezone(REPORT_TIMEZONE).date()
     today_start, today_end = get_report_time_range(today_kst)
 
-    documents_rows = (
-        db.table("documents")
+    documents_rows = _fetch_all(
+        lambda: db.table("documents")
         .select("id, created_at")
         .eq("workspace_id", workspace_id)
         .gte("created_at", window_start)
-        .execute()
-        .data
     )
     collected_docs = len(documents_rows)
     collected_docs_today = _count_in_today_window(
         documents_rows, "created_at", today_start=today_start, today_end=today_end
     )
 
-    reports_rows = (
-        db.table("reports")
+    reports_rows = _fetch_all(
+        lambda: db.table("reports")
         .select("id")
         .eq("workspace_id", workspace_id)
         .eq("status", ReportStatus.COMPLETED.value)
         .gte("created_at", window_start)
-        .execute()
-        .data
     )
     generated_reports = len(reports_rows)
 
-    wiki_rows = (
-        db.table("wiki_pages")
+    wiki_rows = _fetch_all(
+        lambda: db.table("wiki_pages")
         .select("id, published_at")
         .eq("workspace_id", workspace_id)
         .eq("status", "published")
-        .execute()
-        .data
     )
     wiki_docs = len(wiki_rows)
     wiki_docs_new_today = _count_in_today_window(
         wiki_rows, "published_at", today_start=today_start, today_end=today_end
     )
 
-    analysis_rows = (
-        db.table("document_analysis_results")
+    analysis_rows = _fetch_all(
+        lambda: db.table("document_analysis_results")
         .select("reliability_score")
         .eq("workspace_id", workspace_id)
         .gte("created_at", window_start)
-        .execute()
-        .data
     )
     scores = [row["reliability_score"] for row in analysis_rows if row.get("reliability_score") is not None]
     avg_score = sum(scores) / len(scores) if scores else None
@@ -251,14 +279,12 @@ def get_dashboard_trend(
     window_start, _ = get_report_time_range(first_day)
     _, window_end = get_report_time_range(today_kst)
 
-    document_rows = (
-        db.table("documents")
+    document_rows = _fetch_all(
+        lambda: db.table("documents")
         .select("id, source_id, created_at")
         .eq("workspace_id", workspace_id)
         .gte("created_at", window_start.isoformat())
         .lt("created_at", window_end.isoformat())
-        .execute()
-        .data
     )
 
     source_types = _source_types_by_id(db, workspace_id)

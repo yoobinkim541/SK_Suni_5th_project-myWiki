@@ -21,6 +21,7 @@ class FakeTable:
         self.rows = rows
         self.filters = []
         self._limit = None
+        self._range = None
 
     def select(self, _fields):
         return self
@@ -38,8 +39,16 @@ class FakeTable:
         self.filters.append(("in", field, [str(v) for v in values]))
         return self
 
+    def order(self, _column, desc=False):
+        return self
+
     def limit(self, n):
         self._limit = n
+        return self
+
+    # 페이지 조회(_fetch_all)가 쓴다. [start, end] 양끝 포함으로 PostgREST와 같다.
+    def range(self, start, end):
+        self._range = (start, end)
         return self
 
     def execute(self):
