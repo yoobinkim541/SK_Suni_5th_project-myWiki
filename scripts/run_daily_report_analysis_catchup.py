@@ -17,8 +17,22 @@ selected_for_report=True인 문서 전체"로 다시 채운다 — 이 실행이
 
 날짜 변환: rank_analysis_results가 기록하는 ranking_batch_date는 UTC 캘린더
 날짜다(src/analysis/ranking.py: batch_date = reference_time_utc.date()).
-이 배치가 도는 KST 00:00~07:15 구간은 전부 그 전날 UTC 날짜에 속하므로,
-report_date(KST)에서 하루를 빼서 조회해야 한다.
+selected_for_report 조회는 매번 그 순간의 UTC 캘린더 날짜(_clock().date())로
+수행한다 — report_date(KST)에서 하루를 빼는 방식은 이 배치가 KST 00:00~07:15
+구간에서 실행된다는 가정에서만 성립하고, workflow_dispatch로 그 구간 밖에
+수동 실행하면 틀린 날짜를 조회하게 된다.
+
+에러 처리:
+- selected_for_report 조회 자체가 실패하면(RankingLoadFailedError) 그 시점까지
+  알고 있던 상태로 루프를 멈춘다.
+- 한 라운드(run_analysis_pipeline)가 예외를 던지면(분류/신뢰도/중요도는 문서
+  단위 실패를 내부에서 흡수하지만, 랭킹 단계는 AMBIGUOUS_ANALYSIS_RESULT 등으로
+  예외를 던질 수 있다) 그 예외를 삼키고 루프를 멈춘다 — 그래야 이전 라운드까지
+  쌓인 진행 상황이 마지막 저장 단계에서 유실되지 않는다.
+- 라운드 하나(run_analysis_pipeline)는 실측 30분+ 걸릴 수 있으므로(50건까지,
+  4단계 LLM 호출), 남은 시간이 라운드 예산(30분)보다 적으면 아예 새 라운드를
+  시작하지 않는다 — scheduled-daily-report.yml과 concurrency group을 공유하므로
+  07:30 KST 전에 반드시 끝나야 한다.
 
 사용법:
     python scripts/run_daily_report_analysis_catchup.py
@@ -53,15 +67,15 @@ DEFAULT_MIN_CANDIDATES = 6
 # get_ranked_results_for_report 기본 limit(20)보다 넉넉히 잡아서, 이미 선정된 게 많아도
 # 배치 기록에서 누락되는 일이 없게 한다(MAX_ANALYSIS_CANDIDATES=50보다 큼).
 REPORT_SELECTION_LIMIT = 200
+# 한 라운드(run_analysis_pipeline, 최대 50건 x 4단계 LLM 호출)는 실측 30분+ 걸릴 수
+# 있다(run_nightly_analysis.py에서 관측). 마감까지 이 시간도 안 남았으면 아예 새
+# 라운드를 시작하지 않는다 — scheduled-daily-report.yml과 공유하는 concurrency
+# group(cancel-in-progress: false)을 07:30 KST 전에 비워야 한다.
+ROUND_BUDGET = timedelta(minutes=30)
 
 
 def log(message: str) -> None:
     print(f"[run_daily_report_analysis_catchup] {message}", flush=True)
-
-
-def _ranking_batch_date_for(report_date: date) -> date:
-    """rank_analysis_results가 기록하는 UTC 날짜로 변환한다(모듈 docstring 참고)."""
-    return report_date - timedelta(days=1)
 
 
 def _default_deadline(report_date: date) -> datetime:
@@ -71,9 +85,10 @@ def _default_deadline(report_date: date) -> datetime:
     return deadline_kst.astimezone(timezone.utc)
 
 
-def get_selected_results(workspace_id: str, report_date: date) -> list:
-    """오늘(report_date, KST) 리포트에 이미 선정된(selected_for_report=True) 분석 결과 전체."""
-    ranking_batch_date = _ranking_batch_date_for(report_date)
+def get_selected_results(workspace_id: str, ranking_batch_date: date) -> list:
+    """ranking_batch_date(UTC 캘린더 날짜)에 이미 선정된(selected_for_report=True)
+    분석 결과 전체. 호출부가 조회 시점의 실제 UTC 날짜를 넘겨야 한다(모듈 docstring
+    "날짜 변환" 참고) — 이 함수 자체는 KST/report_date를 알지 못한다."""
     return get_ranked_results_for_report(
         workspace_id=workspace_id,
         ranking_batch_date=ranking_batch_date,
@@ -81,11 +96,11 @@ def get_selected_results(workspace_id: str, report_date: date) -> list:
     )
 
 
-def _try_get_selected_results(workspace_id: str, report_date: date) -> list | None:
+def _try_get_selected_results(workspace_id: str, ranking_batch_date: date) -> list | None:
     """조회 자체가 실패하면(RankingLoadFailedError) None을 반환한다 — 호출부가 무한
     재시도하지 않고 그 시점까지 알고 있던 상태로 우아하게 멈출 수 있게 한다."""
     try:
-        return get_selected_results(workspace_id, report_date)
+        return get_selected_results(workspace_id, ranking_batch_date)
     except RankingLoadFailedError:
         log("selected_for_report 조회 실패 — 그 시점까지의 상태로 종료")
         return None
@@ -115,7 +130,8 @@ def run_daily_report_analysis_catchup(
     previous_candidate_ids: list[str] | None = None
     last_known_selected: list = []
     while _clock() < effective_deadline:
-        selected = _try_get_selected_results(workspace_id, report_date)
+        ranking_batch_date = _clock().astimezone(timezone.utc).date()
+        selected = _try_get_selected_results(workspace_id, ranking_batch_date)
         if selected is None:
             break
         last_known_selected = selected
@@ -128,17 +144,29 @@ def run_daily_report_analysis_catchup(
         if not candidate_ids:
             log("처리할 후보 없음 — 종료")
             break
-        if candidate_ids == previous_candidate_ids:
+        if previous_candidate_ids is not None and set(candidate_ids) == set(previous_candidate_ids):
             log("직전과 동일한 후보 집합 — 진행 없음, 종료")
             break
 
+        if _clock() + ROUND_BUDGET > effective_deadline:
+            log(
+                f"남은 시간이 라운드 예산({int(ROUND_BUDGET.total_seconds() // 60)}분)보다 적음 "
+                f"— 새 라운드를 시작하지 않고 종료"
+            )
+            break
+
         log(f"선정 {len(selected)}건(목표 {min_candidates}) — 후보 {len(candidate_ids)}건 추가 분석")
-        run_analysis_pipeline(workspace_id, limit=limit, document_version_ids=candidate_ids)
+        try:
+            run_analysis_pipeline(workspace_id, limit=limit, document_version_ids=candidate_ids)
+        except Exception as exc:
+            log(f"run_analysis_pipeline 예외 발생 — 이전 라운드까지의 진행 상황으로 종료: {exc!r}")
+            break
         previous_candidate_ids = candidate_ids
     else:
         log("마감 도달 — 종료")
 
-    final_selected = _try_get_selected_results(workspace_id, report_date)
+    final_ranking_batch_date = _clock().astimezone(timezone.utc).date()
+    final_selected = _try_get_selected_results(workspace_id, final_ranking_batch_date)
     if final_selected is None:
         final_selected = last_known_selected
     final_ids = [result.document_version_id for result in final_selected]
@@ -148,11 +176,17 @@ def run_daily_report_analysis_catchup(
         document_version_ids=final_ids,
         started_at=current_time,
     )
-    mark_analysis_batch_completed(
-        workspace_id=workspace_id,
-        report_date=report_date,
-        completed_at=datetime.now(timezone.utc),
-    )
+    if final_ids:
+        mark_analysis_batch_completed(
+            workspace_id=workspace_id,
+            report_date=report_date,
+            completed_at=datetime.now(timezone.utc),
+        )
+    else:
+        log(
+            "최종 후보 0건 — 배치를 completed로 표시하지 않음"
+            "(generate_daily_report_scheduled.py의 LookupError 폴백 경로가 대신 작동하도록)"
+        )
     log(f"완료 — 최종 {len(final_ids)}건")
     return final_ids
 
