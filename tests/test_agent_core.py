@@ -645,6 +645,76 @@ def test_web_search_answer_passes_web_search_tools_not_document_tools(agent, wik
     assert captured_tools[0] is not core.TOOLS
 
 
+def test_web_search_answer_promotes_document_version_id_holding_search_url_to_source_url(
+    agent, wiki_tools, monkeypatch
+):
+    """Finding 1 회귀 테스트: WEB_SEARCH_TOOLS가 submit_answer 스키마를 위키/원문 단계와
+    공유해서 document_version_id 필드가 여전히 노출된다. 모델이 실수로(또는 검색 결과
+    URL을) citations[].document_version_id에 넣어 보내도, 그 값이 이번 검색에서 실제로
+    본 URL이면 source_url로 승격시켜야 한다 — 그러지 않으면 document_version_id=None +
+    source_url=None인 citation이 살아남아 message_citations의
+    ck_mc_has_identifier CHECK 제약을 위반하며 저장이 500으로 죽는다."""
+    wiki_tools.search_wiki_pages.return_value = []
+    wiki_tools.search_documents.return_value = []
+    wiki_tools.search_web.return_value = [
+        FakeWebSearchHit(
+            title="SK하이닉스 ADR 상장",
+            url="https://example.com/a",
+            snippet="SK하이닉스가 나스닥에 ADR을 상장했다.",
+            published_at="2026-08-07T09:00:00+09:00",
+        )
+    ]
+    # source_url은 비우고, document_version_id 칸에 검색 결과 URL을 넣어 보낸 경우
+    citation = {"document_version_id": "https://example.com/a", "quote": "ADR을 상장했다"}
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키 근거 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문 근거 없음"})),
+        tool_call_response(("call-3", "search_web", {"query": "SK하이닉스 ADR"})),
+        tool_call_response(("call-4", "submit_answer", {
+            "answer": "SK하이닉스가 나스닥에 ADR을 상장했다.[1]",
+            "citations": [citation],
+        })),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("SK하이닉스 ADR 상장이 뭐야?", allow_web_search=True)
+
+    assert result.has_answer is True
+    assert result.citations[0].source_url == "https://example.com/a"
+    assert result.citations[0].document_version_id is None
+    assert result.citations[0].source_title == "SK하이닉스 ADR 상장"
+
+
+def test_web_search_answer_degrades_to_no_answer_when_citation_identifier_is_unresolvable(
+    agent, wiki_tools, monkeypatch
+):
+    """document_version_id에 이번 검색 결과에도 없는 임의 값을 넣고 source_url도 비운
+    경우 — 이건 애초에 _is_grounded가 seen_identifiers에 없다고 걸러내서 근거 없음이
+    된다(기존 grounding 검증으로 이미 막힘). 웹 검색 단계가 실패하면 answer()는 이어서
+    LLM 폴백까지 진행하므로, 여기서는 _web_search_answer를 직접 호출해 그 결과만 본다."""
+    wiki_tools.search_web.return_value = [
+        FakeWebSearchHit(
+            title="SK하이닉스 ADR 상장",
+            url="https://example.com/a",
+            snippet="SK하이닉스가 나스닥에 ADR을 상장했다.",
+            published_at="2026-08-07T09:00:00+09:00",
+        )
+    ]
+    citation = {"document_version_id": "fake-id", "quote": "ADR을 상장했다"}
+    responses = [
+        tool_call_response(("call-1", "search_web", {"query": "SK하이닉스 ADR"})),
+        tool_call_response(("call-2", "submit_answer", {
+            "answer": "SK하이닉스가 나스닥에 ADR을 상장했다.[1]",
+            "citations": [citation],
+        })),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent._web_search_answer("SK하이닉스 ADR 상장이 뭐야?")
+
+    assert result.has_answer is False
+
+
 def test_answer_falls_back_to_llm_when_wiki_and_documents_both_have_no_answer(agent, wiki_tools, monkeypatch):
     responses = [
         tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),

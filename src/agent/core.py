@@ -446,21 +446,32 @@ class WikiAgent:
             tool_handlers={"search_web": handle_search_web},
         )
         # submit_answer 스키마를 다른 단계와 공유하므로 document_version_id/wiki_slug
-        # 필드 자체를 막지 못한다 — 모델이 실수로 채워 보내도 여기서 강제로 지운다
-        # (_document_answer의 wiki_slug=None 강제와 같은 방어 패턴). source_title/
-        # source_published_at은 hit_by_url에서 실제 검색 결과 값으로 채운다.
+        # 필드 자체를 막지 못한다 — 모델이 실수로(또는 검색 결과 URL을) document_version_id
+        # 칸에 채워 보내도 그 값이 이번 검색에서 실제로 본 URL(hit_by_url의 키)이면
+        # source_url로 승격시킨다. source_url도 비어 있고 document_version_id도 이번
+        # 검색 결과에 없는 값이면(식별자가 통째로 없는 것과 같다) 그 citation은 근거
+        # 없음으로 취급해 답변 전체를 has_answer=False로 강등한다 — 지어낸/형식이
+        # 어긋난 근거를 저장하면 안 된다는 이 파일의 기존 원칙과 동일하다.
         if result.has_answer and result.citations:
             def _enrich(c: Citation) -> Citation:
-                title, published_at = hit_by_url.get(c.source_url, (None, None))
+                url = c.source_url or (c.document_version_id if c.document_version_id in hit_by_url else None)
+                title, published_at = hit_by_url.get(url, (None, None))
                 return replace(
                     c,
                     document_version_id=None,
                     wiki_slug=None,
+                    source_url=url,
                     source_title=title,
                     source_published_at=published_at,
                 )
 
-            result.citations = [_enrich(c) for c in result.citations]
+            enriched = [_enrich(c) for c in result.citations]
+            if any(c.source_url is None for c in enriched):
+                return AgentResult(
+                    has_answer=False,
+                    no_answer_reason="인용 근거가 실제로 조회한 검색 결과와 일치하지 않음",
+                )
+            result.citations = enriched
         return result
 
     def _run_grounded_answer(
