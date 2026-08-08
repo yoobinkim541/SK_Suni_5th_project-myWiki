@@ -1,9 +1,12 @@
 name: Scheduled Daily Report
 
-# GitHub Actions cron is UTC. 23:00 UTC is 08:00 Korea Standard Time (UTC+9).
+# GitHub Actions cron은 UTC 기준이고, 정시(예: 23:00)는 트래픽이 몰려 실제 실행이
+# 수십 분 밀리는 경우가 흔하다 (2026-08-07 관측: 23:00 UTC 예약 실행이 23:21:58 UTC에
+# 시작 — 22분 지연, KST 08:00 마감을 넘김). 마감(KST 08:00 = UTC 23:00) 30분 전인
+# 22:30 UTC로 당겨서, 지연이 있어도 마감을 지킬 여유를 둔다.
 on:
   schedule:
-    - cron: "0 23 * * *"
+    - cron: "30 22 * * *" # UTC 22:30 = KST 07:30 — KST 08:00 마감 30분 전 여유
   workflow_dispatch: {}
 
 concurrency:

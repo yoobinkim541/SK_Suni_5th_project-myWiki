@@ -2,20 +2,25 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import date, datetime, timezone
+from io import BytesIO
 
 import pytest
+from pypdf import PdfReader
 
 from src.analysis.importance_models import ImpactDirection, TimeHorizon
 from src.analysis.models import Category
 from src.report.artifact_service import (
     DEFAULT_REPORT_ARTIFACT_BUCKET,
     MARKDOWN_CONTENT_TYPE,
+    PDF_CONTENT_TYPE,
     ReportArtifactConflictError,
     ReportArtifactError,
     ReportArtifactUploadError,
     build_report_artifact_object_key,
     compute_markdown_content_hash,
+    _render_generated_report_pdf,
     create_and_save_markdown_artifact,
+    create_and_save_pdf_artifact,
     encode_markdown_payload,
     save_markdown_report_artifact,
 )
@@ -23,6 +28,7 @@ from src.report.models import (
     GeneratedReport,
     ReportCitationDraft,
     ReportSectionDraft,
+    ReportSectionStatus,
     ReportStatus,
     ReportType,
     ReportWikiReferenceDraft,
@@ -201,6 +207,38 @@ def make_report() -> GeneratedReport:
     )
 
 
+def _from_codepoints(*values: int) -> str:
+    return "".join(chr(value) for value in values)
+
+
+def test_daily_pdf_uses_requested_industry_report_structure() -> None:
+    report = make_report()
+    report.sections[0].status = "completed"
+    report.sections[0].reliability_score = 91
+
+    pdf_bytes = _render_generated_report_pdf(report)
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+    expected_headings = (
+        _from_codepoints(0xC624, 0xB298, 0xC758, 0x20, 0xD575, 0xC2EC, 0x20, 0xC694, 0xC57D),
+        _from_codepoints(0xC774, 0xC288, 0xBCC4, 0x20, 0xBD84, 0xC11D),
+        _from_codepoints(0xCE74, 0xD14C, 0xACE0, 0xB9AC, 0xBCC4, 0x20, 0xC815, 0xB9AC),
+        _from_codepoints(0xC885, 0xD569, 0x20, 0xC2DC, 0xC0AC, 0xC810),
+        _from_codepoints(0xC804, 0xCCB4, 0x20, 0xCD9C, 0xCC98, 0x20, 0xBAA9, 0xB85D),
+    )
+    assert all(heading in extracted for heading in expected_headings)
+    assert "1. title-issue-1" in extracted
+    assert _from_codepoints(0xC0AC, 0xC2E4) in extracted
+    assert _from_codepoints(0xC758, 0xBBF8) in extracted
+    assert _from_codepoints(0x53, 0x4B, 0xD558, 0xC774, 0xB2C9, 0xC2A4, 0x20, 0xC601, 0xD5A5) in extracted
+    assert _from_codepoints(0xB2E4, 0xC74C, 0x20, 0xD655, 0xC778, 0x20, 0xC0AC, 0xD56D) in extracted
+    assert _from_codepoints(0xC911, 0xC694, 0xB3C4, 0x20, 0xB192, 0xC74C, 0x20, 0x39, 0x30, 0xC810) in extracted
+    assert _from_codepoints(0xC2E0, 0xB8B0, 0xB3C4, 0x20, 0xB192, 0xC74C, 0x20, 0x39, 0x31, 0xC810) in extracted
+    assert "MyWiki" in extracted
+    assert "SK hynix Industry Trend Curation" in extracted
+    assert "1 /" in extracted
+
+
 def test_build_report_artifact_object_key_uses_project_path_rule() -> None:
     object_key = build_report_artifact_object_key(
         workspace_id="ws-001",
@@ -212,7 +250,7 @@ def test_build_report_artifact_object_key_uses_project_path_rule() -> None:
 
 
 def test_encode_markdown_payload_uses_utf8_bytes() -> None:
-    markdown = "# 보고서\n한글 본문"
+    markdown = "# 癰귣떯???n??? 癰귣챶揆"
 
     payload = encode_markdown_payload(markdown)
 
@@ -228,7 +266,7 @@ def test_compute_markdown_content_hash_is_deterministic() -> None:
 
 def test_save_markdown_report_artifact_uploads_and_persists_metadata() -> None:
     supabase = FakeSupabase()
-    markdown = "# 보고서\n본문"
+    markdown = "# 癰귣떯???n癰귣챶揆"
 
     artifact = save_markdown_report_artifact(
         report_id="report-1",
@@ -465,3 +503,33 @@ def test_save_markdown_report_artifact_does_not_create_urls() -> None:
 
     assert not hasattr(artifact, "signed_url")
     assert not hasattr(artifact, "public_url")
+
+
+def test_render_generated_report_pdf_includes_llm_analysis_blocks() -> None:
+    report = make_report()
+    section = report.sections[0]
+    section.status = ReportSectionStatus.COMPLETED
+
+    payload = _render_generated_report_pdf(report)
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(payload)).pages)
+
+    assert "summary" in extracted
+    assert "fact" in extracted
+    assert "implication" in extracted
+    assert "watch" in extracted
+
+
+def test_create_and_save_pdf_artifact_renders_drafting_sections_without_mutating_report() -> None:
+    supabase = FakeSupabase()
+    report = make_report()
+    original_report = deepcopy(report)
+
+    artifact = create_and_save_pdf_artifact(report=report, supabase=supabase)
+    uploaded_pdf = supabase.last_upload["file"] if supabase.last_upload is not None else b""
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(uploaded_pdf)).pages)
+
+    assert artifact.mime_type == PDF_CONTENT_TYPE
+    assert uploaded_pdf.startswith(b"%PDF")
+    assert "title-issue-1" in extracted
+    assert "summary" in extracted
+    assert report == original_report

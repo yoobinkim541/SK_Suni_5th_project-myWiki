@@ -151,3 +151,57 @@ def test_summary_separates_new_and_reprocess_counts(
     assert summary["succeeded"] == 2
     assert summary["new_versions"] == 2  # 재정제분은 내용이 바뀌었으므로 새 버전
     assert summary["failed"] == 0
+
+
+def _collect_documents(workspace_id: UUID, source_id: UUID, feed, count: int) -> None:
+    """서로 다른 URL로 문서 count건을 수집한다 (정제는 하지 않는다)."""
+    for index in range(count):
+        feed.set_article(url=f"https://example.com/news/{index}", title=f"기사 {index}")
+        _collect_once(workspace_id, source_id)
+
+
+def test_한_회차에_상한만큼만_정제한다(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed
+) -> None:
+    """
+    무제한 루프였다. 대기가 적을 땐 안 보이다가, list_active_documents의 1,000행
+    잘림을 고치자 그동안 안 보이던 문서 307건이 한꺼번에 대기로 들어오면서 드러났다.
+    대기가 더 커지면 한 회차가 예산을 통째로 먹는다.
+    """
+    _collect_documents(workspace_id, source_id, feed, 5)
+
+    summary = run_pipeline.run_preprocess(workspace_id, limit=2)
+
+    assert summary["pending"] == 5  # 대기열 전체
+    assert summary["processing"] == 2  # 이번 회차 몫
+    assert summary["deferred"] == 3
+    assert summary["succeeded"] == 2
+    assert len(supabase.rows("document_versions")) == 2
+
+
+def test_미룬_문서는_다음_회차가_이어서_처리한다(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed
+) -> None:
+    """상한이 문서를 버리는 게 아니라 미루는 것임을 고정한다."""
+    _collect_documents(workspace_id, source_id, feed, 5)
+
+    run_pipeline.run_preprocess(workspace_id, limit=2)
+    second = run_pipeline.run_preprocess(workspace_id, limit=2)
+    third = run_pipeline.run_preprocess(workspace_id, limit=2)
+
+    assert second["processing"] == 2
+    assert third["processing"] == 1  # 남은 1건
+    assert third["deferred"] == 0
+    assert len(supabase.rows("document_versions")) == 5
+
+
+def test_상한이_없으면_대기를_전부_처리한다(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed
+) -> None:
+    _collect_documents(workspace_id, source_id, feed, 5)
+
+    summary = run_pipeline.run_preprocess(workspace_id, limit=None)
+
+    assert summary["processing"] == 5
+    assert summary["deferred"] == 0
+    assert len(supabase.rows("document_versions")) == 5
