@@ -55,11 +55,13 @@ from src.analysis.repository import (
 )
 
 STAGE_LIMIT = 50
-# GitHub Actions 호스팅 러너의 job 최대 실행 시간(6시간)에서 로그·정리 시간을
-# 뺀 안전 마진. 워크플로우의 timeout-minutes도 이보다 여유 있게(360에 근접)
-# 잡되, 실제 종료 판단은 이 값으로 한다 — 강제 kill보다 스스로 멈추는 게
-# 마지막에 처리 중이던 문서가 어중간한 상태로 안 남는다.
-DEFAULT_BUDGET_MINUTES = 350
+# GitHub Actions 호스팅 러너의 job 최대 실행 시간(6시간)에서 로그·정리 시간과
+# 단계 하나(STAGE_LIMIT건)의 최악 소요 시간(실측 최대 ~15분)을 뺀 안전 마진.
+# run_stages_until_exhausted가 단계마다 deadline을 다시 확인하므로, 이 예산을
+# 넘기고도 진행 중이던 단계 하나만큼만 더 걸리고 스스로 멈춘다 — 그래도 여유가
+# 빠듯했다 (2026-08-07 관측: 350분 예산 + 라운드 단위 체크만으로는 355분 GitHub
+# 강제종료에 걸림). 335분으로 낮추고 단계별 체크를 더해 이중으로 여유를 뒀다.
+DEFAULT_BUDGET_MINUTES = 335
 KST = timezone(timedelta(hours=9))
 """한국은 DST가 없어 UTC+9 고정 오프셋으로 충분하다 (zoneinfo의 IANA tzdata
 의존성을 피한다 — 일부 환경엔 tzdata 패키지가 없어 zoneinfo가 바로 깨진다)."""
@@ -134,6 +136,13 @@ def run_stages_until_exhausted(
         round_no += 1
         made_progress = False
 
+        # 라운드 시작 시점만 보면 안 된다 — 4단계 전부가 끝나야 다음 체크라
+        # 한 라운드(최대 STAGE_LIMIT*4건, 실측 30분+)만큼 deadline을 넘길 수
+        # 있었다 (2026-08-07 관측: 350분 예산인데 355분 GitHub 강제종료로 끝남).
+        # 단계마다 다시 확인해서 초과 폭을 단계 하나 크기로 줄인다.
+        if datetime.now(timezone.utc) >= deadline:
+            break
+
         pending_classify = get_documents_ready_for_classification(
             workspace_id=workspace_id, limit=STAGE_LIMIT, restrict_to_document_ids=restrict_to_document_ids
         )
@@ -141,6 +150,9 @@ def run_stages_until_exhausted(
             log(f"[{label}] round {round_no} 분류 대상 {len(pending_classify)}건")
             classify_document_versions(workspace_id=workspace_id, document_version_ids=pending_classify)
             made_progress = True
+
+        if datetime.now(timezone.utc) >= deadline:
+            break
 
         pending_reliability = get_documents_ready_for_reliability(
             workspace_id=workspace_id, limit=STAGE_LIMIT, restrict_to_version_ids=restrict_to_version_ids
@@ -150,6 +162,9 @@ def run_stages_until_exhausted(
             evaluate_reliability_for_documents(workspace_id=workspace_id, document_version_ids=pending_reliability)
             made_progress = True
 
+        if datetime.now(timezone.utc) >= deadline:
+            break
+
         pending_importance = get_documents_ready_for_importance(
             workspace_id=workspace_id, limit=STAGE_LIMIT, restrict_to_version_ids=restrict_to_version_ids
         )
@@ -157,6 +172,9 @@ def run_stages_until_exhausted(
             log(f"[{label}] round {round_no} 중요도 대상 {len(pending_importance)}건")
             evaluate_and_save_importances(workspace_id=workspace_id, document_version_ids=pending_importance)
             made_progress = True
+
+        if datetime.now(timezone.utc) >= deadline:
+            break
 
         pending_ranking = get_documents_ready_for_ranking(
             workspace_id=workspace_id, limit=STAGE_LIMIT, restrict_to_version_ids=restrict_to_version_ids
