@@ -52,6 +52,7 @@ def test_skips_pipeline_when_already_enough_candidates(base_mocks, monkeypatch):
     result = run_daily_report_analysis_catchup(
         now=datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),  # 06:00 KST
         min_candidates=6,
+        clock=lambda: datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),  # 마감 전 고정 시간
     )
 
     assert len(result) == 6
@@ -104,6 +105,7 @@ def test_loops_until_min_candidates_reached(base_mocks, monkeypatch):
     result = run_daily_report_analysis_catchup(
         now=datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),
         min_candidates=6,
+        clock=lambda: datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),  # 마감 전 고정 시간 — 여러 라운드 실행
     )
 
     assert pipeline_calls == [["doc-1", "doc-2"], ["doc-3", "doc-4"]]
@@ -131,6 +133,7 @@ def test_stops_when_no_more_candidates(base_mocks, monkeypatch):
     result = run_daily_report_analysis_catchup(
         now=datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),
         min_candidates=6,
+        clock=lambda: datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),  # 마감 전 고정 시간
     )
 
     assert pipeline_calls == []
@@ -158,6 +161,7 @@ def test_stops_when_candidates_do_not_change(base_mocks, monkeypatch):
     run_daily_report_analysis_catchup(
         now=datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),
         min_candidates=6,
+        clock=lambda: datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),  # 마감 전 고정 시간 — 두 번째 라운드 진행 후 반복 감지
     )
 
     assert pipeline_calls == [1]  # 첫 라운드만 실행, 두 번째 라운드에서 반복 감지되어 멈춤
@@ -236,6 +240,7 @@ def test_falls_back_gracefully_when_ranking_load_fails(base_mocks, monkeypatch):
     result = run_daily_report_analysis_catchup(
         now=datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),
         min_candidates=6,
+        clock=lambda: datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc),  # 마감 전 고정 시간
     )
 
     # 두 번째(라운드 처리 후 재확인) 및 세 번째(최종 조회) 호출에서 실패 -> 첫 조회 때 알고 있던 2건으로 종료
