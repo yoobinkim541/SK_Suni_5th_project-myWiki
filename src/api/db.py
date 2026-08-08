@@ -325,6 +325,26 @@ def save_user_message(session_id: str, content: str, user_id: str) -> dict:
     return res.data[0]
 
 
+def _citation_rows(message_id: str, citations: list) -> list[dict]:
+    """message_citations insert용 행을 만든다 — save_agent_message/update_agent_message가
+    공유한다(예전엔 두 함수가 이 9줄을 각각 중복해서 갖고 있었다)."""
+    now = datetime.now(timezone.utc).isoformat()
+    return [
+        {
+            "message_id": message_id,
+            "document_version_id": c.document_version_id,
+            "source_url": c.source_url,
+            "source_title": c.source_title,
+            "published_at": c.source_published_at,
+            "quoted_text": c.quote,
+            "relevance_score": c.relevance_score,
+            "citation_order": i,
+            "created_at": now,
+        }
+        for i, c in enumerate(citations, start=1)
+    ]
+
+
 def save_agent_message(session_id: str, result: AgentResult, prompt_version: str = "v1") -> dict:
     """
     Agent 응답을 chat_messages에 저장하고, has_answer=True면 citations도
@@ -351,20 +371,7 @@ def save_agent_message(session_id: str, result: AgentResult, prompt_version: str
     message = msg_res.data[0]
 
     if result.has_answer and result.citations:
-        rows = [
-            {
-                "message_id": message["id"],
-                "document_version_id": c.document_version_id,
-                "source_url": c.source_url,
-                "source_title": c.source_title,
-                "published_at": c.source_published_at,
-                "quoted_text": c.quote,
-                "relevance_score": c.relevance_score,
-                "citation_order": i,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            for i, c in enumerate(result.citations, start=1)
-        ]
+        rows = _citation_rows(message["id"], result.citations)
         db.table("message_citations").insert(rows).execute()
 
     return message
@@ -395,20 +402,7 @@ def update_agent_message(message_id: str, result: AgentResult, prompt_version: s
 
     db.table("message_citations").delete().eq("message_id", message_id).execute()
     if result.has_answer and result.citations:
-        rows = [
-            {
-                "message_id": message_id,
-                "document_version_id": c.document_version_id,
-                "source_url": c.source_url,
-                "source_title": c.source_title,
-                "published_at": c.source_published_at,
-                "quoted_text": c.quote,
-                "relevance_score": c.relevance_score,
-                "citation_order": i,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            for i, c in enumerate(result.citations, start=1)
-        ]
+        rows = _citation_rows(message_id, result.citations)
         db.table("message_citations").insert(rows).execute()
 
     return message

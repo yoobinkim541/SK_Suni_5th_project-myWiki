@@ -446,6 +446,12 @@ class FakeAgentMessageTable:
     def insert(self, data):
         return FakeAgentMessageInsertQuery(self._sink, data)
 
+    def update(self, patch: dict):
+        return FakeUpdateQuery(self._sink, patch)
+
+    def delete(self):
+        return FakeDeleteQuery(self._sink)
+
 
 class FakeAgentMessageClient:
     def __init__(self):
@@ -471,6 +477,47 @@ def test_save_agent_message_persists_web_search_citation_without_document_versio
     )
 
     saved = db.save_agent_message("sess-1", result)
+    citations = db.list_message_citations(saved["id"])
+
+    assert len(citations) == 1
+    assert citations[0]["document_version_id"] is None
+    assert citations[0]["source_url"] == "https://example.com/a"
+    assert citations[0]["document_title"] is None  # source_title을 안 채웠으므로
+
+
+def test_update_agent_message_persists_web_search_citation_without_document_version_id(monkeypatch):
+    """update_agent_message(재생성 경로) — allow_web_search=True가 실제로 저장까지 이어지는
+    유일한 프로덕션 경로다(/regenerate만 allow_web_search를 전달하고, /regenerate는
+    update_agent_message를 호출한다. send_message는 항상 allow_web_search=False라
+    웹 citation이 save_agent_message에 도달할 일이 없다). save_agent_message와
+    대칭으로, document_version_id가 없는(웹 검색) citation도 여기서 저장돼야 한다."""
+    client = FakeAgentMessageClient()
+    monkeypatch.setattr(db, "get_supabase", lambda: client)
+
+    # 재생성 대상이 될 기존 메시지를 미리 심어둔다.
+    existing_message = {
+        "id": "msg-1",
+        "session_id": "sess-1",
+        "role": "assistant",
+        "content": "이전 답변",
+        "model_name": "old-model",
+        "prompt_version": "v1",
+        "is_llm_fallback": False,
+        "created_at": "2026-08-07T00:00:00Z",
+    }
+    client.tables.setdefault("chat_messages", []).append(existing_message)
+
+    result = AgentResult(
+        has_answer=True,
+        answer="SK하이닉스가 ADR을 상장했다.[1]",
+        citations=[Citation(
+            quote="ADR을 상장했다",
+            source_url="https://example.com/a",
+        )],
+        model_name="test-model",
+    )
+
+    saved = db.update_agent_message("msg-1", result)
     citations = db.list_message_citations(saved["id"])
 
     assert len(citations) == 1
