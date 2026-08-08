@@ -126,6 +126,14 @@ class FakeWebSearchHit:
     published_at: Optional[str]
 
 
+@dataclass
+class FakeDisclosureHit:
+    rcept_no: str
+    report_name: str
+    corp_name: str
+    published_at: Optional[str]
+
+
 @pytest.fixture
 def wiki_tools() -> MagicMock:
     return MagicMock()
@@ -643,6 +651,59 @@ def test_web_search_answer_passes_web_search_tools_not_document_tools(agent, wik
     assert captured_tools[0] is core.WEB_SEARCH_TOOLS
     assert captured_tools[0] is not core.DOCUMENT_TOOLS
     assert captured_tools[0] is not core.TOOLS
+
+
+def test_web_search_answer_grounds_on_disclosure_via_read_disclosure(agent, wiki_tools, monkeypatch):
+    """search_recent_disclosures로 찾은 공시를 read_disclosure로 읽어서 그라운딩되면,
+    citation의 source_url이 DART 뷰어 URL이고 document_version_id는 None이어야 한다."""
+    wiki_tools.search_web.return_value = []
+    wiki_tools.search_recent_disclosures.return_value = [
+        FakeDisclosureHit(
+            rcept_no="20260805000123",
+            report_name="주식등의대량보유상황보고서",
+            corp_name="SK하이닉스",
+            published_at="2026-08-05T00:00:00+00:00",
+        )
+    ]
+    wiki_tools.read_disclosure.return_value = "본문에 지분율 5.2%로 변경됐다는 내용이 있다."
+    citation = {"source_url": core.dart_lookup.viewer_url("20260805000123"), "quote": "지분율 5.2%로 변경"}
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키 근거 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문 근거 없음"})),
+        tool_call_response(("call-3", "search_recent_disclosures", {"days": 14})),
+        tool_call_response(("call-4", "read_disclosure", {"rcept_no": "20260805000123"})),
+        tool_call_response(("call-5", "submit_answer", {
+            "answer": "지분율이 5.2%로 변경됐다.[1]",
+            "citations": [citation],
+        })),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("SK하이닉스 최근 지분 변동 공시가 뭐야?", allow_web_search=True)
+
+    assert result.has_answer is True
+    assert result.citations[0].source_url == core.dart_lookup.viewer_url("20260805000123")
+    assert result.citations[0].document_version_id is None
+    assert result.citations[0].source_title == "주식등의대량보유상황보고서"
+    assert result.citations[0].source_published_at == "2026-08-05T00:00:00+00:00"
+    wiki_tools.search_recent_disclosures.assert_called_once_with(14)
+    wiki_tools.read_disclosure.assert_called_once_with("20260805000123")
+
+
+def test_web_search_tools_include_disclosure_tools(agent, wiki_tools, monkeypatch):
+    wiki_tools.search_web.return_value = []
+    captured_tools = []
+
+    def fake_call_model(messages, use_tools=True, tools=None):
+        captured_tools.append(tools)
+        return tool_call_response(("call-1", "submit_no_answer", {"reason": "근거 없음"}))
+
+    monkeypatch.setattr(agent, "_call_model", fake_call_model)
+
+    agent._web_search_answer("질문")
+
+    tool_names = {t["function"]["name"] for t in captured_tools[0]}
+    assert {"search_web", "search_recent_disclosures", "read_disclosure"} <= tool_names
 
 
 def test_web_search_answer_promotes_document_version_id_holding_search_url_to_source_url(
