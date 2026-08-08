@@ -18,6 +18,7 @@ from typing import Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from src.agent.core import AgentResult, Citation
 from src.analysis.exceptions import OpenRouterTimeoutError
 from src.api import db
 from src.api import main as main_module
@@ -411,6 +412,92 @@ def test_copy_chat_message_preserves_original_author(monkeypatch):
     db.copy_chat_message("target-session", {**USER_QUESTION, "user_id": OWNER_ID})
 
     assert client.inserted["chat_messages"][0]["user_id"] == OWNER_ID
+
+
+# ---------------------------------------------------------------------------
+# 1-b. save_agent_message / list_message_citations 왕복 — 웹 검색 citation
+# (document_version_id 없이 source_url만 있는 행)도 저장/조회돼야 한다.
+# ---------------------------------------------------------------------------
+
+class FakeAgentMessageInsertQuery:
+    def __init__(self, sink: list[dict], data):
+        if isinstance(data, list):
+            self._result_rows = []
+            for row in data:
+                new_row = {**row, "id": f"citation-{len(sink)}"}
+                sink.append(new_row)
+                self._result_rows.append(new_row)
+        else:
+            new_row = {**data, "id": f"generated-{len(sink)}"}
+            sink.append(new_row)
+            self._result_rows = [new_row]
+
+    def execute(self):
+        return FakeResult(self._result_rows)
+
+
+class FakeAgentMessageTable:
+    def __init__(self, sink: list[dict]):
+        self._sink = sink
+
+    def select(self, *_args, **_kwargs):
+        return FakeQuery(list(self._sink))
+
+    def insert(self, data):
+        return FakeAgentMessageInsertQuery(self._sink, data)
+
+
+class FakeAgentMessageClient:
+    def __init__(self):
+        self.tables: dict[str, list[dict]] = {}
+
+    def table(self, name: str):
+        return FakeAgentMessageTable(self.tables.setdefault(name, []))
+
+
+def test_save_agent_message_persists_web_search_citation_without_document_version_id(monkeypatch):
+    """document_version_id가 없는(웹 검색) citation도 저장돼야 한다."""
+    client = FakeAgentMessageClient()
+    monkeypatch.setattr(db, "get_supabase", lambda: client)
+
+    result = AgentResult(
+        has_answer=True,
+        answer="SK하이닉스가 ADR을 상장했다.[1]",
+        citations=[Citation(
+            quote="ADR을 상장했다",
+            source_url="https://example.com/a",
+        )],
+        model_name="test-model",
+    )
+
+    saved = db.save_agent_message("sess-1", result)
+    citations = db.list_message_citations(saved["id"])
+
+    assert len(citations) == 1
+    assert citations[0]["document_version_id"] is None
+    assert citations[0]["source_url"] == "https://example.com/a"
+    assert citations[0]["document_title"] is None  # source_title을 안 채웠으므로
+
+
+def test_enrich_message_citations_skips_join_for_web_search_rows():
+    """document_version_id가 None인 행은 documents/document_versions 조인 없이,
+    저장 시점에 채운 source_title을 document_title로 그대로 통과시킨다."""
+    rows = [{
+        "document_version_id": None,
+        "source_url": "https://example.com/a",
+        "source_title": "SK하이닉스 ADR 상장",
+        "published_at": "2026-08-07T09:00:00+09:00",
+        "quoted_text": "ADR을 상장했다",
+        "relevance_score": None,
+        "citation_order": 1,
+    }]
+
+    enriched = db._enrich_message_citations(rows)
+
+    assert enriched[0]["document_title"] == "SK하이닉스 ADR 상장"
+    assert enriched[0]["source_url"] == "https://example.com/a"
+    assert enriched[0]["source_name"] is None
+    assert enriched[0]["reliability_score"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -72,7 +72,7 @@ class AdminSessionOut(BaseModel):
 
 class CitationOut(BaseModel):
     id: str
-    document_version_id: str
+    document_version_id: Optional[str] = None
     quoted_text: Optional[str]
     relevance_score: Optional[float]
     citation_order: Optional[int]
