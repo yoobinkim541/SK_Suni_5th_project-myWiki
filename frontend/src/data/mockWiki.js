@@ -241,13 +241,16 @@ export const MOCK_AGENT_PANES = {
               title: '축적된 근거에서 답을 찾지 못했습니다',
               desc: '위키에 해당 수치를 담은 문서가 없어 답변을 생성하지 않았습니다. 시장 전망 자료를 수집 소스에 추가하거나, 확인된 사실 범위로 질문을 좁혀 보세요.',
             },
-            acts: ['수집 소스 추가', '관련 문서 찾아보기'],
+            acts: ['웹에서 찾아줘', '수집 소스 추가', '관련 문서 찾아보기'],
           },
         ],
         evidence: [
           { no: 1, key: 'etnews', title: 'HBM4 공급 협의 관련 보도', excerpt: '해당 문단 원문 발췌 영역. 인용은 짧게 유지하고 원문 링크로 연결한다.', foot: '2026.07.24 · 신뢰도 보통' },
           { no: 2, key: 'dart', title: '신규 시설투자 관련 공시', excerpt: '정형 데이터라 수치를 그대로 인용할 수 있는 항목.', foot: '2026.07.21 · 신뢰도 높음' },
           { no: 3, key: 'zdnet', title: '양산 일정 관련 보도', excerpt: '매체 간 서술 차이가 있어 교차 검증 대상으로 분류.', foot: '2026.07.24 · 신뢰도 보통' },
+          // "웹에서 찾아줘"로 얻은 근거 예시 — 위키/원문(DB 문서)이 아니라 실시간 검색
+          // 결과라 documentVersionId가 없다(agentApi.js toEvidence의 isWeb 판별과 동일 형태).
+          { no: 4, isWeb: true, sourceName: '웹 검색', url: 'https://example.com', title: 'HBM4 시장 점유율 관련 최신 보도', excerpt: '실시간 웹 검색으로 찾은 기사 발췌.', foot: '2026.08.08' },
         ],
       },
       { id: 'team-export', title: '수출통제 영향 점검', meta: '07.23 · 이서준', messages: [], evidence: [] },

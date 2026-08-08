@@ -34,8 +34,18 @@ function linkifyCitationText(text, cites, keyPrefix) {
     // 매칭되는 근거가 없거나 url이 없으면(백엔드가 아직 원문을 못 찾은 경우 등)
     // 링크를 지어내지 않고 원문 그대로 둡니다.
     if (!cite?.url) return `[${part}]`;
+    // documentVersionId가 없으면 위키/원문(DB 문서)이 아니라 실시간 웹 검색 근거다 —
+    // 툴팁으로 구분한다(우측 "근거 원문" 카드의 .web 배지와 같은 판별 기준).
+    const isWeb = cite.documentVersionId == null;
     return (
-      <a className="fn" key={`${keyPrefix}-cite-${i}`} href={cite.url} target="_blank" rel="noopener" title={`근거 ${no}`}>
+      <a
+        className="fn"
+        key={`${keyPrefix}-cite-${i}`}
+        href={cite.url}
+        target="_blank"
+        rel="noopener"
+        title={isWeb ? `웹 검색 근거 ${no}` : `근거 ${no}`}
+      >
         {no}
       </a>
     );
@@ -67,6 +77,8 @@ const ACT_LABEL = {
   copy: { idle: '복사', loading: '복사 중…', done: '복사됨' },
   regen: { idle: '다시 생성', loading: '생성 중…', done: '다시 생성됨' },
   del: { idle: '삭제', loading: '삭제 중…', done: '삭제됨' },
+  // 근거 부족(.none) 카드 전용 — 위키·원문에 이어 실시간 웹 검색까지 시도한다.
+  websearch: { idle: '웹에서 찾아줘', loading: '웹 검색 중…', done: '검색 완료' },
 };
 
 function actLabel(kind, state) {
@@ -181,6 +193,13 @@ export default function ChatMessage({ message, flag, flagPriv = false, onAction,
                 return (
                   <ActSpan key={a} kind="regen" state={actionState?.regen} onClick={() => onAction?.(a, message)}>
                     {actLabel('regen', actionState?.regen)}
+                  </ActSpan>
+                );
+              }
+              if (a === '웹에서 찾아줘') {
+                return (
+                  <ActSpan key={a} kind="websearch" state={actionState?.websearch} onClick={() => onAction?.(a, message)}>
+                    {actLabel('websearch', actionState?.websearch)}
                   </ActSpan>
                 );
               }

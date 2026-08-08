@@ -66,11 +66,15 @@ export function shareMessageToTeam(sessionId, messageId, targetSessionId) {
  * "다시 생성" — 같은 질문으로 Agent를 다시 호출해 이 assistant 메시지 행을 그 자리에서
  * 교체한다(새 메시지를 추가하지 않음 — 새로고침해도 옛 답변이 다시 보이지 않는다).
  * 근거 부족(has_answer=false) 응답도 대상이 될 수 있다.
+ * @param {boolean} [allowWebSearch] true면 위키·원문에 이어 실시간 웹 검색까지 시도하고,
+ *   그것도 실패하면 출처 없는 일반 지식 답변까지 자동으로 넘어간다("웹에서 찾아줘" 버튼용).
+ *   기본값 false는 기존 "다시 생성"과 동일하게 위키·원문까지만 시도한다.
  * @returns {Promise<{id, session_id, role, content, model_name, prompt_version, author_name,
  *   created_at, citations: object[]}>} 교체된 assistant 메시지
  */
-export function regenerateChatMessage(sessionId, messageId) {
-  return apiFetch(`/chat/sessions/${sessionId}/messages/${messageId}/regenerate`, {
+export function regenerateChatMessage(sessionId, messageId, allowWebSearch = false) {
+  const query = allowWebSearch ? '?allow_web_search=true' : '';
+  return apiFetch(`/chat/sessions/${sessionId}/messages/${messageId}/regenerate${query}`, {
     method: 'POST',
   });
 }
