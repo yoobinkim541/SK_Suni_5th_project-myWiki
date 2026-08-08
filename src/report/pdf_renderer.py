@@ -21,6 +21,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
+    CondPageBreak,
+    HRFlowable,
     KeepTogether,
     PageBreak,
     Paragraph,
@@ -49,6 +51,8 @@ SLATE = colors.HexColor("#475569")
 BORDER = colors.HexColor("#CBD5E1")
 LIGHT_BORDER = colors.HexColor("#E2E8F0")
 PALE = colors.HexColor("#F8FAFC")
+ACCENT = colors.HexColor("#F97316")
+DARK_TEXT = colors.HexColor("#111827")
 
 K_TITLE = "\uc77c\uc77c \uc0b0\uc5c5 \ub3d9\ud5a5 \ubcf4\uace0\uc11c"
 K_EXECUTIVE = "\uc624\ub298\uc758 \ud575\uc2ec \uc694\uc57d"
@@ -66,6 +70,8 @@ K_MONITORING = "\uc9c0\uc18d \uad00\ucc30"
 K_ALL_SOURCES = "\uc804\uccb4 \ucd9c\ucc98 \ubaa9\ub85d"
 K_NO_TRENDS = "\uc8fc\uc694 \ub3d9\ud5a5 \uc5c6\uc74c"
 K_NO_INFORMATION = "\uc815\ubcf4 \uc5c6\uc74c"
+K_DAILY_BRIEF_EN = "DAILY INDUSTRY BRIEF"
+K_NEXT_WATCH_EN = "NEXT WATCH"
 
 
 @dataclass(frozen=True)
@@ -99,6 +105,16 @@ class PdfSourceLine:
 
 
 @dataclass(frozen=True)
+class PdfExecutiveSummaryLine:
+    title: str
+    summary: str
+    category: str = ""
+    importance_score: int | None = None
+    impact_direction: str = ""
+    time_horizon: str = ""
+
+
+@dataclass(frozen=True)
 class PdfSection:
     category: str
     title: str
@@ -108,7 +124,10 @@ class PdfSection:
     section_type: str = "content"
     importance_score: int | None = None
     reliability_score: int | None = None
+    impact_direction: str = ""
+    time_horizon: str = ""
     source_rows: tuple[PdfSourceLine, ...] = ()
+    executive_items: tuple[PdfExecutiveSummaryLine, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -218,6 +237,8 @@ def _normalize_document(document: PdfReportDocument) -> PdfReportDocument:
                 section_type=section.section_type,
                 importance_score=section.importance_score,
                 reliability_score=section.reliability_score,
+                impact_direction=normalize_pdf_text(section.impact_direction),
+                time_horizon=normalize_pdf_text(section.time_horizon),
                 source_rows=tuple(
                     PdfSourceLine(
                         source_type=normalize_pdf_text(item.source_type),
@@ -227,6 +248,17 @@ def _normalize_document(document: PdfReportDocument) -> PdfReportDocument:
                         url=normalize_pdf_text(item.url) if item.url else None,
                     )
                     for item in section.source_rows
+                ),
+                executive_items=tuple(
+                    PdfExecutiveSummaryLine(
+                        title=normalize_pdf_text(item.title),
+                        summary=normalize_pdf_text(item.summary),
+                        category=normalize_pdf_text(item.category),
+                        importance_score=item.importance_score,
+                        impact_direction=normalize_pdf_text(item.impact_direction),
+                        time_horizon=normalize_pdf_text(item.time_horizon),
+                    )
+                    for item in section.executive_items
                 ),
             )
             for section in document.sections
@@ -286,24 +318,34 @@ def _resolve_page_size(layout: PdfLayout) -> tuple[float, float]:
 
 def _build_styles(layout: PdfLayout) -> StyleSheet1:
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], fontName=REPORT_FONT_BOLD, fontSize=layout.title_font_size, leading=layout.title_font_size * 1.25, textColor=NAVY, spaceAfter=10, alignment=TA_LEFT, wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="SectionTitle", parent=styles["Heading2"], fontName=REPORT_FONT_BOLD, fontSize=layout.heading_font_size, leading=layout.heading_font_size * 1.35, textColor=NAVY, spaceBefore=2, spaceAfter=7, wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="IssueTitle", parent=styles["Heading2"], fontName=REPORT_FONT_BOLD, fontSize=13, leading=18, textColor=NAVY, spaceAfter=5, wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="Subheading", parent=styles["Heading4"], fontName=REPORT_FONT_BOLD, fontSize=10.5, leading=14.5, textColor=NAVY, spaceBefore=7, spaceAfter=3, wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="Body", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=layout.body_font_size, leading=layout.body_font_size * layout.line_height, textColor=colors.HexColor("#111827"), spaceAfter=4, alignment=TA_LEFT, wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="BodyMuted", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=9, leading=12.5, textColor=SLATE, spaceAfter=4, wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="MetaLabel", parent=styles["BodyText"], fontName=REPORT_FONT_BOLD, fontSize=9.5, leading=13, textColor=SLATE, wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="MetaValue", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=9.5, leading=13, textColor=NAVY, wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="EvidenceBody", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=8.8, leading=12, textColor=colors.HexColor("#111827"), wordWrap="CJK"))
-    styles.add(ParagraphStyle(name="BoxTitle", parent=styles["Heading4"], fontName=REPORT_FONT_BOLD, fontSize=10.5, leading=14, textColor=NAVY, wordWrap="CJK"))
+    base_leading = 14
+    styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], fontName=REPORT_FONT_BOLD, fontSize=layout.title_font_size, leading=27, textColor=NAVY, spaceAfter=4, alignment=TA_LEFT))
+    styles.add(ParagraphStyle(name="ReportSubtitle", parent=styles["BodyText"], fontName=REPORT_FONT_BOLD, fontSize=10.5, leading=14, textColor=ACCENT, spaceAfter=8, alignment=TA_LEFT))
+    styles.add(ParagraphStyle(name="SectionTitle", parent=styles["Heading2"], fontName=REPORT_FONT_BOLD, fontSize=16, leading=21, textColor=NAVY, spaceBefore=4, spaceAfter=10, keepWithNext=1))
+    styles.add(ParagraphStyle(name="IssueTitle", parent=styles["Heading2"], fontName=REPORT_FONT_BOLD, fontSize=14, leading=19, textColor=NAVY, spaceBefore=0, spaceAfter=7, keepWithNext=1))
+    styles.add(ParagraphStyle(name="Subheading", parent=styles["Heading4"], fontName=REPORT_FONT_BOLD, fontSize=11.2, leading=15, textColor=NAVY, spaceBefore=12, spaceAfter=6, keepWithNext=1))
+    styles.add(ParagraphStyle(name="Body", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=10, leading=base_leading, textColor=DARK_TEXT, spaceBefore=0, spaceAfter=8, alignment=TA_LEFT))
+    styles.add(ParagraphStyle(name="ReportBullet", parent=styles["Body"], fontName=REPORT_FONT_REGULAR, fontSize=9.8, leading=13.8, leftIndent=12, firstLineIndent=0, bulletIndent=2, spaceAfter=4))
+    styles.add(ParagraphStyle(name="BodyMuted", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=9, leading=12.5, textColor=SLATE, spaceAfter=5))
+    styles.add(ParagraphStyle(name="MetaLabel", parent=styles["BodyText"], fontName=REPORT_FONT_BOLD, fontSize=8.8, leading=12, textColor=SLATE))
+    styles.add(ParagraphStyle(name="MetaValue", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=8.8, leading=12, textColor=NAVY))
+    styles.add(ParagraphStyle(name="EvidenceBody", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=8.8, leading=12.2, textColor=DARK_TEXT))
+    styles.add(ParagraphStyle(name="BoxTitle", parent=styles["Heading4"], fontName=REPORT_FONT_BOLD, fontSize=10.5, leading=14, textColor=NAVY, spaceAfter=4, keepWithNext=1))
+    styles.add(ParagraphStyle(name="ExecutiveNumber", parent=styles["BodyText"], fontName=REPORT_FONT_BOLD, fontSize=15, leading=18, textColor=ACCENT))
+    styles.add(ParagraphStyle(name="ExecutiveTitle", parent=styles["BodyText"], fontName=REPORT_FONT_BOLD, fontSize=11.2, leading=15, textColor=NAVY, spaceAfter=4))
+    styles.add(ParagraphStyle(name="ExecutiveSummary", parent=styles["BodyText"], fontName=REPORT_FONT_REGULAR, fontSize=9.8, leading=13.6, textColor=DARK_TEXT, spaceAfter=5))
+    styles.add(ParagraphStyle(name="CategoryCardTitle", parent=styles["BoxTitle"], fontSize=10.8, leading=14.5, textColor=NAVY))
+    styles.add(ParagraphStyle(name="CategoryCardBody", parent=styles["Body"], fontSize=9.1, leading=12.5, spaceAfter=3))
+    styles.add(ParagraphStyle(name="ImplicationLabel", parent=styles["Subheading"], fontSize=10.8, leading=14.5, textColor=ACCENT, spaceBefore=14, spaceAfter=7, keepWithNext=1))
     return styles
 
 
 def _build_story(document: PdfReportDocument, styles: StyleSheet1) -> list[object]:
     story: list[object] = [
         Paragraph(_xml_text(document.title), styles["ReportTitle"]),
-        _build_metadata_table(document, styles),
-        Spacer(1, 5 * mm),
+        Paragraph(K_DAILY_BRIEF_EN, styles["ReportSubtitle"]),
+        _build_compact_metadata(document, styles),
+        Spacer(1, 6 * mm),
     ]
     if not document.sections:
         story.append(Paragraph(_xml_text(K_NO_INFORMATION), styles["BodyMuted"]))
@@ -313,12 +355,32 @@ def _build_story(document: PdfReportDocument, styles: StyleSheet1) -> list[objec
         if section.section_type in {"issues_heading", "categories", "implications", "sources"}:
             story.append(PageBreak())
         story.extend(_build_section_flowables(index, section, styles))
+    has_sources_section = any(section.section_type == "sources" for section in document.sections)
     final_evidence = tuple(
         item for section in document.sections if section.section_type != "sources" for item in section.evidences
     )
-    if final_evidence:
+    if final_evidence and not has_sources_section:
         story.extend(_build_final_evidence_flowables(final_evidence, styles))
     return story
+
+
+def _build_compact_metadata(document: PdfReportDocument, styles: StyleSheet1) -> Table:
+    meta = " | ".join(
+        part for part in (
+            f"\uae30\uc900\uc77c {_format_report_date(document.subtitle)}",
+            f"\uc0dd\uc131 {_format_datetime(document.generated_at)}",
+            _format_version(document.version),
+        ) if part
+    )
+    table = Table([[Paragraph(_xml_text(meta), styles["MetaValue"])]], colWidths=[170 * mm], hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), PALE),
+        ("BOX", (0, 0), (-1, -1), 0.4, LIGHT_BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return table
 
 
 def _build_metadata_table(document: PdfReportDocument, styles: StyleSheet1) -> Table:
@@ -342,6 +404,8 @@ def _build_metadata_table(document: PdfReportDocument, styles: StyleSheet1) -> T
 
 
 def _build_section_flowables(index: int, section: PdfSection, styles: StyleSheet1) -> list[object]:
+    if section.section_type == "executive":
+        return _build_executive_flowables(section, styles)
     if section.section_type == "issue":
         return _build_issue_flowables(section, styles)
     if section.section_type == "categories":
@@ -355,21 +419,65 @@ def _build_section_flowables(index: int, section: PdfSection, styles: StyleSheet
     if section.section_type == "issues_heading":
         return flowables + [Spacer(1, 1 * mm)]
     flowables.extend(_body_flowables(section.body, styles, keep_subheadings=True))
-    flowables.append(Spacer(1, 4 * mm))
+    flowables.append(Spacer(1, 5 * mm))
     return flowables
 
 
+def _build_executive_flowables(section: PdfSection, styles: StyleSheet1) -> list[object]:
+    flowables: list[object] = [Paragraph(_xml_text(section.title), styles["SectionTitle"])]
+    if section.executive_items:
+        for index, item in enumerate(section.executive_items[:5], start=1):
+            flowables.append(_build_executive_card(index, item, styles))
+            flowables.append(Spacer(1, 2.8 * mm))
+        return flowables
+
+    lines = _split_paragraphs(section.body)[:5] or [K_NO_INFORMATION]
+    for index, line in enumerate(lines, start=1):
+        item = PdfExecutiveSummaryLine(title="", summary=line)
+        flowables.append(_build_executive_card(index, item, styles))
+        flowables.append(Spacer(1, 2.8 * mm))
+    return flowables
+
+
+def _build_executive_card(index: int, item: PdfExecutiveSummaryLine, styles: StyleSheet1) -> Table:
+    title = _truncate_text(_display_text(item.title, default=""), 72)
+    summary = _truncate_text(_display_text(item.summary), 165)
+    content: list[object] = []
+    if title:
+        content.append(Paragraph(_xml_text(title), styles["ExecutiveTitle"]))
+    content.append(Paragraph(_xml_text(summary), styles["ExecutiveSummary"]))
+    metadata = _format_summary_metadata(item)
+    if metadata:
+        content.append(Paragraph(_xml_text(metadata), styles["BodyMuted"]))
+    table = Table(
+        [[Paragraph(f"{index:02d}", styles["ExecutiveNumber"]), content]],
+        colWidths=[15 * mm, 151 * mm],
+        hAlign="LEFT",
+    )
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("LINEBEFORE", (0, 0), (0, -1), 1.2, ACCENT),
+        ("BOX", (0, 0), (-1, -1), 0.4, LIGHT_BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
 def _build_issue_flowables(section: PdfSection, styles: StyleSheet1) -> list[object]:
-    title = Paragraph(_xml_text(section.title), styles["IssueTitle"])
-    metadata = Paragraph(_xml_text(_format_issue_metadata(section)), styles["BodyMuted"])
-    pieces = _issue_body_flowables(section.body, styles)
-    opening = [title, metadata]
-    if pieces:
-        opening.extend(pieces.pop(0))
-    flowables: list[object] = [KeepTogether(opening), Spacer(1, 1 * mm)]
-    for piece in pieces:
-        flowables.append(KeepTogether(piece))
-    flowables.append(Spacer(1, 7 * mm))
+    header = [
+        Paragraph(_xml_text(section.title), styles["IssueTitle"]),
+        Paragraph(_xml_text(_format_issue_metadata(section)), styles["BodyMuted"]),
+        HRFlowable(width="100%", thickness=0.6, color=LIGHT_BORDER, spaceBefore=3, spaceAfter=7),
+    ]
+    flowables: list[object] = [CondPageBreak(54 * mm), KeepTogether(header)]
+    for piece in _issue_body_flowables(section.body, styles):
+        if _block_is_short(piece):
+            flowables.append(KeepTogether(piece))
+        else:
+            flowables.extend(piece)
+    flowables.append(Spacer(1, 8 * mm))
     return flowables
 
 
@@ -387,17 +495,17 @@ def _issue_body_flowables(body: str, styles: StyleSheet1) -> list[list[object]]:
     if current:
         groups.append(current)
     if not groups:
-        return [[Paragraph(_xml_text(K_NO_INFORMATION), styles["Body"])]]
+        return [[Paragraph(_xml_text("-"), styles["Body"])] ]
 
     result: list[list[object]] = []
     for group in groups:
         if group[0] in headings:
             items: list[object] = [Paragraph(_xml_text(group[0]), styles["Subheading"])]
-            content = group[1:] or [K_NO_INFORMATION]
+            content = group[1:] or ["-"]
         else:
             items = []
             content = group
-        items.extend(Paragraph(_xml_text(item), styles["Body"]) for item in content)
+        items.extend(_paragraph_for_line(item, styles) for item in content)
         result.append(items)
     return result
 
@@ -408,9 +516,8 @@ def _body_flowables(body: str, styles: StyleSheet1, *, keep_subheadings: bool) -
     subheadings = {K_FACTS, K_MEANING, K_IMPACT, K_WATCH, K_OPPORTUNITY, K_RISK, K_MONITORING}
     for line in lines:
         style = styles["Subheading"] if line in subheadings else styles["Body"]
-        item = Paragraph(_xml_text(line), style)
-        result.append(item)
-    return result or [Paragraph(_xml_text(K_NO_INFORMATION), styles["BodyMuted"])]
+        result.append(_paragraph_for_line(line, styles, style=style))
+    return result or [Paragraph(_xml_text("-"), styles["BodyMuted"])]
 
 
 def _build_category_flowables(section: PdfSection, styles: StyleSheet1) -> list[object]:
@@ -424,26 +531,44 @@ def _build_category_flowables(section: PdfSection, styles: StyleSheet1) -> list[
             grouped[current].append(line)
 
     flowables: list[object] = [Paragraph(_xml_text(section.title), styles["SectionTitle"])]
-    for index, category in enumerate(categories):
-        if index == 3:
-            flowables.append(PageBreak())
-        content = grouped[category] or [f"- {K_NO_TRENDS}"]
-        block: list[object] = [Paragraph(_xml_text(category), styles["Subheading"])]
-        block.extend(Paragraph(_xml_text(item), styles["Body"]) for item in content)
-        flowables.extend([KeepTogether(block), Spacer(1, 2.5 * mm)])
+    rows: list[list[object]] = []
+    for row_index in range(0, len(categories), 2):
+        row: list[object] = []
+        for category in categories[row_index:row_index + 2]:
+            content = grouped[category] or [f"- {K_NO_TRENDS}"]
+            card: list[object] = [Paragraph(_xml_text(category), styles["CategoryCardTitle"])]
+            for item in content[:2]:
+                card.append(_paragraph_for_line(_truncate_text(item, 150), styles, style=styles["CategoryCardBody"]))
+            row.append(card)
+        rows.append(row)
+    table = Table(rows, colWidths=[82 * mm, 82 * mm], hAlign="LEFT", splitByRow=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), PALE),
+        ("BOX", (0, 0), (-1, -1), 0.5, LIGHT_BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, LIGHT_BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    flowables.append(table)
     return flowables
 
 
 def _build_implication_flowables(section: PdfSection, styles: StyleSheet1) -> list[object]:
     flowables: list[object] = [Paragraph(_xml_text(section.title), styles["SectionTitle"])]
     grouped = _split_implication_groups(section.body)
-    for label in (K_OPPORTUNITY, K_RISK, K_MONITORING):
-        values = grouped.get(label, []) or [K_NO_INFORMATION]
-        flowables.append(Paragraph(_xml_text(label), styles["Subheading"]))
-        flowables.extend(Paragraph(_xml_text(value), styles["Body"]) for value in values)
-        flowables.append(Spacer(1, 2.5 * mm))
-    conclusion = _build_conclusion(grouped)
-    flowables.extend([Spacer(1, 2.5 * mm), Paragraph(_xml_text(conclusion), styles["Subheading"]), Spacer(1, 2 * mm)])
+    labels = (
+        (K_OPPORTUNITY, "OPPORTUNITY"),
+        (K_RISK, "RISK"),
+        (K_MONITORING, K_NEXT_WATCH_EN),
+    )
+    for source_label, display_label in labels:
+        values = grouped.get(source_label, []) or ["-"]
+        flowables.append(CondPageBreak(34 * mm))
+        flowables.append(Paragraph(_xml_text(display_label), styles["ImplicationLabel"]))
+        for value in values:
+            flowables.append(_paragraph_for_line(value, styles))
+        flowables.append(Spacer(1, 3 * mm))
     return flowables
 
 
@@ -476,29 +601,41 @@ def _build_final_evidence_flowables(evidences: tuple[PdfEvidenceLine, ...], styl
 def _build_source_flowables(section: PdfSection, styles: StyleSheet1) -> list[object]:
     flowables: list[object] = [Paragraph(_xml_text(section.title), styles["SectionTitle"])]
     if not section.source_rows:
-        return flowables + [Paragraph(_xml_text(K_NO_INFORMATION), styles["BodyMuted"])]
+        return flowables + [Paragraph(_xml_text("-"), styles["BodyMuted"])]
+
+    grouped: dict[str, list[PdfSourceLine]] = {}
+    for source in section.source_rows:
+        grouped.setdefault(_source_group_label(source), []).append(source)
+
+    for group_index, (label, sources) in enumerate(grouped.items()):
+        if group_index:
+            flowables.append(Spacer(1, 4 * mm))
+        flowables.append(Paragraph(_xml_text(label), styles["Subheading"]))
+        flowables.append(_build_source_table(sources, styles))
+    return flowables
+
+
+def _build_source_table(sources: list[PdfSourceLine], styles: StyleSheet1) -> Table:
     header = ["\ubc88\ud638", K_SOURCES, "\uc81c\ubaa9", "\ubc1c\ud589\uc77c", "\ub9c1\ud06c"]
     rows: list[list[object]] = [[Paragraph(_xml_text(item), styles["MetaLabel"]) for item in header]]
-    for index, source in enumerate(section.source_rows, start=1):
-        link = "\uc6d0\ubb38 \ubcf4\uae30" if source.url else K_NO_INFORMATION
+    for index, source in enumerate(sources, start=1):
         rows.append([
             Paragraph(str(index), styles["EvidenceBody"]),
-            Paragraph(_xml_text(source.source_type or K_NO_INFORMATION), styles["EvidenceBody"]),
-            Paragraph(_xml_text(source.title or K_NO_INFORMATION), styles["EvidenceBody"]),
-            Paragraph(_xml_text(source.published_at or K_NO_INFORMATION), styles["EvidenceBody"]),
+            Paragraph(_xml_text(_truncate_text(_source_display_name(source), 34)), styles["EvidenceBody"]),
+            Paragraph(_xml_text(_truncate_text(_display_text(source.title), 220)), styles["EvidenceBody"]),
+            Paragraph(_xml_text(_display_text(source.published_at)), styles["EvidenceBody"]),
             _build_source_link(source.url, styles),
         ])
-    table = Table(rows, colWidths=[10 * mm, 32 * mm, 68 * mm, 29 * mm, 31 * mm], repeatRows=1, hAlign="LEFT", splitByRow=1)
+    table = Table(rows, colWidths=[9 * mm, 34 * mm, 87 * mm, 24 * mm, 16 * mm], repeatRows=1, hAlign="LEFT", splitByRow=1)
     table.setStyle(_table_style())
-    flowables.append(table)
-    return flowables
+    return table
 
 
 def _build_source_link(url: str | None, styles: StyleSheet1) -> Paragraph:
     if not url:
-        return Paragraph(_xml_text(K_NO_INFORMATION), styles["EvidenceBody"])
+        return Paragraph(_xml_text("-"), styles["EvidenceBody"])
     escaped_url = escape(url, quote=True)
-    label = "\uc6d0\ubb38 \ubcf4\uae30"
+    label = "\ub9c1\ud06c"
     return Paragraph(f'<link href="{escaped_url}"><font color="#2563EB">{label}</font></link>', styles["EvidenceBody"])
 
 
@@ -528,15 +665,23 @@ def _table_style() -> TableStyle:
 
 
 def _format_issue_metadata(section: PdfSection) -> str:
-    category = section.category or K_NO_INFORMATION
-    importance = _format_scored_label("\uc911\uc694\ub3c4", section.importance_score)
+    parts = []
+    if not _is_placeholder(section.category):
+        parts.append(f"[{section.category}]")
+    parts.append(_format_scored_label("\uc911\uc694\ub3c4", section.importance_score))
     reliability = _format_scored_label("\uc2e0\ub8b0\ub3c4", section.reliability_score)
-    return f"[{category}]   {importance}   |   {reliability}"
+    if reliability:
+        parts.append(reliability)
+    if not _is_placeholder(section.impact_direction):
+        parts.append(section.impact_direction)
+    if not _is_placeholder(section.time_horizon):
+        parts.append(section.time_horizon)
+    return "   ".join(part for part in parts if part)
 
 
 def _format_scored_label(label: str, score: int | None) -> str:
     if score is None:
-        return f"{label} {K_NO_INFORMATION}"
+        return ""
     if score >= 85:
         grade = "\ub192\uc74c"
     elif score >= 70:
@@ -559,7 +704,7 @@ def _draw_page_header(page_canvas, pdf_doc, document: PdfReportDocument, layout:
     left = pdf_doc.leftMargin
     right = page_width - pdf_doc.rightMargin
     baseline = page_height - 10.5 * mm
-    page_canvas.setFont(REPORT_FONT_REGULAR, 9)
+    page_canvas.setFont(REPORT_FONT_REGULAR, 8.8)
     page_canvas.setFillColor(SLATE)
     page_canvas.drawString(left, baseline, normalize_pdf_text(_format_report_date(document.subtitle)))
     logo_height = 8 * mm
@@ -568,7 +713,7 @@ def _draw_page_header(page_canvas, pdf_doc, document: PdfReportDocument, layout:
     page_canvas.setFont(REPORT_FONT_BOLD, 10.5)
     page_canvas.setFillColor(NAVY)
     page_canvas.drawRightString(mywiki_x, baseline, "MyWiki")
-    line_y = page_height - 18 * mm
+    line_y = page_height - 18.5 * mm
     page_canvas.setStrokeColor(LIGHT_BORDER)
     page_canvas.setLineWidth(0.5)
     page_canvas.line(left, line_y, right, line_y)
@@ -614,17 +759,86 @@ class _NumberedCanvas(canvas.Canvas):
         page_width, _ = self._pagesize
         left = self._layout.margin_mm * mm
         right = page_width - self._layout.margin_mm * mm
-        line_y = 16 * mm
-        text_y = 10.5 * mm
+        line_y = 15 * mm
+        text_y = 9.8 * mm
         self.saveState()
         self.setStrokeColor(LIGHT_BORDER)
         self.setLineWidth(0.5)
         self.line(left, line_y, right, line_y)
-        self.setFont(REPORT_FONT_REGULAR, 8.5)
+        self.setFont(REPORT_FONT_REGULAR, 8)
         self.setFillColor(SLATE)
         self.drawString(left, text_y, "SK hynix Industry Trend Curation")
         self.drawRightString(right, text_y, f"{self._pageNumber} / {page_count}")
         self.restoreState()
+
+
+
+
+def _paragraph_for_line(line: str, styles: StyleSheet1, *, style: ParagraphStyle | None = None) -> Paragraph:
+    normalized = _display_text(line)
+    bullet_match = re.match(r"^[-\u2022]\s*(.*)$", normalized)
+    if bullet_match:
+        bullet_text = _display_text(bullet_match.group(1))
+        return Paragraph(_xml_text(bullet_text), styles["ReportBullet"], bulletText="\u2022")
+    return Paragraph(_xml_text(normalized), style or styles["Body"])
+
+
+def _block_is_short(flowables: list[object]) -> bool:
+    paragraph_count = sum(isinstance(item, Paragraph) for item in flowables)
+    text_length = sum(len(getattr(item, "text", "")) for item in flowables if isinstance(item, Paragraph))
+    return paragraph_count <= 4 and text_length <= 900
+
+
+def _is_placeholder(value: str | None) -> bool:
+    normalized = normalize_pdf_text(value or "").strip()
+    return normalized in {"", "-", K_NO_INFORMATION, f"- {K_NO_INFORMATION}", "N/A", "n/a", "None", "null"}
+
+
+def _display_text(value: str | None, *, default: str = "-") -> str:
+    normalized = normalize_pdf_text(value or "").strip()
+    if _is_placeholder(normalized):
+        return default
+    return normalized
+
+
+def _truncate_text(value: str, max_chars: int) -> str:
+    normalized = _display_text(value, default="")
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 1].rstrip() + "..."
+
+
+def _format_summary_metadata(item: PdfExecutiveSummaryLine) -> str:
+    parts: list[str] = []
+    if not _is_placeholder(item.category):
+        parts.append(f"[{item.category}]")
+    importance = _format_scored_label("\uc911\uc694\ub3c4", item.importance_score)
+    if importance:
+        parts.append(importance)
+    if not _is_placeholder(item.impact_direction):
+        parts.append(item.impact_direction)
+    if not _is_placeholder(item.time_horizon):
+        parts.append(item.time_horizon)
+    return "   ".join(parts)
+
+
+def _source_group_label(source: PdfSourceLine) -> str:
+    source_type = _display_text(source.source_type, default="")
+    upper = source_type.upper()
+    if "WIKI" in upper or "\ub0b4\ubd80" in source_type:
+        return "MYWIKI"
+    if "\ub274\uc2a4" in source_type or "NEWS" in upper:
+        return "NEWS"
+    return source_type or K_SOURCES
+
+
+def _source_display_name(source: PdfSourceLine) -> str:
+    if not _is_placeholder(source.source_name):
+        return source.source_name
+    source_type = _display_text(source.source_type)
+    if "|" in source_type:
+        return _display_text(source_type.split("|", 1)[1])
+    return source_type
 
 
 def _format_report_date(value: str) -> str:
