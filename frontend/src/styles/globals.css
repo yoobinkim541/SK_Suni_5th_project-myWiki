@@ -608,6 +608,23 @@ svg text{font-family:inherit}
 .kpi > div:nth-child(3){animation-delay:.14s}
 .kpi > div:nth-child(4){animation-delay:.2s}
 
+/* 메인 대시보드 카드 진입 페이드인 — .kpi와 같은 패턴(짧고 순차적, 반복 없음).
+   최신 뉴스 카드·최근 산업 이슈 행 둘 다 목록이라 nth-child로 순서만 다르게 흩뿌린다.
+   개수가 유동적이라(더보기·필터) 6번째 이후는 공용 delay로 묶는다. */
+.news-grid .news-card{animation:fadeUp var(--dur-slow) var(--ease) both}
+.news-grid .news-card:nth-child(1){animation-delay:.02s}
+.news-grid .news-card:nth-child(2){animation-delay:.07s}
+.news-grid .news-card:nth-child(3){animation-delay:.12s}
+.news-grid .news-card:nth-child(4){animation-delay:.17s}
+.news-grid .news-card:nth-child(5){animation-delay:.22s}
+.news-grid .news-card:nth-child(n+6){animation-delay:.26s}
+
+.sec-issues .row{animation:fadeUp var(--dur-slow) var(--ease) both}
+.sec-issues .row:nth-child(1){animation-delay:.05s}
+.sec-issues .row:nth-child(2){animation-delay:.12s}
+.sec-issues .row:nth-child(3){animation-delay:.19s}
+.sec-issues .row:nth-child(n+4){animation-delay:.24s}
+
 @keyframes drawLine{to{stroke-dashoffset:0}}
 @keyframes fadeIn{to{opacity:1}}
 /* 스크롤로 화면에 들어오기 전까진 시작 상태(선 안 그려짐/영역·점 투명)로 멈춰 있는다 —
