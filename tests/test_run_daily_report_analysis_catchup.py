@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -173,9 +173,13 @@ def test_stops_at_explicit_deadline(base_mocks, monkeypatch):
         lambda *a, **k: pytest.fail("마감이 지났으면 호출되면 안 됨"),
     )
 
-    now = datetime(2026, 8, 9, 21, 30, tzinfo=timezone.utc)
-    deadline = datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc)  # 이미 지난 마감
-    result = run_daily_report_analysis_catchup(now=now, deadline=deadline, min_candidates=6)
+    deadline = datetime(2026, 8, 9, 21, 0, tzinfo=timezone.utc)  # 마감은 고정
+    result = run_daily_report_analysis_catchup(
+        now=datetime(2026, 8, 9, 20, 30, tzinfo=timezone.utc),  # now는 seed만 역할
+        deadline=deadline,
+        min_candidates=6,
+        clock=lambda: deadline + timedelta(minutes=1),  # 실제 로직에서 사용되는 시간은 마감을 넘김
+    )
 
     assert len(result) == 1
 
@@ -193,7 +197,11 @@ def test_default_deadline_is_kst_0715_of_report_date(base_mocks, monkeypatch):
 
     # UTC 2026-08-09 22:20 = KST 2026-08-10 07:20 — 그날 기본 마감(07:15 KST)을 5분 넘김
     now = datetime(2026, 8, 9, 22, 20, tzinfo=timezone.utc)
-    result = run_daily_report_analysis_catchup(now=now, min_candidates=6)
+    result = run_daily_report_analysis_catchup(
+        now=now,
+        min_candidates=6,
+        clock=lambda: now + timedelta(minutes=1),  # report_date seed 이후 실제 로직에선 시간이 지나감
+    )
 
     assert len(result) == 1
 
@@ -230,5 +238,5 @@ def test_falls_back_gracefully_when_ranking_load_fails(base_mocks, monkeypatch):
         min_candidates=6,
     )
 
-    # 두 번째 조회(라운드 처리 후 재확인)에서 실패 -> 첫 조회 때 알고 있던 2건으로 종료
+    # 두 번째(라운드 처리 후 재확인) 및 세 번째(최종 조회) 호출에서 실패 -> 첫 조회 때 알고 있던 2건으로 종료
     assert len(result) == 2

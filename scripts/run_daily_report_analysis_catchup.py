@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -95,8 +96,10 @@ def run_daily_report_analysis_catchup(
     now: datetime | None = None,
     deadline: datetime | None = None,
     min_candidates: int = DEFAULT_MIN_CANDIDATES,
+    clock: Callable[[], datetime] | None = None,
 ) -> list[str]:
     current_time = now or datetime.now(timezone.utc)
+    _clock = clock or (lambda: datetime.now(timezone.utc))
     workspace_id = get_workspace_id()
     report_date = current_time.astimezone(SEOUL_TZ).date()
     effective_deadline = deadline or _default_deadline(report_date)
@@ -111,7 +114,7 @@ def run_daily_report_analysis_catchup(
 
     previous_candidate_ids: list[str] | None = None
     last_known_selected: list = []
-    while (now or datetime.now(timezone.utc)) < effective_deadline:
+    while _clock() < effective_deadline:
         selected = _try_get_selected_results(workspace_id, report_date)
         if selected is None:
             break
