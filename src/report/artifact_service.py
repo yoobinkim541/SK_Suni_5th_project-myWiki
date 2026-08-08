@@ -615,7 +615,8 @@ def _build_pdf_category_summary(report: GeneratedReport) -> str:
         if not sections:
             lines.append(f"- \uc8fc\uc694 \ub3d9\ud5a5 \uc5c6\uc74c")
         else:
-            lines.extend(f"- {item.title}: {item.current_summary or '\uc815\ubcf4 \uc5c6\uc74c'}" for item in sections[:3])
+            no_summary = "\uc815\ubcf4 \uc5c6\uc74c"
+            lines.extend(f"- {item.title}: {item.current_summary or no_summary}" for item in sections[:3])
     return "\n".join(lines)
 
 

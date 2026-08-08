@@ -20,6 +20,7 @@ from typing import Callable, Optional
 
 from openai import OpenAI
 
+from ..pipeline_common import dart_lookup
 from ..wiki.citation_text import strip_orphaned_citation_markers
 from .wiki_tools import WikiTools
 
@@ -224,18 +225,21 @@ DOCUMENT_TOOLS = [
 WEB_SEARCH_ANSWER_SYSTEM_PROMPT = """\
 너는 myWiki의 답변 Agent다. 위키에도, 수집된 원문(뉴스+DART)에도 근거가 없어서
 실시간 웹 검색으로 마지막으로 근거를 찾는 단계다. 규칙:
-1. search_web으로 찾은 검색 결과(제목·요약·링크)에 실제로 있는 내용만 근거로
-   답변해라. 사전 지식이나 추측으로 빈틈을 채우지 마라. 검색 결과 요약이 짧아
-   구체적 내용이 부족하면, 그 부족한 부분은 답변에 넣지 마라.
-2. 답을 뒷받침할 근거를 찾았으면 submit_answer를 호출해라. 문장마다 어떤 근거
-   (citations)를 썼는지 반드시 포함하고, citations의 source_url은 search_web
-   결과에서 실제로 본 url 중에서만 골라라(지어내지 마라). document_version_id는
-   비워둬라 — DB 문서가 아니다. 답변 본문에 쓰는 근거 번호 [N]은 반드시 citations
-   배열의 N번째(1부터 시작) 항목과 정확히 대응해야 한다 — citations에 없는 번호는
-   절대 쓰지 마라.
-3. 근거를 찾지 못했거나 근거가 불충분하면 submit_answer 대신 반드시
+1. search_web으로 뉴스를 찾아라. 질문이 실적·지분·계약·투자 등 공시성 내용이면
+   search_recent_disclosures로 최근 DART 공시 목록도 같이 확인하고, 관련 있어
+   보이는 제목이 있으면 read_disclosure로 본문을 읽어라.
+2. 찾은 결과(뉴스 요약 또는 공시 본문)에 실제로 있는 내용만 근거로 답변해라.
+   사전 지식이나 추측으로 빈틈을 채우지 마라. 검색 결과 요약이 짧아 구체적인 내용이
+   부족하면, 그 부족한 부분은 답변에 넣지 마라.
+3. 답을 뒷받침할 근거를 찾았으면 submit_answer를 호출해라. 문장마다 어떤 근거
+   (citations)를 썼는지 반드시 포함하고, citations의 source_url은 실제로 본
+   결과(search_web의 url 또는 read_disclosure로 읽은 공시)에서만 골라라(지어내지
+   마라). document_version_id는 비워둬라 — DB 문서가 아니다. 답변 본문에 쓰는 근거
+   번호 [N]은 반드시 citations 배열의 N번째(1부터 시작) 항목과 정확히 대응해야 한다
+   — citations에 없는 번호는 절대 쓰지 마라.
+4. 근거를 찾지 못했거나 근거가 불충분하면 submit_answer 대신 반드시
    submit_no_answer를 호출해라.
-4. 톤은 직접적이고 전문적으로, 가벼운 대화체는 쓰지 마라.
+5. 톤은 직접적이고 전문적으로, 가벼운 대화체는 쓰지 마라.
 """
 
 WEB_SEARCH_TOOLS = [
@@ -253,6 +257,44 @@ WEB_SEARCH_TOOLS = [
                     "query": {"type": "string", "description": "질문에서 뽑은 검색 키워드"},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_recent_disclosures",
+            "description": (
+                "이 워크스페이스에 등록된 회사들의 최근 공시 목록(제목·접수번호·게시일)을 "
+                "찾는다. 질문이 실적·지분·계약·투자 등 공시성 내용일 때 시도해라. 자유 "
+                "검색어는 지원 안 됨 — 최근 공시 전체 목록만 준다, 관련 있어 보이는 제목을 "
+                "read_disclosure로 읽어서 확인해라."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "최근 며칠치 공시를 볼지(기본 14일)",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_disclosure",
+            "description": "search_recent_disclosures 결과에서 접수번호(rcept_no)로 공시 원문 전체를 읽는다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "rcept_no": {
+                        "type": "string",
+                        "description": "search_recent_disclosures 결과의 rcept_no",
+                    },
+                },
+                "required": ["rcept_no"],
             },
         },
     },
@@ -429,6 +471,9 @@ class WikiAgent:
         # 모델은 citations에 source_url만 채우고 title/published_at은 안 채우므로
         # (submit_answer 스키마에 그 두 필드가 없다), 저장할 값은 여기서 직접 채운다.
         hit_by_url: dict[str, tuple[str, Optional[str]]] = {}
+        # DART는 목록(search_recent_disclosures)에 본문이 없어 read_disclosure로 실제로
+        # 읽어야만 인용 가능하다 — 목록만 보고 안 읽은 공시는 hit_by_url에 안 들어간다.
+        disclosure_hits: dict[str, dart_lookup.DisclosureHit] = {}
 
         def handle_search_web(args: dict, seen: set[str]) -> object:
             hits = self.wiki_tools.search_web(args["query"])
@@ -438,12 +483,46 @@ class WikiAgent:
             hit_by_url.update({h.url: (h.title, h.published_at) for h in hits})
             return [h.__dict__ for h in hits]
 
+        def handle_search_recent_disclosures(args: dict, seen: set[str]) -> object:
+            try:
+                days = int(args.get("days") or dart_lookup.DEFAULT_LOOKBACK_DAYS)
+            except (TypeError, ValueError):
+                # 모델이 스키마를 어기고 숫자로 변환 안 되는 값(예: "not-a-number")을
+                # 보내면 timedelta(days=...)가 TypeError를 던져 웹 검색 단계 전체가
+                # 유실된다 — 이 파일의 다른 곳(JSON 파싱 실패, Citation(**c) TypeError)과
+                # 같은 원칙으로 기본값으로 방어한다.
+                days = dart_lookup.DEFAULT_LOOKBACK_DAYS
+            days = max(1, min(days, 90))
+            hits = self.wiki_tools.search_recent_disclosures(days)
+            disclosure_hits.update({h.rcept_no: h for h in hits})
+            return [h.__dict__ for h in hits]
+
+        def handle_read_disclosure(args: dict, seen: set[str]) -> object:
+            rcept_no = args["rcept_no"]
+            text = self.wiki_tools.read_disclosure(rcept_no)
+            if text is None:
+                return {"error": "공시를 찾을 수 없음"}
+            url = dart_lookup.viewer_url(rcept_no)
+            hit = disclosure_hits.get(rcept_no)
+            seen.add(url)
+            hit_by_url[url] = (hit.report_name if hit else None, hit.published_at if hit else None)
+            return {
+                "text": text,
+                "canonical_url": url,
+                "report_name": hit.report_name if hit else None,
+                "corp_name": hit.corp_name if hit else None,
+            }
+
         result = self._run_grounded_answer(
             question,
             history,
             system_prompt=WEB_SEARCH_ANSWER_SYSTEM_PROMPT,
             tools=WEB_SEARCH_TOOLS,
-            tool_handlers={"search_web": handle_search_web},
+            tool_handlers={
+                "search_web": handle_search_web,
+                "search_recent_disclosures": handle_search_recent_disclosures,
+                "read_disclosure": handle_read_disclosure,
+            },
         )
         # submit_answer 스키마를 다른 단계와 공유하므로 document_version_id/wiki_slug
         # 필드 자체를 막지 못한다 — 모델이 실수로(또는 검색 결과 URL을) document_version_id
