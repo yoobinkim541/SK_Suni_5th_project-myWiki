@@ -486,11 +486,9 @@ def test_save_agent_message_persists_web_search_citation_without_document_versio
 
 
 def test_update_agent_message_persists_web_search_citation_without_document_version_id(monkeypatch):
-    """update_agent_message(재생성 경로) — allow_web_search=True가 실제로 저장까지 이어지는
-    유일한 프로덕션 경로다(/regenerate만 allow_web_search를 전달하고, /regenerate는
-    update_agent_message를 호출한다. send_message는 항상 allow_web_search=False라
-    웹 citation이 save_agent_message에 도달할 일이 없다). save_agent_message와
-    대칭으로, document_version_id가 없는(웹 검색) citation도 여기서 저장돼야 한다."""
+    """update_agent_message(재생성 경로)가 저장하는 웹 검색 citation도 save_agent_message와
+    대칭으로 동작해야 한다 — document_version_id가 없는(웹 검색) citation도 여기서
+    저장돼야 한다."""
     client = FakeAgentMessageClient()
     monkeypatch.setattr(db, "get_supabase", lambda: client)
 
@@ -1512,6 +1510,29 @@ def test_send_message_private_session_first_message_also_retitles(make_client, m
     )
 
     assert res.status_code == 200
+
+
+def test_send_message_passes_allow_web_search_true_to_agent(make_client, monkeypatch, send_message_setup):
+    """첫 질문부터 위키·원문 근거가 없으면 버튼 클릭 없이 웹/DART 검색과 LLM 폴백까지
+    자동으로 이어가야 한다 — agent.answer()에 allow_web_search=True가 전달돼야 한다."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION)
+    monkeypatch.setattr(db, "list_chat_messages", lambda sid: [])
+
+    captured = {}
+
+    class CapturingFakeAgent(FakeAgent):
+        def answer(self, content, history=None, *, allow_web_search=False):
+            captured["allow_web_search"] = allow_web_search
+            return super().answer(content, history=history, allow_web_search=allow_web_search)
+
+    monkeypatch.setattr(main_module, "WikiAgent", CapturingFakeAgent)
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages", json={"content": "HBM4가 뭐야?"}
+    )
+
+    assert res.status_code == 200
+    assert captured["allow_web_search"] is True
     assert send_message_setup["titled"] == [(PRIVATE_SESSION["id"], "HBM4가 뭐야?")]
 
 
