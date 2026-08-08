@@ -54,16 +54,24 @@ function evidenceFoot(c) {
   return parts.join(' · ') || '출처 정보 확인 중';
 }
 
+// document_version_id가 없으면 DB 문서(위키/원문)가 아니라 실시간 웹 검색 근거다
+// (src/agent/core.py의 _web_search_answer가 source_url만 채우고 document_version_id는
+// 항상 None으로 강제한다). sources 테이블에 연결된 매체 정보가 없어 source_name도
+// 항상 null이라, "출처 확인 중"(문서인데 아직 못 채운 경우)과 헷갈리지 않게 구분한다.
 function toEvidence(citations = []) {
-  return citations.map((c, i) => ({
-    no: c.citation_order ?? i + 1,
-    title: c.document_title || `근거 문서 #${c.citation_order ?? i + 1}`,
-    sourceName: c.source_name ?? null,
-    url: c.source_url ?? null,
-    excerpt: c.quoted_text ?? '',
-    foot: evidenceFoot(c),
-    documentVersionId: c.document_version_id,
-  }));
+  return citations.map((c, i) => {
+    const isWeb = c.document_version_id == null;
+    return {
+      no: c.citation_order ?? i + 1,
+      title: c.document_title || `근거 문서 #${c.citation_order ?? i + 1}`,
+      sourceName: c.source_name ?? (isWeb ? '웹 검색' : null),
+      url: c.source_url ?? null,
+      excerpt: c.quoted_text ?? '',
+      foot: evidenceFoot(c),
+      documentVersionId: c.document_version_id,
+      isWeb,
+    };
+  });
 }
 
 // askAgent/regenerateMessage 직후 사이드바 갱신 — 새 답변의 근거를 기존 목록에 이어붙인다
@@ -140,12 +148,14 @@ function toViewMessage(msg, scope) {
     };
   }
 
-  // 근거 부족 응답
+  // 근거 부족 응답 — 위키·원문까지만 시도한 1턴 결과다(백엔드가 allow_web_search 없이
+  // 호출됐을 때의 기본 동작). "웹에서 찾아줘"를 누르면 regenerateMessage를
+  // allowWebSearch=true로 다시 호출해 실시간 웹 검색까지 이어가는 2턴을 시도한다.
   if (typeof msg.content === 'string' && msg.content.startsWith(NO_ANSWER_PREFIX)) {
     return {
       role: 'ai',
       none: parseNoAnswer(msg.content),
-      acts: ['수집 소스 추가', '관련 문서 찾아보기', '다시 생성', '삭제'],
+      acts: ['웹에서 찾아줘', '수집 소스 추가', '관련 문서 찾아보기', '다시 생성', '삭제'],
       _id: msg.id,
     };
   }
@@ -279,10 +289,12 @@ export async function askAgent(sessionId, content, scope) {
 /**
  * "다시 생성" — 같은 질문으로 답변을 새로 받아 이 메시지를 그 자리에서 교체합니다
  * (근거 부족 카드였어도 다시 시도할 수 있습니다).
+ * @param {boolean} [allowWebSearch] "웹에서 찾아줘" 버튼용 — true면 위키·원문 실패 후
+ *   실시간 웹 검색(그리고 그것도 실패하면 일반 지식 답변)까지 자동으로 이어간다.
  * @returns {Promise<{message: object, evidence: object[]}>} 교체된 답변(화면 shape)과 근거 원문
  */
-export async function regenerateMessage(sessionId, messageId, scope) {
-  const updated = await agentApi.regenerateChatMessage(sessionId, messageId);
+export async function regenerateMessage(sessionId, messageId, scope, allowWebSearch = false) {
+  const updated = await agentApi.regenerateChatMessage(sessionId, messageId, allowWebSearch);
   return { message: toViewMessage(updated, scope), evidence: toEvidence(updated.citations) };
 }
 

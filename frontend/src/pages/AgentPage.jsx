@@ -412,21 +412,32 @@ export default function AgentPage({ profile }) {
   // "다시 생성" — 백엔드가 같은 질문으로 Agent를 다시 불러 이 답변 행을 그 자리에서
   // 교체한다(질문 자체는 백엔드가 get_preceding_user_message로 찾으므로 프론트는
   // messageId만 넘기면 된다). 근거 부족("답을 찾지 못했습니다") 카드도 대상이 될 수 있다.
-  async function handleRegenerate(message) {
+  //
+  // allowWebSearch=true("웹에서 찾아줘" 버튼)면 위키·원문에 근거가 없을 때 실시간 웹
+  // 검색까지 시도하고, 그것도 실패하면 자동으로 출처 없는 일반 지식 답변까지 이어간다.
+  // 진행 상태는 일반 "다시 생성"과 다른 액션 키(websearch)로 따로 관리해서, 두 버튼이
+  // 같은 카드에 나란히 있어도 서로 로딩 상태를 안 밟는다.
+  async function handleRegenerate(message, allowWebSearch = false) {
     const messageId = message._id;
     if (!messageId || !current) return;
-    setMessageAction(messageId, 'regen', { status: 'loading' });
+    const actionKind = allowWebSearch ? 'websearch' : 'regen';
+    setMessageAction(messageId, actionKind, { status: 'loading' });
     try {
-      const { message: updated, evidence } = await regenerateMessage(current.id, messageId, activePane);
+      const { message: updated, evidence } = await regenerateMessage(
+        current.id, messageId, activePane, allowWebSearch
+      );
       updateConversation(activePane, current.id, (c) => ({
         ...c,
         messages: c.messages.map((m) => (m._id === messageId ? updated : m)),
         evidence: mergeEvidenceLists(c.evidence, evidence),
       }));
-      setMessageAction(messageId, 'regen', { status: 'done' });
-      setTimeout(() => setMessageAction(messageId, 'regen', { status: 'idle' }), 1500);
+      setMessageAction(messageId, actionKind, { status: 'done' });
+      setTimeout(() => setMessageAction(messageId, actionKind, { status: 'idle' }), 1500);
     } catch (e) {
-      setMessageAction(messageId, 'regen', { status: 'error', message: e.message || '다시 생성하지 못했습니다.' });
+      setMessageAction(messageId, actionKind, {
+        status: 'error',
+        message: e.message || (allowWebSearch ? '웹 검색에 실패했습니다.' : '다시 생성하지 못했습니다.'),
+      });
     }
   }
 
@@ -480,6 +491,7 @@ export default function AgentPage({ profile }) {
     if (label === '팀에 공유') handleOpenShareModal(message);
     if (label === '복사') handleCopy(message);
     if (label === '다시 생성') handleRegenerate(message);
+    if (label === '웹에서 찾아줘') handleRegenerate(message, true);
     if (label === '삭제') handleDeleteMessage(message);
     if (label === '관련 문서 찾아보기') handleSearchRelatedDocs(message);
   }
@@ -679,20 +691,24 @@ export default function AgentPage({ profile }) {
 
           {(current?.evidence ?? []).map((e) => {
             // e.sourceName이 null일 수 있습니다(문서에 매체 정보가 연결 안 된 경우).
+            // e.isWeb이면 DB 문서(위키/원문)가 아니라 실시간 웹 검색 근거다(agentApi.js
+            // toEvidence 참고) — 위키 저장 여부를 판단할 때 이 배지로 구분하시면 됩니다.
             const sourceName = e.sourceName || '출처 확인 중';
             const isDoc = sourceName.includes('공시') || sourceName.includes('IR');
+            const srcClass = e.isWeb ? ' web' : isDoc ? ' doc' : '';
+            const linkLabel = isDoc ? 'DART 원문 열기 ↗' : e.isWeb ? '웹 검색 결과 열기 ↗' : '원문 열기 ↗';
             return (
               <div className="ev" key={e.no}>
                 <div className="t">
                   <span className="no">{e.no}</span>
-                  <span className={`src${isDoc ? ' doc' : ''}`}>{sourceName}</span>
+                  <span className={`src${srcClass}`}>{sourceName}</span>
                 </div>
                 <h6>{e.title}</h6>
                 <div className="x">{e.excerpt}</div>
                 <div className="f">{e.foot}</div>
                 {e.url && (
                   <a className="lk" href={e.url} target="_blank" rel="noopener">
-                    {isDoc ? 'DART 원문 열기 ↗' : '원문 열기 ↗'}
+                    {linkLabel}
                   </a>
                 )}
               </div>

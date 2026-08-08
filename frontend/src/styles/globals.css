@@ -463,6 +463,7 @@ svg text{font-family:inherit}
 .ev .no{font-size:10px;font-weight:900;color:var(--green)}
 .ev .src{font-size:10.5px;font-weight:500;color:var(--muted)}
 .ev .src.doc{color:var(--green);font-weight:700}
+.ev .src.web{color:#347FA3;font-weight:700}
 .ev h6{font-size:12px;font-weight:700;line-height:1.45;margin-bottom:6px}
 .ev .x{font-size:11px;font-weight:300;color:var(--muted);line-height:1.6;
   padding-left:10px;border-left:1px solid var(--hair)}
