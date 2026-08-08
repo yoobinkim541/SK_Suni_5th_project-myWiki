@@ -625,6 +625,14 @@ svg text{font-family:inherit}
 .sec-issues .row:nth-child(3){animation-delay:.19s}
 .sec-issues .row:nth-child(n+4){animation-delay:.24s}
 
+/* 카테고리 현황 카드 — 2열 그리드라 위→아래보다 좌→우가 먼저 눈에 들어오므로
+   delay를 행 단위(2개씩 같은 값)로 묶어서 순서대로 채워지는 느낌을 준다. */
+.cat-card-grid .cd{animation:fadeUp var(--dur-slow) var(--ease) both}
+.cat-card-grid .cd:nth-child(1),.cat-card-grid .cd:nth-child(2){animation-delay:.02s}
+.cat-card-grid .cd:nth-child(3),.cat-card-grid .cd:nth-child(4){animation-delay:.1s}
+.cat-card-grid .cd:nth-child(5),.cat-card-grid .cd:nth-child(6){animation-delay:.18s}
+.cat-card-grid .cd:nth-child(n+7){animation-delay:.24s}
+
 @keyframes drawLine{to{stroke-dashoffset:0}}
 @keyframes fadeIn{to{opacity:1}}
 /* 스크롤로 화면에 들어오기 전까진 시작 상태(선 안 그려짐/영역·점 투명)로 멈춰 있는다 —
