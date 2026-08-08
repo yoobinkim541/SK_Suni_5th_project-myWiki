@@ -60,8 +60,8 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
   // 바뀌면(추가·삭제) 그 변경을 다시 반영해야 하니 아래 useEffect에서 초기화한다.
   const [ignoreInterests, setIgnoreInterests] = useState(false);
   // 카드 진입 애니메이션 — 스크롤로 실제로 보이는 시점에 한 번만 재생(useRevealOnScroll.js).
+  // ⚠ 최근 산업 이슈(.sec-issues)는 일부러 안 붙인다 — 정적으로 바로 다 보이는 쪽이 낫다는 피드백.
   const [newsGridRef, newsGridIn] = useRevealOnScroll();
-  const [issuesRef, issuesIn] = useRevealOnScroll();
 
   useEffect(() => {
     setIgnoreInterests(false);
@@ -286,7 +286,7 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
 
       {/* 6) 최근 산업 이슈 — "최신 뉴스"와 구분되게 톤 다른 패널에 담고, 관심사와 무관하게
           모든 사용자에게 동일한 항목을 보여준다(출처도 공시·IR 등 공식 문서 위주). */}
-      <section className={`sec sec-issues${issuesIn ? ' in' : ''}`} ref={issuesRef}>
+      <section className="sec sec-issues">
         <div className="sh">
           <span className="t">최근 산업 이슈</span>
           <span className="badge-official">공식 근거 기반</span>
