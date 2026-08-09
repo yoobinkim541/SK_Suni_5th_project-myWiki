@@ -37,10 +37,10 @@ generation_models.py
 
 generation.py
 └── _rewrite_issue_page_content(section, evidence_texts, *, llm_client=None)
-      -> tuple[str, list[str], list[str], list[str]]  # (current_summary, key_facts, implications, watch_points)
+      -> ReportSectionDraft  # section.model_copy(update={current_summary, key_facts, implications, watch_points})
 ```
 
-`_generate_issue_page`가 `_build_issue_page_markdown` 호출 직전에 `_rewrite_issue_page_content`를 호출하고, 그 결과로 만든 필드를 `_build_issue_page_markdown`에 넘긴다. `_build_issue_page_markdown`의 시그니처와 "## 출처" 조립 로직은 변경하지 않는다 — 재작성된 필드도 지금과 같은 템플릿 조립 함수를 그대로 통과한다.
+`_generate_issue_page`가 진입 시(페이지 매칭/생성 분기보다 먼저) `_rewrite_issue_page_content`를 호출하고, 그 결과로 만든 필드를 이후 `_build_issue_page_markdown`에 넘긴다. `_build_issue_page_markdown`의 시그니처와 "## 출처" 조립 로직은 변경하지 않는다 — 재작성된 필드도 지금과 같은 템플릿 조립 함수를 그대로 통과한다.
 
 `llm_client` 기본값은 `_generate_topic_page`와 동일하게 `classifier.get_openrouter_settings()` + `create_json_completion()`을 감싼 함수 — 새 모델 설정을 만들지 않고 기존 v4-flash 기본/v4-pro 폴백을 그대로 물려받는다. 테스트에서 fake client를 주입할 수 있도록 파라미터화한다(`WikiTopicLLMClient`와 같은 타입 형태 재사용).
 
@@ -74,7 +74,7 @@ JSON 출력 형식:
 
 ## 에러 처리
 
-`_rewrite_issue_page_content` 내부에서 LLM 호출/검증이 실패하면(`OpenRouterApiError`, `OpenRouterTimeoutError`, `InvalidJsonResponseError`, `ValidationError`, 빈 응답 등) 예외를 상위로 던지지 않고 원본 필드 그대로 반환한다. `generate_wiki_drafts_for_sections`가 이미 토픽/이슈 단계를 각각 try/except로 감싸 단계별 실패를 격리하고 있으므로(`generation.py` 기존 구조), 이슈 페이지 쪽 실패 격리는 한 겹 더 깊어질 뿐 기존 구조를 바꾸지 않는다. LLM 호출 성공 여부와 무관하게 이슈 페이지 생성은 지금처럼 항상 성공한다.
+`_rewrite_issue_page_content` 내부에서 LLM 호출/검증이 실패하면(`OpenRouterApiError`, `OpenRouterTimeoutError`, `InvalidJsonResponseError`, `ValidationError`, 빈/공백 응답, 그 외 예상 밖 예외 포함 — `except Exception`으로 폭넓게 흡수) 예외를 상위로 던지지 않고 원본 필드 그대로 반환한다. 이 함수는 항상 성공해야 하는 "best-effort 다듬기" 단계이므로 예외 타입을 좁게 제한하지 않는다(로그는 `logger.exception`으로 남겨 관측성을 유지). `generate_wiki_drafts_for_sections`가 이미 토픽/이슈 단계를 각각 try/except로 감싸 단계별 실패를 격리하고 있으므로(`generation.py` 기존 구조), 이슈 페이지 쪽 실패 격리는 한 겹 더 깊어질 뿐 기존 구조를 바꾸지 않는다. LLM 호출 성공 여부와 무관하게 이슈 페이지 생성은 지금처럼 항상 성공한다.
 
 ## 테스트
 

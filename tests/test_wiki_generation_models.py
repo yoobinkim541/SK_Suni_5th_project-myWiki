@@ -95,3 +95,10 @@ def test_issue_page_rewrite_result_accepts_valid_payload():
     )
     assert result.current_summary == "다듬어진 요약"
     assert result.key_facts == ["사실 1"]
+
+
+def test_issue_page_rewrite_result_rejects_whitespace_only_content():
+    with pytest.raises(ValidationError):
+        IssuePageRewriteResult(current_summary="   ", key_facts=["a"], implications=["b"], watch_points=["c"])
+    with pytest.raises(ValidationError):
+        IssuePageRewriteResult(current_summary="요약", key_facts=["  "], implications=["b"], watch_points=["c"])

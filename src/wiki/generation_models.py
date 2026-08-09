@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 TopicPageType = Literal[
     "industry", "company", "technology", "supply_chain", "policy", "market", "term"
@@ -65,3 +65,18 @@ class IssuePageRewriteResult(BaseModel):
     key_facts: list[str] = Field(min_length=1)
     implications: list[str] = Field(min_length=1)
     watch_points: list[str] = Field(min_length=1)
+
+    @field_validator("current_summary")
+    @classmethod
+    def _nonblank_summary(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("current_summary must not be blank")
+        return v.strip()
+
+    @field_validator("key_facts", "implications", "watch_points")
+    @classmethod
+    def _nonblank_items(cls, v: list[str]) -> list[str]:
+        items = [item.strip() for item in v if item.strip()]
+        if not items:
+            raise ValueError("list fields must contain at least one non-blank item")
+        return items

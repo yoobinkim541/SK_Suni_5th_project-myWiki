@@ -8,12 +8,6 @@ from pydantic import ValidationError
 from supabase import Client
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
-from ..analysis.exceptions import (
-    InvalidJsonResponseError,
-    MissingApiKeyError,
-    OpenRouterApiError,
-    OpenRouterTimeoutError,
-)
 from ..report.candidate_provider import get_recently_analyzed_candidates
 from ..report.composer import compose_report_sections
 from ..report.grouper import group_report_candidates
@@ -192,14 +186,8 @@ def _rewrite_issue_page_content(
             )
         payload = parse_json_response(response_text)
         result = IssuePageRewriteResult.model_validate(payload)
-    except (
-        MissingApiKeyError,
-        OpenRouterApiError,
-        OpenRouterTimeoutError,
-        InvalidJsonResponseError,
-        ValidationError,
-    ) as exc:
-        logger.warning(
+    except Exception as exc:  # noqa: BLE001 — 이 함수는 항상 성공해야 하므로 모든 실패를 폴백으로 흡수한다.
+        logger.exception(
             "issue_page_rewrite_llm_fallback",
             extra={"issue_key": section.issue_key, "error": str(exc)},
         )
@@ -224,6 +212,8 @@ def _generate_issue_page(
     supabase: Client | None = None,
     llm_client: WikiTopicLLMClient | None = None,
 ) -> tuple[str, str]:
+    rewritten_section = _rewrite_issue_page_content(section, evidence_texts, llm_client=llm_client)
+
     matched = find_matching_issue_page(
         workspace_id,
         category=section.category.value,
@@ -250,8 +240,6 @@ def _generate_issue_page(
         draft_title = section.title
         draft_page_type = "issue"
         draft_parent_page_id = parent_page_id
-
-    rewritten_section = _rewrite_issue_page_content(section, evidence_texts, llm_client=llm_client)
 
     draft = WikiDraftInput(
         workspace_id=workspace_id,

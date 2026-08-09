@@ -1029,7 +1029,39 @@ def test_generate_issue_page_sources_unaffected_by_rewrite(monkeypatch):
 
     assert "## 출처" in captured["markdown"]
     assert [s.document_version_id for s in captured["sources"]] == ["doc-1"]
+    expected_sources = generation._build_issue_page_sources(_section(), None)
+    assert [s.claim_text for s in captured["sources"]] == [s.claim_text for s in expected_sources]
     assert "document_version_id" not in captured["markdown"]
+
+
+def test_generate_issue_page_publishes_with_original_content_when_llm_client_raises(monkeypatch):
+    """design spec 요구: llm_client가 예상 밖 예외를 던져도 이슈 페이지는 정상 게시된다."""
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-1")
+    captured = {}
+
+    def fake_create_wiki_version(draft, **k):
+        captured["markdown"] = draft.markdown
+        return "version-1"
+
+    monkeypatch.setattr(generation, "create_wiki_version", fake_create_wiki_version)
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    published = {}
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: published.setdefault("called", True))
+
+    def exploding_llm_client(system_prompt, user_prompt, model):
+        raise RuntimeError("예상 밖 클라이언트 오류")
+
+    page_id, version_id = generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None, llm_client=exploding_llm_client,
+    )
+
+    assert page_id == "page-1"
+    assert version_id == "version-1"
+    assert published.get("called") is True
+    # 원본 문장이 그대로 남아 있어야 한다(폴백)
+    assert "HBM4 공급이 예상보다 더 타이트해지고 있다." in captured["markdown"]
 
 
 def test_generate_wiki_drafts_for_sections_threads_injected_clients(monkeypatch):
