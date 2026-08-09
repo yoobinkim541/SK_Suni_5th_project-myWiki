@@ -169,7 +169,9 @@ export default function SettingsPage({
   }
 
   return (
-    <section className="view on" id="v-settings"
+    // 설정 화면은 사용성이 우선이라 다른 페이지처럼 영역별로 순서대로 뜨는 stagger는
+    // 안 쓰고, 전체를 sr-1 하나로만 묶어서 빠르게 한 번에 페이드인시킨다(딜레이 0s).
+    <section className="view on sr-1" id="v-settings"
       data-pri="—"
       data-cap="계정·화면·데이터 설정. 다크 모드는 이 브라우저에 저장되고, 나머지는 파이프라인·에이전트 동작에 연결된다."
     >

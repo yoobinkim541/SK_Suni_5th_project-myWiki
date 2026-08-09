@@ -35,13 +35,13 @@ export default function CategoryDetail({
       data-pri="P1"
       data-cap="카테고리 현황. 6개 분류의 비중·증감·대표 키워드·대표 이슈를 한 화면에 모아 수집 키워드 조정의 근거로 쓴다."
     >
-      <div className="ph">
+      <div className="ph sr-1">
         <h2>카테고리 현황</h2>
         <span className="dt">{date}</span>
         <span className="st">{statusLabel}</span>
       </div>
 
-      <section className="sec">
+      <section className="sec sr-2">
         <div className="sh">
           <span className="t">오늘의 분류 요약</span>
           <span className="s">{s?.totalLabel}</span>
@@ -58,9 +58,16 @@ export default function CategoryDetail({
         </div>
       </section>
 
-      <CategoryKeywordChart categories={categories} />
+      {/* 카테고리 선택 탭 + 원그래프가 CategoryKeywordChart 안에 같이 있어서 컴포넌트
+          단위로 sr-3을 건다 — 원그래프 자체의 조각 진입/hover 애니메이션(KeywordPie.jsx)은
+          이 바깥 래퍼와 별개로 그대로 동작한다. */}
+      <div className="sr-3">
+        <CategoryKeywordChart categories={categories} />
+      </div>
 
-      <CategoryRow categories={categories} />
+      <div className="sr-4">
+        <CategoryRow categories={categories} />
+      </div>
     </section>
   );
 }
