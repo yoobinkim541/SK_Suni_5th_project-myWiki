@@ -269,9 +269,19 @@ export default function App() {
   // determineEntryStep은 매 세션 변화(최초 로드·OAuth 콜백 복귀·로그아웃)마다 다시 계산한다 —
   // "로그인 진행 중이었다" 같은 중간 상태를 따로 안 들고 있어도 항상 같은 결론에 도달한다.
   useEffect(() => {
-    function determineEntryStep(session) {
+    function determineEntryStep(session, event) {
       if (!session) {
         setEntryStep('landing');
+        return;
+      }
+      // 방금 실제로 로그인 동작이 일어난 시점(SIGNED_IN)이면 저장된 선호도와 무관하게
+      // 무조건 선호조사부터 보여준다 — "로그아웃 후 같은 계정으로 다시 로그인해도 선호조사가
+      // 안 뜬다"는 피드백 때문이다. userId 매칭만으로는 이 경우를 못 잡는다: 같은 계정이면
+      // 매칭돼서 그냥 대시보드로 넘어가 버린다. 반면 페이지 새로고침처럼 "이미 로그인돼
+      // 있던 세션을 이어받는" 경우(event가 SIGNED_IN이 아님)까지 매번 다시 물어보면 그건
+      // 그것대로 성가시므로, 그 경우엔 기존처럼 저장된 선호도로 판단한다.
+      if (event === 'SIGNED_IN') {
+        setEntryStep('survey');
         return;
       }
       // 저장된 선호도가 "지금 로그인한 이 계정" 것일 때만 완료된 걸로 인정한다(계정 기준,
@@ -283,13 +293,9 @@ export default function App() {
         setEntryStep(null);
         return;
       }
-      // 이 계정으로 이 브라우저에서 선호조사를 끝낸 기록이 없다 — 로그아웃 후 같은 계정으로
-      // 다시 들어왔든, 처음 보는 계정이든, 다른 계정 흔적만 남아있든 전부 선호조사부터
-      // 다시 보여준다. (예전엔 "기존 계정이면 그냥 대시보드로" 예외를 뒀는데, 그 예외 때문에
-      // 로그아웃 후 재로그인해도 선호조사가 다시 안 뜨는 문제가 있었다.)
       setEntryStep('survey');
     }
-    function applySession(session) {
+    function applySession(session, event) {
       // 구글 로그인 등 OAuth 콜백은 access_token/refresh_token을 URL 해시에 실어 돌아온다.
       // supabase-js(detectSessionInUrl)가 그 해시를 읽어 세션으로 파싱하긴 하지만, 파싱이
       // 끝난 이 시점까지도 주소창엔 토큰이 그대로 남아 있을 수 있다 — 여기서 확실히 지운다.
@@ -299,21 +305,23 @@ export default function App() {
       }
       setAuthed(!!session);
       setProfile(session?.user ?? null);
-      determineEntryStep(session);
+      determineEntryStep(session, event);
     }
     getCurrentSession()
       .then((session) => {
-        applySession(session);
+        // 페이지를 새로 열어서 기존 세션을 이어받는 경로다 — 로그인 "동작"이 방금 일어난 게
+        // 아니므로 SIGNED_IN으로 취급하지 않는다(그러면 매번 새로고침마다 선호조사가 뜬다).
+        applySession(session, 'INITIAL_SESSION');
       })
       .catch(() => {
         // 세션 조회 실패(네트워크 등) — 세션 없음으로 간주하고 랜딩부터 보여준다.
-        applySession(null);
+        applySession(null, 'INITIAL_SESSION');
       })
       .finally(() => {
         setAuthChecked(true);
       });
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
-      applySession(session);
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
+      applySession(session, event);
     });
     return () => subscription?.subscription?.unsubscribe();
   }, []);
