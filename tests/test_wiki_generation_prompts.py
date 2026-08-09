@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 from src.analysis.models import Category
 from src.report.models import ReportCandidate, ReportCitationDraft, ReportSectionDraft
 from src.wiki.generation_models import TopicPageCandidate, TopLevelTopicPage
-from src.wiki.generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_prompt
+from src.wiki.generation_prompts import (
+    ISSUE_PAGE_REWRITE_SYSTEM_PROMPT,
+    WIKI_TOPIC_SYSTEM_PROMPT,
+    build_issue_page_rewrite_user_prompt,
+    build_wiki_topic_user_prompt,
+)
 
 
 def _section(evidence_text: str | None = "HBM4 수요가 급증했다") -> ReportSectionDraft:
@@ -95,3 +100,30 @@ def test_user_prompt_surfaces_citation_attribution_for_llm():
         "중국 턱밑 추격에…삼성·SK하이닉스, HBM·차세대 기술 개발 '전력투구' - 뉴시스"
         " · Google RSS - SK하이닉스 · 2026.08.02" in prompt
     )
+
+
+def test_issue_rewrite_system_prompt_forbids_new_facts():
+    assert "새로운 사실" in ISSUE_PAGE_REWRITE_SYSTEM_PROMPT
+    assert "JSON" in ISSUE_PAGE_REWRITE_SYSTEM_PROMPT
+
+
+def test_issue_rewrite_user_prompt_includes_section_fields():
+    prompt = build_issue_page_rewrite_user_prompt(_section())
+    assert "HBM4 공급 부족 심화" in prompt
+    assert "HBM4 공급이 예상보다 더 타이트해지고 있다." in prompt
+    assert "주요 고객사 수요 증가" in prompt
+    assert "SK하이닉스 협상력 강화" in prompt
+    assert "경쟁사 증설 발표 여부" in prompt
+
+
+def test_issue_rewrite_user_prompt_uses_evidence_text_map():
+    prompt = build_issue_page_rewrite_user_prompt(
+        _section(evidence_text=None), {"doc-1": "HBM4 수요가 급증했다"},
+    )
+    assert "HBM4 수요가 급증했다" in prompt
+
+
+def test_issue_rewrite_user_prompt_handles_no_citations():
+    section = _section().model_copy(update={"news_citations": []})
+    prompt = build_issue_page_rewrite_user_prompt(section)
+    assert "없음" in prompt

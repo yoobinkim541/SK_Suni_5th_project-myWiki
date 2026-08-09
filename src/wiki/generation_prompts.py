@@ -128,3 +128,58 @@ def build_wiki_topic_user_prompt(
         lines.append("없음")
 
     return "\n".join(lines)
+
+
+ISSUE_PAGE_REWRITE_SYSTEM_PROMPT = """당신은 SK하이닉스 반도체 산업 위키를 관리하는 편집자입니다.
+
+아래 리포트 섹션의 네 항목(현재 상황/핵심 사실/시사점/주시할 지점)을 더 자연스러운 문장으로
+다듬어 위키 문서 본문에 쓸 수 있게 재작성하십시오.
+
+절대 규칙:
+- [현재 상황]/[핵심 사실]/[시사점]/[주시할 지점]과 [근거 문서 원문]에 없는 새로운 사실·수치·
+  기업명·날짜·인용을 추가하지 마십시오. 문장을 다듬을 뿐 내용을 지어내면 안 됩니다.
+- current_summary는 한 문단(3~5문장)으로 자연스럽게 이어 쓰십시오.
+- key_facts/implications/watch_points는 각각 원본과 비슷한 개수의 리스트로, 항목마다
+  한 문장 이내로 쓰십시오. 원본에 있던 사실을 누락하지 마십시오.
+- 출처·인용 표기는 이 작업과 무관합니다 — 절대 언급하거나 만들어내지 마십시오.
+- 마크다운 코드블록 없이 지정된 JSON 구조로만 응답하십시오.
+
+JSON 출력 형식:
+{
+  "current_summary": "다듬어진 현재 상황 문단",
+  "key_facts": ["핵심 사실 1", "핵심 사실 2"],
+  "implications": ["시사점 1", "시사점 2"],
+  "watch_points": ["주시할 지점 1", "주시할 지점 2"]
+}"""
+
+
+def build_issue_page_rewrite_user_prompt(
+    section: ReportSectionDraft,
+    evidence_texts: dict[str, str] | None = None,
+) -> str:
+    lines: list[str] = [
+        "[이슈 정보]",
+        f"제목: {section.title}",
+        f"카테고리: {section.category.value}",
+        "",
+        "[현재 상황]",
+        section.current_summary or "",
+        "",
+        "[핵심 사실]",
+    ]
+    lines.extend(f"- {fact}" for fact in section.key_facts)
+    lines.append("")
+    lines.append("[시사점]")
+    lines.extend(f"- {implication}" for implication in section.implications)
+    lines.append("")
+    lines.append("[주시할 지점]")
+    lines.extend(f"- {watch_point}" for watch_point in section.watch_points)
+    lines.append("")
+    lines.append("[근거 문서 원문] (문맥 이해용 — 여기 없는 사실을 새로 추가하지 마십시오)")
+    if section.news_citations:
+        for citation in section.news_citations:
+            evidence = (evidence_texts or {}).get(citation.document_version_id) or citation.evidence_text or ""
+            lines.append(f"- {evidence}")
+    else:
+        lines.append("없음")
+    return "\n".join(lines)

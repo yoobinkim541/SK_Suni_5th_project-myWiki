@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.wiki.generation_models import (
+    IssuePageRewriteResult,
     TopicPageCandidate,
     TopLevelTopicPage,
     WikiClaim,
@@ -76,3 +77,28 @@ def test_wiki_page_identity_accepts_issue_page_type():
         page_id="page-1", slug="issue-hbm4-supply", title="HBM4 공급 부족", page_type="issue", parent_page_id=None,
     )
     assert identity.page_type == "issue"
+
+
+def test_issue_page_rewrite_result_requires_nonempty_fields():
+    with pytest.raises(ValidationError):
+        IssuePageRewriteResult(current_summary="", key_facts=["a"], implications=["b"], watch_points=["c"])
+    with pytest.raises(ValidationError):
+        IssuePageRewriteResult(current_summary="요약", key_facts=[], implications=["b"], watch_points=["c"])
+
+
+def test_issue_page_rewrite_result_accepts_valid_payload():
+    result = IssuePageRewriteResult(
+        current_summary="다듬어진 요약",
+        key_facts=["사실 1"],
+        implications=["시사점 1"],
+        watch_points=["지점 1"],
+    )
+    assert result.current_summary == "다듬어진 요약"
+    assert result.key_facts == ["사실 1"]
+
+
+def test_issue_page_rewrite_result_rejects_whitespace_only_content():
+    with pytest.raises(ValidationError):
+        IssuePageRewriteResult(current_summary="   ", key_facts=["a"], implications=["b"], watch_points=["c"])
+    with pytest.raises(ValidationError):
+        IssuePageRewriteResult(current_summary="요약", key_facts=["  "], implications=["b"], watch_points=["c"])
