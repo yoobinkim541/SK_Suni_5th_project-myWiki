@@ -384,3 +384,9 @@ export async function listWorkspaceMembers() {
   if (USE_MOCK) return [];
   return agentApi.fetchWorkspaceMembers();
 }
+
+/** 내 워크스페이스 이름 — 설정 화면 "소속 팀" 표시용. */
+export async function getWorkspace() {
+  if (USE_MOCK) return null;
+  return agentApi.fetchWorkspace();
+}

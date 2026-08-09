@@ -48,7 +48,7 @@ import Footer from './components/common/Footer';
 import DeleteAccountModal from './components/common/DeleteAccountModal';
 import { signInWithProvider, signOut, getCurrentSession, deleteAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
-import { listWorkspaceMembers } from './services/agentApi';
+import { listWorkspaceMembers, getWorkspace } from './services/agentApi';
 import {
   enableWikiPushNotifications,
   disableWikiPushNotifications,
@@ -123,7 +123,6 @@ export default function App() {
   );
 
   // 소속 팀 — 워크스페이스 이름과 로그인 사용자의 역할.
-  // ⚠ 워크스페이스 이름을 주는 엔드포인트가 아직 없어 null로 둡니다(백엔드 요청 중).
   const [workspaceName, setWorkspaceName] = useState(null);
   const [myRole, setMyRole] = useState(null);
 
@@ -201,6 +200,19 @@ export default function App() {
         setMyRole(me?.role ?? null);
       })
       .catch(() => alive && setMyRole(null));
+    return () => { alive = false; };
+  }, [authed, profile?.id]);
+
+  // 로그인 후 워크스페이스 이름을 조회합니다(설정 페이지 "소속 팀" 표시용).
+  useEffect(() => {
+    if (!authed || !profile?.id) {
+      setWorkspaceName(null);
+      return;
+    }
+    let alive = true;
+    getWorkspace()
+      .then((ws) => alive && setWorkspaceName(ws?.name ?? null))
+      .catch(() => alive && setWorkspaceName(null));
     return () => { alive = false; };
   }, [authed, profile?.id]);
 
