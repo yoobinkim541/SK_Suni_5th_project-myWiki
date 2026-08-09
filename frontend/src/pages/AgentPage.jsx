@@ -475,6 +475,12 @@ export default function AgentPage({ profile }) {
       const { message: updated, evidence } = await regenerateMessage(
         sessionId, messageId, pane, allowWebSearch
       );
+      // "웹에서 찾아줘"로 재시도했는데 그래도 근거를 못 찾아 다시 LLM 답변으로 떨어진
+      // 경우를 표시한다 — 백엔드 응답엔 이 라운드에서 웹 검색을 실제로 시도했는지
+      // 구분하는 필드가 없어서(AgentResult 참고), 여기서 요청 파라미터로 판단한다.
+      if (allowWebSearch && updated.llmFallback) {
+        updated.webSearchExhausted = true;
+      }
       updateConversation(pane, sessionId, (c) => ({
         ...c,
         messages: c.messages.map((m) => (m._id === messageId ? updated : m)),
