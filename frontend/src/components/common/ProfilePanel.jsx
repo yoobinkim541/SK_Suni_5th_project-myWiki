@@ -28,6 +28,9 @@ export default function ProfilePanel({
   avatarUrl,
   workspaceName,
   myRole,
+  // 관심사 고르기(선호조사)에서 고른 직무. workspace 안에서의 권한을 뜻하는 위의
+  // myRole(오너/관리자/멤버)과 이름이 겹치기 쉬워서 jobTitle로 따로 받는다.
+  jobTitle,
   onLogin,
   onLogout,
   onDeleteAccount,
@@ -54,7 +57,10 @@ export default function ProfilePanel({
             </div>
           </div>
 
-          {/* 소속 팀 — 워크스페이스 이름과 역할이 내려올 때만 보여준다 */}
+          {/* 소속 팀 — 워크스페이스 이름과 역할이 내려올 때만 보여준다. 직무(jobTitle)는
+              관심사 고르기에서 고른 값이라 팀과는 출처가 다르지만, 한 사람을 소개하는
+              정보라는 점에서 같은 줄에 붙여 보여준다("3팀 · 반도체 공정기술"). 팀 정보가
+              아예 없는데 직무만 있는 경우엔 "직무"로 라벨을 바꿔서 따로 보여준다. */}
           {hasTeam && (
             <div className="pp-team">
               <span className="lb">소속 팀</span>
@@ -63,7 +69,14 @@ export default function ProfilePanel({
                 {myRole && (
                   <span className={`pt-role ${roleClass(myRole)}`}>{roleLabel(myRole)}</span>
                 )}
+                {jobTitle && <span className="pp-job"> · {jobTitle}</span>}
               </span>
+            </div>
+          )}
+          {!hasTeam && jobTitle && (
+            <div className="pp-team">
+              <span className="lb">직무</span>
+              <span className="tx">{jobTitle}</span>
             </div>
           )}
 
