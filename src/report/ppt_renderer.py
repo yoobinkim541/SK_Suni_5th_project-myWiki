@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Optional
+import re
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -30,17 +31,29 @@ BRAND_MIST = RGBColor(239, 244, 247)
 BRAND_TEXT = RGBColor(52, 61, 72)
 BRAND_MUTED = RGBColor(104, 117, 132)
 
+SAFE_LEFT = 0.55
+SAFE_RIGHT = 0.55
+SAFE_TOP = 0.45
+SAFE_BOTTOM = 0.45
+SAFE_WIDTH_4_3 = 10.0 - SAFE_LEFT - SAFE_RIGHT
+TITLE_MAX_HEIGHT = 0.8
+TITLE_DIVIDER_GAP = 0.2
+MAX_SUMMARY_CHARS = 280
+MAX_BULLET_CHARS = 45
+MAX_COLUMN_ITEMS = 3
+
 
 @dataclass(frozen=True)
 class PptLayout:
-    title_font_size: int = 28
-    slide_title_font_size: int = 22
-    body_font_size: int = 14
-    meta_font_size: int = 11
+    title_font_size: int = 34
+    slide_title_font_size: int = 28
+    card_title_font_size: int = 19
+    body_font_size: float = 16
+    meta_font_size: int = 12
     max_evidences_per_section: int = 6
     max_evidences_per_slide: int = 3
     max_agenda_items_per_slide: int = 5
-    slide_width_inches: float = 13.333
+    slide_width_inches: float = 10.0
     slide_height_inches: float = 7.5
 
 
@@ -50,6 +63,10 @@ class PptEvidenceLine:
     citation_order: int
     evidence_text: str
     relevance_score: Optional[float] = None
+    document_title: Optional[str] = None
+    source_name: Optional[str] = None
+    published_at: Optional[str] = None
+    source_url: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -203,6 +220,10 @@ def _normalize_document(document: PptReportDocument) -> PptReportDocument:
                         citation_order=evidence.citation_order,
                         evidence_text=normalize_pdf_text(evidence.evidence_text or ""),
                         relevance_score=evidence.relevance_score,
+                        document_title=normalize_pdf_text(evidence.document_title) if evidence.document_title else None,
+                        source_name=normalize_pdf_text(evidence.source_name) if evidence.source_name else None,
+                        published_at=normalize_pdf_text(evidence.published_at) if evidence.published_at else None,
+                        source_url=normalize_pdf_text(evidence.source_url) if evidence.source_url else None,
                     )
                     for evidence in section.evidences
                 ),
@@ -233,114 +254,57 @@ def _to_ppt_evidence(citation: ReportCitationDraft) -> PptEvidenceLine:
     return PptEvidenceLine(
         document_version_id=citation.document_version_id,
         citation_order=citation.citation_order,
-        evidence_text=(citation.evidence_text or "").strip() or "Citation reference",
+        evidence_text=(citation.evidence_text or citation.document_title or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c").strip(),
         relevance_score=citation.relevance_score,
+        document_title=citation.document_title,
+        source_name=citation.source_name,
+        published_at=citation.published_at,
+        source_url=citation.source_url,
     )
 
 
 def _add_cover_slide(presentation: Presentation, document: PptReportDocument) -> None:
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     _fill_background(slide, BRAND_NAVY)
-    _add_accent_band(slide, 0.0, 0.0, 0.45, 7.5, BRAND_ORANGE)
-    _add_accent_band(slide, 0.45, 0.0, 0.16, 7.5, BRAND_GOLD)
-    _add_accent_band(slide, 9.7, 5.8, 2.8, 0.22, BRAND_ORANGE)
-    _add_accent_band(slide, 9.95, 6.2, 2.3, 0.12, BRAND_GOLD)
-    _add_logo(slide, left=9.7, top=0.7, height=0.7)
+    _add_accent_band(slide, 0.0, 0.0, 0.34, document.layout.slide_height_inches, BRAND_ORANGE)
+    _add_accent_band(slide, 0.34, 0.0, 0.12, document.layout.slide_height_inches, BRAND_GOLD)
+    _add_logo(slide, left=SAFE_LEFT + 0.15, top=0.95, height=0.82)
 
     _add_text_block(
         slide,
-        left=1.0,
-        top=0.85,
-        width=3.4,
-        height=0.5,
-        text="Mywiki",
-        font_size=19,
-        bold=True,
-        color=BRAND_GOLD,
-        layout=document.layout,
-    )
-    _add_text_block(
-        slide,
-        left=1.0,
-        top=1.6,
-        width=6.8,
-        height=1.25,
-        text=document.title,
-        font_size=document.layout.title_font_size + 2,
-        bold=True,
-        color=RGBColor(255, 255, 255),
-        layout=document.layout,
-    )
-    _add_text_block(
-        slide,
-        left=1.0,
-        top=2.95,
-        width=7.2,
-        height=0.85,
-        text=document.subtitle,
-        font_size=17,
-        color=RGBColor(212, 221, 230),
-        layout=document.layout,
-    )
-    _add_text_block(
-        slide,
-        left=1.0,
-        top=3.85,
-        width=6.1,
+        left=SAFE_LEFT + 0.15,
+        top=2.35,
+        width=SAFE_WIDTH_4_3 - 1.0,
         height=0.7,
-        text="AI 산업 변화를 섹션별 흐름으로 정리한 데일리 브리핑",
-        font_size=18,
+        text=document.title,
+        font_size=document.layout.title_font_size,
+        bold=True,
         color=RGBColor(255, 255, 255),
         layout=document.layout,
     )
-
-    _add_info_card(
-        slide,
-        left=1.0,
-        top=5.2,
-        width=2.3,
-        height=1.2,
-        title="Report Date",
-        body=_format_header_date_korean(document.report_date),
-        fill=RGBColor(255, 255, 255),
-        title_color=BRAND_MUTED,
-        body_color=BRAND_NAVY,
-    )
-    _add_info_card(
-        slide,
-        left=3.55,
-        top=5.2,
-        width=1.8,
-        height=1.2,
-        title="Version",
-        body=f"v{document.version}",
-        fill=RGBColor(255, 247, 234),
-        title_color=BRAND_MUTED,
-        body_color=BRAND_ORANGE,
-    )
-    _add_info_card(
-        slide,
-        left=5.65,
-        top=5.2,
-        width=2.2,
-        height=1.2,
-        title="Format",
-        body="PPTX",
-        fill=RGBColor(248, 241, 221),
-        title_color=BRAND_MUTED,
-        body_color=BRAND_NAVY,
-    )
     _add_text_block(
         slide,
-        left=9.55,
-        top=6.5,
-        width=2.4,
-        height=0.3,
-        text="mySUNI inspired deck",
-        font_size=10,
+        left=SAFE_LEFT + 0.17,
+        top=3.15,
+        width=3.8,
+        height=0.34,
+        text="DAILY INDUSTRY BRIEF",
+        font_size=12,
+        bold=True,
         color=RGBColor(214, 222, 230),
         layout=document.layout,
-        align=PP_ALIGN.RIGHT,
+    )
+    _add_text_block(
+        slide,
+        left=SAFE_LEFT + 0.15,
+        top=4.05,
+        width=3.4,
+        height=0.45,
+        text=_format_header_date_dot(document.report_date),
+        font_size=22,
+        bold=True,
+        color=RGBColor(255, 255, 255),
+        layout=document.layout,
     )
 
 
@@ -348,13 +312,13 @@ def _add_agenda_slides(presentation: Presentation, document: PptReportDocument) 
     if not document.sections:
         slide = presentation.slides.add_slide(presentation.slide_layouts[6])
         _fill_background(slide, BRAND_MIST)
-        _add_slide_title(slide, "Agenda", document.layout)
+        content_top = _add_slide_title(slide, "Agenda", document.layout)
         _add_text_block(
             slide,
-            left=1.1,
-            top=1.8,
-            width=5.0,
-            height=1.0,
+            left=SAFE_LEFT,
+            top=content_top + 0.35,
+            width=SAFE_WIDTH_4_3,
+            height=0.8,
             text="\uc644\ub8cc\ub41c \uc139\uc158\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.",
             font_size=18,
             layout=document.layout,
@@ -362,27 +326,27 @@ def _add_agenda_slides(presentation: Presentation, document: PptReportDocument) 
         )
         return
 
-    agenda_lines = [f"{index}. {section.title}" for index, section in enumerate(document.sections, start=1)]
+    agenda_lines = [
+        f"{index}. {_short_title(section.title, max_chars=34)}"
+        for index, section in enumerate(document.sections, start=1)
+    ]
     for chunk_index, items in enumerate(_chunked_text(agenda_lines, document.layout.max_agenda_items_per_slide), start=1):
         slide = presentation.slides.add_slide(presentation.slide_layouts[6])
         _fill_background(slide, RGBColor(255, 252, 247))
-        _add_accent_band(slide, 0.0, 0.0, 0.28, 7.5, BRAND_ORANGE)
-        _add_logo(slide, left=10.6, top=0.55, height=0.42)
+        _add_accent_band(slide, 0.0, 0.0, 0.16, document.layout.slide_height_inches, BRAND_ORANGE)
+        _add_logo(slide, left=8.42, top=0.52, height=0.34)
         title = "Agenda" if chunk_index == 1 else f"Agenda {chunk_index}"
-        _add_slide_title(slide, title, document.layout)
-        _add_bullet_card(slide, left=0.95, top=1.45, width=5.35, height=4.95, title="Sections", items=items)
+        content_top = _add_slide_title(slide, title, document.layout)
+        _add_bullet_card(slide, left=SAFE_LEFT, top=content_top + 0.25, width=4.25, height=4.85, title="\uc774\uc288 \ubaa9\ub85d", items=items, layout=document.layout)
         _add_bullet_card(
             slide,
-            left=6.75,
-            top=1.45,
-            width=5.05,
-            height=4.95,
-            title="\ubcf4\uae30 \ud750\ub984",
-            items=[
-                "섹션 요약 슬라이드로 이슈를 파악합니다.",
-                "Highlights \uc2ac\ub77c\uc774\ub4dc\uc5d0\uc11c \ud575\uc2ec \uc0ac\uc2e4\uacfc \uc2dc\uc0ac\uc810\uc744 \ubd05\ub2c8\ub2e4.",
-                "\ub9c8\uc9c0\ub9c9 \ucd9c\ucc98 \ubaa9\ub85d\uc5d0\uc11c \uadfc\uac70\ub97c \ud55c\ubc88\uc5d0 \ud655\uc778\ud569\ub2c8\ub2e4.",
-            ],
+            left=5.2,
+            top=content_top + 0.25,
+            width=4.25,
+            height=4.85,
+            title="\uc77d\ub294 \uc21c\uc11c",
+            items=["\uc139\uc158 \uc694\uc57d\uc5d0\uc11c \uc774\uc288\ub97c \ud30c\uc545", "Highlights\uc5d0\uc11c \uc601\ud5a5 \ud655\uc778", "\ucd9c\ucc98 \ud45c\uc5d0\uc11c \uadfc\uac70 \ud655\uc778"],
+            layout=document.layout,
         )
 
 
@@ -394,24 +358,24 @@ def _add_section_overview_slide(
 ) -> None:
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     _fill_background(slide, RGBColor(255, 255, 255))
-    _add_accent_band(slide, 0.0, 0.0, 0.18, 7.5, BRAND_GOLD)
-    _add_logo(slide, left=10.7, top=0.58, height=0.38)
-    _add_slide_title(slide, f"{index}. {section.title}", document.layout)
-    _add_meta_chips(slide, section, document.layout)
-    _add_summary_panel(slide, section.current_summary or "No summary available.", document.layout)
+    _add_accent_band(slide, 0.0, 0.0, 0.12, document.layout.slide_height_inches, BRAND_GOLD)
+    _add_logo(slide, left=8.42, top=0.52, height=0.34)
+    content_top = _add_slide_title(slide, f"{index}. {_short_title(section.title)}", document.layout)
+    _add_meta_chips(slide, section, document.layout, top=content_top + 0.18)
+    _add_summary_panel(slide, section.current_summary or "\uc694\uc57d \uc815\ubcf4 \uc5c6\uc74c", document.layout, top=content_top + 0.78)
     _add_bullet_card(
         slide,
-        left=8.35,
-        top=1.95,
-        width=3.8,
-        height=4.5,
+        left=6.55,
+        top=content_top + 0.78,
+        width=2.9,
+        height=4.45,
         title="\ud575\uc2ec \uc2e0\ud638",
         items=[
-            f"\uc911\uc694\ub3c4: {section.importance_score}" if section.importance_score is not None else "\uc911\uc694\ub3c4: n/a",
-            f"\uc601\ud5a5: {section.impact_direction}" if section.impact_direction else "\uc601\ud5a5: n/a",
-            f"\uc2dc\uac04 \ubc94\uc704: {section.time_horizon}" if section.time_horizon else "\uc2dc\uac04 \ubc94\uc704: n/a",
-            f"\ucd9c\ucc98 \uac1c\uc218: {len(section.evidences)}",
+            f"\uc911\uc694\ub3c4 {section.importance_score}" if section.importance_score is not None else "\uc911\uc694\ub3c4 n/a",
+            f"\uc601\ud5a5 {section.impact_direction}" if section.impact_direction else "\uc601\ud5a5 n/a",
+            f"\uc2dc\uac04 {section.time_horizon}" if section.time_horizon else "\uc2dc\uac04 n/a",
         ],
+        layout=document.layout,
     )
 
 
@@ -423,53 +387,49 @@ def _add_section_highlight_slide(
 ) -> None:
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     _fill_background(slide, BRAND_MIST)
-    _add_slide_title(
-        slide,
-        f"{index}. {section.title} | Highlights",
-        document.layout,
-        title_height=1.05,
-        divider_top=1.45,
-    )
+    content_top = _add_slide_title(slide, f"{index}. {_short_title(section.title, max_chars=24)} | Highlights", document.layout)
 
     columns = [
-        ("\ud575\uc2ec \uc0ac\uc2e4", list(section.key_facts[:3])),
-        ("SK\ud558\uc774\ub2c9\uc2a4 \uc601\ud5a5", list(section.implications[:3])),
-        ("\ub2e4\uc74c \ud655\uc778 \uc0ac\ud56d", list(section.watch_points[:3]) or list(section.historical_context[:3])),
+        ("\ud575\uc2ec \uc0ac\uc2e4", _limit_bullets(section.key_facts)),
+        ("SK\ud558\uc774\ub2c9\uc2a4 \uc601\ud5a5", _limit_bullets(section.implications)),
+        ("\ub2e4\uc74c \ud655\uc778 \uc0ac\ud56d", _limit_bullets(section.watch_points or section.historical_context)),
     ]
-    positions = [(0.9, 1.7), (4.45, 1.7), (8.0, 1.7)]
+    positions = [(SAFE_LEFT, content_top + 0.35), (3.65, content_top + 0.35), (6.75, content_top + 0.35)]
     for (title, items), (left, top) in zip(columns, positions):
-        _add_bullet_card(slide, left=left, top=top, width=3.0, height=4.6, title=title, items=items or ["\ud45c\uc2dc\ud560 \ud56d\ubaa9\uc774 \uc5c6\uc2b5\ub2c8\ub2e4."])
+        _add_bullet_card(slide, left=left, top=top, width=2.7, height=4.85, title=title, items=items or ["\ud45c\uc2dc\ud560 \ud56d\ubaa9 \uc5c6\uc74c"], layout=document.layout)
 
 
 def _add_sources_slide(
     presentation: Presentation,
     document: PptReportDocument,
     chunk_index: int,
-    source_chunk: list[str],
+    source_chunk: list[PptEvidenceLine],
 ) -> None:
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     _fill_background(slide, RGBColor(255, 255, 255))
     title = "\uc804\uccb4 \ucd9c\ucc98 \ubaa9\ub85d" if chunk_index == 1 else f"\uc804\uccb4 \ucd9c\ucc98 \ubaa9\ub85d {chunk_index}"
-    _add_slide_title(slide, title, document.layout)
-    _add_bullet_card(slide, left=0.9, top=1.45, width=11.25, height=5.05, title="\ucd9c\ucc98", items=source_chunk)
+    content_top = _add_slide_title(slide, title, document.layout)
+    _add_source_table(slide, source_chunk, document.layout, top=content_top + 0.28)
 
 
-
-def _collect_source_items(sections: tuple[PptSection, ...]) -> list[str]:
-    items: list[str] = []
+def _collect_source_items(sections: tuple[PptSection, ...]) -> list[PptEvidenceLine]:
+    items: list[PptEvidenceLine] = []
+    seen: set[tuple[str, str, str, str]] = set()
     for section in sections:
         for evidence in section.evidences:
-            items.append(_format_source_line(section.title, evidence, len(items) + 1))
+            key = (evidence.source_name or "", evidence.document_title or evidence.evidence_text or "", evidence.published_at or "", evidence.source_url or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(evidence)
     return items
 
 
-
 def _format_source_line(section_title: str, evidence: PptEvidenceLine, source_index: int) -> str:
-    base = evidence.evidence_text or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c"
-    suffix = ""
-    if evidence.relevance_score is not None:
-        suffix = f" (\uad00\ub828\ub3c4: {evidence.relevance_score:.2f})"
-    return f"{source_index}. [{section_title}] {evidence.document_version_id} - {base}{suffix}"
+    title = _clean_internal_id(evidence.document_title or evidence.evidence_text or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c")
+    source = _clean_internal_id(evidence.source_name or "\ub274\uc2a4 \ucd9c\ucc98")
+    published = _format_source_date(evidence.published_at)
+    return f"{source_index}. {source} | {published} | {title}"
 
 
 def _resolve_logo_path() -> Path | None:
@@ -522,57 +482,67 @@ def _add_info_card(slide, *, left: float, top: float, width: float, height: floa
     r2.font.color.rgb = body_color or BRAND_NAVY
 
 
-def _add_meta_chips(slide, section: PptSection, layout: PptLayout) -> None:
-    items = [f"\uce74\ud14c\uace0\ub9ac  {section.category}", f"\uc0c1\ud0dc  {section.status}"]
+def _add_meta_chips(slide, section: PptSection, layout: PptLayout, *, top: float) -> None:
+    items = [f"\uce74\ud14c\uace0\ub9ac {section.category}"]
     if section.importance_score is not None:
-        items.append(f"\uc911\uc694\ub3c4  {section.importance_score}")
+        items.append(f"\uc911\uc694\ub3c4 {section.importance_score}")
     if section.impact_direction:
-        items.append(f"\uc601\ud5a5  {section.impact_direction}")
+        items.append(f"\uc601\ud5a5 {section.impact_direction}")
     if section.time_horizon:
-        items.append(f"\uc2dc\uac04  {section.time_horizon}")
-    left = 0.9
-    top = 1.25
+        items.append(f"\uc2dc\uac04 {section.time_horizon}")
+    left = SAFE_LEFT
     for item in items:
-        width = max(1.3, min(2.6, 0.12 * len(item) + 0.6))
-        shape = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(0.42))
+        width = max(1.05, min(2.0, 0.1 * len(item) + 0.45))
+        if left + width > 10.0 - SAFE_RIGHT:
+            break
+        shape = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(0.34))
         shape.fill.solid()
         shape.fill.fore_color.rgb = RGBColor(245, 247, 250)
         shape.line.color.rgb = RGBColor(221, 227, 233)
         frame = shape.text_frame
         frame.clear()
+        frame.margin_left = Inches(0.08)
+        frame.margin_right = Inches(0.08)
         p = frame.paragraphs[0]
+        p.space_after = Pt(0)
         r = p.add_run()
-        r.text = item
+        r.text = _limit_text(item, 24)
         r.font.name = DEFAULT_PPT_FONT_NAME
         r.font.size = Pt(layout.meta_font_size)
         r.font.color.rgb = BRAND_MUTED
-        left += width + 0.15
+        left += width + 0.12
 
 
-def _add_summary_panel(slide, summary_text: str, layout: PptLayout) -> None:
-    panel = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(0.9), Inches(1.95), Inches(7.0), Inches(4.5))
+def _add_summary_panel(slide, summary_text: str, layout: PptLayout, *, top: float) -> None:
+    panel = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(SAFE_LEFT), Inches(top), Inches(5.65), Inches(4.45))
     panel.fill.solid()
     panel.fill.fore_color.rgb = RGBColor(255, 255, 255)
     panel.line.color.rgb = RGBColor(225, 231, 236)
     frame = panel.text_frame
     frame.clear()
     frame.word_wrap = True
+    frame.margin_left = Inches(0.18)
+    frame.margin_right = Inches(0.18)
+    frame.margin_top = Inches(0.16)
     p1 = frame.paragraphs[0]
+    p1.space_after = Pt(6)
     r1 = p1.add_run()
     r1.text = "\ud604\uc7ac \uc694\uc57d"
     r1.font.name = DEFAULT_PPT_FONT_NAME
-    r1.font.size = Pt(15)
+    r1.font.size = Pt(layout.card_title_font_size)
     r1.font.bold = True
     r1.font.color.rgb = BRAND_ORANGE
     p2 = frame.add_paragraph()
+    p2.line_spacing = 1.18
+    p2.space_after = Pt(4)
     r2 = p2.add_run()
-    r2.text = summary_text
+    r2.text = _limit_text(summary_text, MAX_SUMMARY_CHARS)
     r2.font.name = DEFAULT_PPT_FONT_NAME
     r2.font.size = Pt(layout.body_font_size)
     r2.font.color.rgb = BRAND_TEXT
 
 
-def _add_bullet_card(slide, *, left: float, top: float, width: float, height: float, title: str, items: list[str]) -> None:
+def _add_bullet_card(slide, *, left: float, top: float, width: float, height: float, title: str, items: list[str], layout: PptLayout) -> None:
     shape = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(height))
     shape.fill.solid()
     shape.fill.fore_color.rgb = RGBColor(255, 255, 255)
@@ -580,21 +550,65 @@ def _add_bullet_card(slide, *, left: float, top: float, width: float, height: fl
     frame = shape.text_frame
     frame.clear()
     frame.word_wrap = True
+    frame.margin_left = Inches(0.14)
+    frame.margin_right = Inches(0.14)
+    frame.margin_top = Inches(0.14)
     p1 = frame.paragraphs[0]
+    p1.space_after = Pt(6)
     r1 = p1.add_run()
     r1.text = title
     r1.font.name = DEFAULT_PPT_FONT_NAME
-    r1.font.size = Pt(15)
+    r1.font.size = Pt(layout.card_title_font_size)
     r1.font.bold = True
     r1.font.color.rgb = BRAND_NAVY
-    for item in items:
+    for item in _limit_bullets(items):
         p = frame.add_paragraph()
         p.text = item
         p.bullet = True
         p.level = 0
+        p.line_spacing = 1.18
+        p.space_after = Pt(4)
         p.font.name = DEFAULT_PPT_FONT_NAME
-        p.font.size = Pt(13)
+        p.font.size = Pt(layout.body_font_size)
         p.font.color.rgb = BRAND_TEXT
+
+
+def _add_source_table(slide, sources: list[PptEvidenceLine], layout: PptLayout, *, top: float) -> None:
+    rows = len(sources) + 1
+    table_shape = slide.shapes.add_table(rows, 4, Inches(SAFE_LEFT), Inches(top), Inches(SAFE_WIDTH_4_3), Inches(0.42 * rows)).table
+    headers = ["No", "\ucd9c\ucc98", "\uc81c\ubaa9", "\ub0a0\uc9dc"]
+    widths = [0.48, 1.35, 5.55, 1.52]
+    for index, width in enumerate(widths):
+        table_shape.columns[index].width = Inches(width)
+    for col_index, header in enumerate(headers):
+        _set_table_cell(table_shape.cell(0, col_index), header, layout, bold=True, fill=BRAND_NAVY, color=RGBColor(255, 255, 255), align=PP_ALIGN.CENTER)
+    for row_index, source in enumerate(sources, start=1):
+        _set_table_cell(table_shape.cell(row_index, 0), str(row_index), layout, align=PP_ALIGN.CENTER)
+        _set_table_cell(table_shape.cell(row_index, 1), _limit_text(_clean_internal_id(source.source_name or "\ub274\uc2a4"), 20), layout)
+        title = _clean_internal_id(source.document_title or source.evidence_text or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c")
+        _set_table_cell(table_shape.cell(row_index, 2), _limit_text(title, 60), layout)
+        _set_table_cell(table_shape.cell(row_index, 3), _format_source_date(source.published_at), layout, align=PP_ALIGN.CENTER)
+
+
+def _set_table_cell(cell, text: str, layout: PptLayout, *, bold: bool = False, fill: RGBColor | None = None, color: RGBColor | None = None, align: PP_ALIGN = PP_ALIGN.LEFT) -> None:
+    if fill is not None:
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = fill
+    frame = cell.text_frame
+    frame.clear()
+    frame.margin_left = Inches(0.04)
+    frame.margin_right = Inches(0.04)
+    frame.margin_top = Inches(0.04)
+    p = frame.paragraphs[0]
+    p.alignment = align
+    p.line_spacing = 1.15
+    p.space_after = Pt(0)
+    r = p.add_run()
+    r.text = text
+    r.font.name = DEFAULT_PPT_FONT_NAME
+    r.font.size = Pt(layout.meta_font_size)
+    r.font.bold = bold
+    r.font.color.rgb = color or BRAND_TEXT
 
 
 def _fill_background(slide, color: RGBColor) -> None:
@@ -603,36 +617,33 @@ def _fill_background(slide, color: RGBColor) -> None:
     fill.fore_color.rgb = color
 
 
-def _add_slide_title(
-    slide,
-    text: str,
-    layout: PptLayout,
-    *,
-    title_height: float = 0.6,
-    divider_top: float = 1.0,
-) -> None:
+def _add_slide_title(slide, text: str, layout: PptLayout) -> float:
+    title_text = _short_title(text, max_chars=46)
+    title_height = 0.48 if len(title_text) <= 27 else TITLE_MAX_HEIGHT
     _add_text_block(
         slide,
-        left=0.7,
-        top=0.35,
-        width=11.9,
+        left=SAFE_LEFT,
+        top=SAFE_TOP,
+        width=SAFE_WIDTH_4_3,
         height=title_height,
-        text=text,
+        text=title_text,
         font_size=layout.slide_title_font_size,
         bold=True,
         color=BRAND_NAVY,
         layout=layout,
     )
+    divider_top = SAFE_TOP + title_height + TITLE_DIVIDER_GAP
     line = slide.shapes.add_shape(
         MSO_AUTO_SHAPE_TYPE.RECTANGLE,
-        Inches(0.7),
+        Inches(SAFE_LEFT),
         Inches(divider_top),
-        Inches(11.7),
+        Inches(SAFE_WIDTH_4_3),
         Inches(0.03),
     )
     line.fill.solid()
     line.fill.fore_color.rgb = BRAND_ORANGE
     line.line.fill.background()
+    return divider_top + 0.03
 
 
 def _add_text_block(
@@ -692,6 +703,47 @@ def _add_bullet_block(
         paragraph.font.color.rgb = color or BRAND_TEXT
 
 
+def _short_title(value: str, *, max_chars: int = 38) -> str:
+    cleaned = " ".join((value or "").split())
+    if len(cleaned) <= max_chars:
+        return cleaned
+    cut = cleaned[:max_chars].rstrip(" ,.;:\u00b7\u318d-/")
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return f"{cut}..."
+
+
+def _limit_text(value: str, max_chars: int) -> str:
+    cleaned = _clean_internal_id(" ".join((value or "").split()))
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return f"{cleaned[: max_chars - 3].rstrip()}..."
+
+
+def _limit_bullets(items: tuple[str, ...] | list[str]) -> list[str]:
+    return [_limit_text(item, MAX_BULLET_CHARS) for item in list(items)[:MAX_COLUMN_ITEMS] if str(item).strip()]
+
+
+def _clean_internal_id(value: str) -> str:
+    cleaned = re.sub(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "", value or "")
+    cleaned = re.sub(r"\b(?:daily|weekly|report|workspace|analysis|doc|ver|version|format|pptx)[:/_-][\w:./-]+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(?:completed|Citation reference|Format|Version|UUID)\b", "", cleaned, flags=re.IGNORECASE)
+    return " ".join(cleaned.replace("[]", "").split()).strip()
+
+
+def _format_source_date(value: str | None) -> str:
+    if not value:
+        return "-"
+    return value[:10].replace("-", ".")
+
+
+def _format_header_date_dot(value: str) -> str:
+    parsed = _parse_date_text(value)
+    if parsed is None:
+        return value.replace("-", ".")
+    return f"{parsed.year:04d}.{parsed.month:02d}.{parsed.day:02d}"
+
+
 def _format_header_date_korean(value: str) -> str:
     parsed = _parse_date_text(value)
     if parsed is None:
@@ -719,7 +771,7 @@ def _chunked_text(values: list[str], chunk_size: int) -> list[list[str]]:
 
 
 def _format_evidence_line(evidence: PptEvidenceLine) -> str:
-    base = evidence.evidence_text or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c"
+    base = _clean_internal_id(evidence.document_title or evidence.evidence_text or "\ucd9c\ucc98 \uc815\ubcf4 \uc5c6\uc74c")
     if evidence.relevance_score is None:
-        return f"[{evidence.document_version_id}] {base}"
-    return f"[{evidence.document_version_id}] {base} (\uad00\ub828\ub3c4: {evidence.relevance_score:.2f})"
+        return base
+    return f"{base} (\uad00\ub828\ub3c4: {evidence.relevance_score:.2f})"

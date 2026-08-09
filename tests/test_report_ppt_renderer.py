@@ -45,6 +45,8 @@ def make_section(
                 citation_order=1,
                 evidence_text=K_EVIDENCE,
                 relevance_score=0.92,
+                source_name="\ub274\uc2a4\uc6d0",
+                published_at="2026-08-03T09:00:00+09:00",
             )
         ],
         status=status,
@@ -56,7 +58,13 @@ def collect_ppt_text(pptx_bytes: bytes) -> str:
     texts: list[str] = []
     for slide in presentation.slides:
         for shape in slide.shapes:
-            if hasattr(shape, "text"):
+            if getattr(shape, "has_table", False):
+                for row in shape.table.rows:
+                    for cell in row.cells:
+                        cell_text = cell.text.strip()
+                        if cell_text:
+                            texts.append(cell_text)
+            elif hasattr(shape, "text"):
                 text = shape.text.strip()
                 if text:
                     texts.append(text)
@@ -103,8 +111,11 @@ def test_render_daily_report_ppt_returns_pptx_bytes() -> None:
 
     assert pptx_bytes[:2] == b"PK"
     assert K_TITLE in text
-    assert "Mywiki" in text
-    assert "2026\ub144 8\uc6d4 3\uc77c" in text
+    assert "Mywiki" not in text
+    assert "Version" not in text
+    assert "Format" not in text
+    assert "daily-trends-2026-08-03" not in text
+    assert "2026.08.03" in text
     assert K_SECTION in text
     assert K_BODY in text
     assert K_EVIDENCE in text
@@ -122,7 +133,7 @@ def test_render_daily_report_ppt_prefers_report_date_over_generated_at() -> None
     pptx_bytes = render_daily_report_ppt(report_document)
     text = collect_ppt_text(pptx_bytes)
 
-    assert "2026\ub144 8\uc6d4 3\uc77c" in text
+    assert "2026.08.03" in text
 
 
 def test_render_daily_report_ppt_creates_agenda_and_evidence_slides() -> None:
@@ -136,6 +147,8 @@ def test_render_daily_report_ppt_creates_agenda_and_evidence_slides() -> None:
     presentation = Presentation(BytesIO(render_daily_report_ppt(report_document)))
 
     assert len(presentation.slides) >= 4
+    assert presentation.slide_width == 9144000
+    assert presentation.slide_height == 6858000
 
 
 def test_render_daily_report_ppt_keeps_wrapped_highlight_title_above_divider() -> None:
@@ -148,18 +161,17 @@ def test_render_daily_report_ppt_keeps_wrapped_highlight_title_above_divider() -
     )
 
     presentation = Presentation(BytesIO(render_daily_report_ppt(report_document)))
-    expected_title = f"1. {long_title} | Highlights"
     highlight_slide = next(
         slide
         for slide in presentation.slides
-        if any(getattr(shape, "text", "").strip() == expected_title for shape in slide.shapes)
+        if any(getattr(shape, "text", "").startswith("1.") and "Highlights" in getattr(shape, "text", "") for shape in slide.shapes)
     )
     shapes = list(highlight_slide.shapes)
-    title_index = next(
-        index for index, shape in enumerate(shapes) if getattr(shape, "text", "").strip() == expected_title
-    )
+    title_index = next(index for index, shape in enumerate(shapes) if getattr(shape, "text", "").startswith("1.") and "Highlights" in getattr(shape, "text", ""))
     title_shape = shapes[title_index]
     divider_shape = shapes[title_index + 1]
 
-    assert title_shape.text == expected_title
+    assert long_title not in title_shape.text
+    assert title_shape.text.count("\n") <= 1
+    assert title_shape.height <= 731520
     assert title_shape.top + title_shape.height <= divider_shape.top
