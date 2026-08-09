@@ -24,13 +24,17 @@ export default function ProfilePanel({
   isOpen,
   authed,
   profile,
+  displayName,
+  avatarUrl,
   workspaceName,
   myRole,
   onLogin,
   onLogout,
   onDeleteAccount,
 }) {
-  const name = profile?.user_metadata?.full_name || profile?.user_metadata?.name || profile?.email || '';
+  // profiles.display_name(설정 화면에서 편집 가능)이 있으면 그걸 쓰고, 아직 안
+  // 내려왔으면(로딩 중 등) OAuth 로그인 이름으로 잠깐 대체한다.
+  const name = displayName || profile?.user_metadata?.full_name || profile?.user_metadata?.name || profile?.email || '';
   const email = profile?.email || '';
   const hasTeam = Boolean(workspaceName || myRole);
 
@@ -39,7 +43,11 @@ export default function ProfilePanel({
       {authed ? (
         <>
           <div className="pp-me">
-            <span className="pp-av">{name.charAt(0).toUpperCase()}</span>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="pp-av" style={{ objectFit: 'cover' }} />
+            ) : (
+              <span className="pp-av">{name.charAt(0).toUpperCase()}</span>
+            )}
             <div className="pp-info">
               <div className="pp-name">{name}</div>
               <div className="pp-mail">{email}</div>

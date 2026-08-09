@@ -29,6 +29,7 @@ export default function TopBar({
   profileOpen = false,
   authed = true,
   avatarInitial = '',
+  avatarUrl = null,
 }) {
   if (variant === 'mobile') {
     return (
@@ -83,7 +84,11 @@ export default function TopBar({
           onClick={onProfileClick}
         >
           {authed ? (
-            <span className="ini">{avatarInitial}</span>
+            avatarUrl ? (
+              <img src={avatarUrl} alt="" className="ini" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <span className="ini">{avatarInitial}</span>
+            )
           ) : (
             <svg className="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="8" r="3.4" />

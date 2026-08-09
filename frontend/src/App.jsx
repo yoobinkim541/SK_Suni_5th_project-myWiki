@@ -36,7 +36,7 @@
 //
 // 다크모드 :root 처리 / localStorage 저장은 기존 그대로입니다.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import useIsMobile from './hooks/useIsMobile';
 
 import TopBar from './components/common/TopBar';
@@ -49,6 +49,7 @@ import DeleteAccountModal from './components/common/DeleteAccountModal';
 import { signInWithProvider, signOut, getCurrentSession, deleteAccount } from './api/auth';
 import { supabase } from './api/supabaseClient';
 import { listWorkspaceMembers, getWorkspace } from './services/agentApi';
+import { fetchProfile, fetchAvatarBlob } from './api/profile';
 import {
   enableWikiPushNotifications,
   disableWikiPushNotifications,
@@ -125,6 +126,54 @@ export default function App() {
   // 소속 팀 — 워크스페이스 이름과 로그인 사용자의 역할.
   const [workspaceName, setWorkspaceName] = useState(null);
   const [myRole, setMyRole] = useState(null);
+
+  // 내 프로필(이름·사진) — 상단바/프로필 패널이 여기서 받아 쓴다. Settings의
+  // ProfileFields가 이름/사진을 바꾸면 onProfileChange로 loadMyProfile을 다시 불러서
+  // 상단바에도 바로 반영되게 한다(예전엔 Settings에서만 바뀌고 다른 화면은 그대로였다).
+  const [myProfile, setMyProfile] = useState(null);
+  const [myAvatarUrl, setMyAvatarUrl] = useState(null);
+  const myAvatarObjectUrlRef = useRef(null);
+
+  const loadMyProfile = useCallback(() => {
+    if (!authed || !profile?.id) {
+      setMyProfile(null);
+      if (myAvatarObjectUrlRef.current) {
+        URL.revokeObjectURL(myAvatarObjectUrlRef.current);
+        myAvatarObjectUrlRef.current = null;
+      }
+      setMyAvatarUrl(null);
+      return;
+    }
+    fetchProfile()
+      .then((p) => {
+        setMyProfile(p);
+        if (!p.has_avatar) {
+          if (myAvatarObjectUrlRef.current) {
+            URL.revokeObjectURL(myAvatarObjectUrlRef.current);
+            myAvatarObjectUrlRef.current = null;
+          }
+          setMyAvatarUrl(null);
+          return;
+        }
+        // has_avatar가 이전에도 true였을 수 있으므로(사진을 다른 사진으로 교체한 경우)
+        // 항상 새로 받아온다 — hasAvatar 값 자체의 변화에만 반응하는 useAvatarUrl
+        // 훅과 달리, 방금 올린 사진을 바로 반영해야 하는 "내 사진"은 매번 다시 조회한다.
+        return fetchAvatarBlob().then(({ blob }) => {
+          if (myAvatarObjectUrlRef.current) URL.revokeObjectURL(myAvatarObjectUrlRef.current);
+          const url = URL.createObjectURL(blob);
+          myAvatarObjectUrlRef.current = url;
+          setMyAvatarUrl(url);
+        });
+      })
+      .catch(() => {
+        setMyProfile(null);
+        setMyAvatarUrl(null);
+      });
+  }, [authed, profile?.id]);
+
+  useEffect(() => {
+    loadMyProfile();
+  }, [loadMyProfile]);
 
   // 회원 탈퇴 확인 모달
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -481,7 +530,8 @@ export default function App() {
         onProfileClick={handleProfileClick}
         profileOpen={profileOpen}
         authed={authed}
-        avatarInitial={(profile?.user_metadata?.full_name || profile?.email || '?').charAt(0).toUpperCase()}
+        avatarInitial={(myProfile?.display_name || profile?.user_metadata?.full_name || profile?.email || '?').charAt(0).toUpperCase()}
+        avatarUrl={myAvatarUrl}
         onLogoClick={handleLogoClick}
       />
 
@@ -527,6 +577,9 @@ export default function App() {
             notiWiki={notiWiki}
             onToggleNotiWiki={handleToggleNotiWiki}
             profile={profile}
+            myProfile={myProfile}
+            myAvatarUrl={myAvatarUrl}
+            onProfileChange={loadMyProfile}
             workspaceName={workspaceName}
             myRole={myRole}
             onLogout={handleLogout}
@@ -575,6 +628,8 @@ export default function App() {
         isOpen={profileOpen}
         authed={authed}
         profile={profile}
+        displayName={myProfile?.display_name}
+        avatarUrl={myAvatarUrl}
         workspaceName={workspaceName}
         myRole={myRole}
         onLogin={handleLogin}

@@ -77,6 +77,9 @@ export default function SettingsPage({
   notiWiki = true,
   onToggleNotiWiki = () => {},
   profile = null,
+  myProfile = null,
+  myAvatarUrl = null,
+  onProfileChange,
   workspaceName = null,
   myRole = null,
   onLogout,
@@ -180,7 +183,7 @@ export default function SettingsPage({
           로그인 이름을 그대로 보여주기만 하던 읽기전용에서 전환). 이메일은 로그인 계정
           자체라 여전히 읽기전용입니다. */}
       <SettingsGroup title="계정">
-        <ProfileFields />
+        <ProfileFields profile={myProfile} avatarUrl={myAvatarUrl} onProfileChange={onProfileChange} />
         <SettingsRow label="이메일" desc="로그인 계정 · 알림 수신 주소">
           <div className="vl">{accountEmail}</div>
         </SettingsRow>
