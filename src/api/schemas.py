@@ -463,3 +463,13 @@ class AssignTeamRequest(BaseModel):
 class WorkspaceOut(BaseModel):
     id: str
     name: str
+
+
+class ProfileOut(BaseModel):
+    id: str
+    display_name: Optional[str] = None
+    has_avatar: bool = False
+
+
+class UpdateProfileRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=50)

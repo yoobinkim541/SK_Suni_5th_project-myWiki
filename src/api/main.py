@@ -11,7 +11,7 @@ import logging
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 
 # db.py/auth.py는 SUPABASE_* 값을 요청 처리 중(첫 호출 시점)에 os.environ에서 직접 읽는다 —
@@ -38,6 +38,7 @@ from .schemas import (
     CreateSessionRequest,
     CreateTeamRequest,
     ParticipantOut,
+    ProfileOut,
     RenameSessionRequest,
     SaveToWikiResponse,
     SendMessageRequest,
@@ -46,6 +47,7 @@ from .schemas import (
     TeamMemberOut,
     TeamOut,
     UpdateMemberRoleRequest,
+    UpdateProfileRequest,
     WorkspaceMemberOut,
     WorkspaceOut,
 )
@@ -93,6 +95,17 @@ app.include_router(report_router)
 
 
 TITLE_MAX_LEN = 40
+
+# 확장자를 mimetypes 모듈(OS 레지스트리 의존, 플랫폼마다 다른 값을 줄 수 있음) 대신
+# 직접 매핑한다 — src/pipeline_common/storage.py의 EXT_BY_CONTENT_TYPE과 동일 이유.
+AVATAR_EXT_BY_CONTENT_TYPE = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+AVATAR_CONTENT_TYPE_BY_EXT = {v: k for k, v in AVATAR_EXT_BY_CONTENT_TYPE.items()}
+MAX_AVATAR_BYTES = 3 * 1024 * 1024
 
 
 def _truncate_title(text: str) -> str:
@@ -737,3 +750,71 @@ def remove_team_member(team_id: str, user_id: str, profile: dict = Depends(get_c
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="이 팀 소속이 아님")
 
     db.move_member_to_team(workspace_id, user_id, None)
+
+
+def _to_profile_out(profile: dict) -> ProfileOut:
+    return ProfileOut(
+        id=profile["id"],
+        display_name=profile.get("display_name"),
+        has_avatar=bool(profile.get("avatar_object_key")),
+    )
+
+
+@app.get("/profile", response_model=ProfileOut)
+def get_my_profile(profile: dict = Depends(get_current_user)):
+    return _to_profile_out(profile)
+
+
+@app.patch("/profile", response_model=ProfileOut)
+def update_my_profile(body: UpdateProfileRequest, profile: dict = Depends(get_current_user)):
+    updated = db.update_profile_display_name(profile["id"], body.display_name.strip())
+    return _to_profile_out(updated)
+
+
+@app.get("/profile/avatar")
+def get_my_avatar(profile: dict = Depends(get_current_user)):
+    """설정 화면이 apiFetchBlob으로 인증 헤더와 함께 호출한다(다른 버킷들과 동일하게
+    Storage URL을 프론트에 직접 넘기지 않음)."""
+    object_key = profile.get("avatar_object_key")
+    if not object_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필 사진이 없음")
+
+    data = db.download_avatar_object(object_key)
+    ext = object_key.rsplit(".", 1)[-1]
+    content_type = AVATAR_CONTENT_TYPE_BY_EXT.get(ext, "application/octet-stream")
+    return Response(content=data, media_type=content_type)
+
+
+@app.post("/profile/avatar", response_model=ProfileOut)
+async def upload_my_avatar(file: UploadFile = File(...), profile: dict = Depends(get_current_user)):
+    ext = AVATAR_EXT_BY_CONTENT_TYPE.get(file.content_type)
+    if ext is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="지원하지 않는 이미지 형식(jpeg/png/webp/gif만 가능)",
+        )
+
+    data = await file.read()
+    if len(data) > MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이미지 용량이 너무 큼(최대 3MB)")
+
+    object_key = f"{profile['id']}/avatar.{ext}"
+    old_object_key = profile.get("avatar_object_key")
+    if old_object_key and old_object_key != object_key:
+        try:
+            db.delete_avatar_object(old_object_key)
+        except Exception:
+            logger.exception("avatar_old_object_delete_failed", extra={"user_id": profile["id"]})
+
+    db.upload_avatar_object(object_key, data, file.content_type)
+    db.set_profile_avatar_object_key(profile["id"], object_key)
+
+    return ProfileOut(id=profile["id"], display_name=profile.get("display_name"), has_avatar=True)
+
+
+@app.delete("/profile/avatar", status_code=status.HTTP_204_NO_CONTENT)
+def delete_my_avatar(profile: dict = Depends(get_current_user)):
+    object_key = profile.get("avatar_object_key")
+    if object_key:
+        db.delete_avatar_object(object_key)
+        db.set_profile_avatar_object_key(profile["id"], None)
