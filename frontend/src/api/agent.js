@@ -159,3 +159,11 @@ export function removeSessionParticipant(sessionId, userId) {
 export function fetchWorkspaceMembers() {
   return apiFetch('/workspace/members');
 }
+
+/**
+ * 내 워크스페이스 정보(이름) — 설정 화면 "소속 팀" 표시용.
+ * @returns {Promise<{id: string, name: string}>}
+ */
+export function fetchWorkspace() {
+  return apiFetch('/workspace');
+}
