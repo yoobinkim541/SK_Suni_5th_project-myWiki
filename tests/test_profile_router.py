@@ -11,6 +11,8 @@ from src.api.auth import get_current_user
 from src.api.main import app
 
 USER_ID = "55555555-5555-5555-5555-555555555555"
+WORKSPACE_ID = "44444444-4444-4444-4444-444444444444"
+OTHER_USER_ID = "66666666-6666-6666-6666-666666666666"
 
 
 @pytest.fixture
@@ -161,3 +163,29 @@ def test_delete_avatar_noop_when_already_absent(client_as, monkeypatch):
 
     assert res.status_code == 204
     assert calls == []
+
+
+def test_get_member_avatar_streams_bytes(client_as, monkeypatch):
+    client = client_as({"id": USER_ID, "display_name": "이유빈", "avatar_object_key": None})
+    monkeypatch.setattr(db, "get_default_workspace_id", lambda uid: WORKSPACE_ID)
+    monkeypatch.setattr(
+        db, "get_member_avatar_object_key",
+        lambda wid, uid: f"{OTHER_USER_ID}/avatar.jpg" if uid == OTHER_USER_ID else None,
+    )
+    monkeypatch.setattr(db, "download_avatar_object", lambda key: b"other-member-bytes")
+
+    res = client.get(f"/workspace/members/{OTHER_USER_ID}/avatar")
+
+    assert res.status_code == 200
+    assert res.content == b"other-member-bytes"
+    assert res.headers["content-type"] == "image/jpeg"
+
+
+def test_get_member_avatar_404_when_no_avatar(client_as, monkeypatch):
+    client = client_as({"id": USER_ID, "display_name": "이유빈", "avatar_object_key": None})
+    monkeypatch.setattr(db, "get_default_workspace_id", lambda uid: WORKSPACE_ID)
+    monkeypatch.setattr(db, "get_member_avatar_object_key", lambda wid, uid: None)
+
+    res = client.get(f"/workspace/members/{OTHER_USER_ID}/avatar")
+
+    assert res.status_code == 404

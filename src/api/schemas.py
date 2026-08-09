@@ -52,6 +52,7 @@ class WorkspaceMemberOut(BaseModel):
     display_name: Optional[str] = None
     email: Optional[str] = None
     role: Optional[str] = None
+    has_avatar: bool = False
 
 
 class UpdateMemberRoleRequest(BaseModel):
@@ -442,6 +443,7 @@ class TeamMemberOut(BaseModel):
     user_id: str
     display_name: Optional[str] = None
     role: Optional[str] = None
+    has_avatar: bool = False
 
 
 class AdminUserOut(BaseModel):
@@ -450,6 +452,7 @@ class AdminUserOut(BaseModel):
     role: Optional[str] = None
     team_id: Optional[str] = None
     team_name: Optional[str] = None
+    has_avatar: bool = False
 
 
 class CreateTeamRequest(BaseModel):

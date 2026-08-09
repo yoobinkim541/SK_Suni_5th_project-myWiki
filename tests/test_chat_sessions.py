@@ -1736,8 +1736,8 @@ def test_list_workspace_members_endpoint(make_client, monkeypatch):
 
     assert res.status_code == 200
     assert res.json() == [
-        {"user_id": OWNER_ID, "display_name": "김주현", "email": None, "role": "owner"},
-        {"user_id": OTHER_USER_ID, "display_name": "박하늘", "email": None, "role": "editor"},
+        {"user_id": OWNER_ID, "display_name": "김주현", "email": None, "role": "owner", "has_avatar": False},
+        {"user_id": OTHER_USER_ID, "display_name": "박하늘", "email": None, "role": "editor", "has_avatar": False},
     ]
 
 
@@ -1754,7 +1754,10 @@ def test_list_workspace_members_endpoint_passes_email_through(make_client, monke
 
     assert res.status_code == 200
     assert res.json() == [
-        {"user_id": OWNER_ID, "display_name": "김유빈", "email": "yoobinkim541@gmail.com", "role": "editor"}
+        {
+            "user_id": OWNER_ID, "display_name": "김유빈", "email": "yoobinkim541@gmail.com",
+            "role": "editor", "has_avatar": False,
+        }
     ]
 
 

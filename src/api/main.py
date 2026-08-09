@@ -8,7 +8,7 @@ Agent·API 담당 FastAPI 서버.
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile, status
@@ -535,6 +535,7 @@ def list_members(profile: dict = Depends(get_current_user)):
     return [
         WorkspaceMemberOut(
             user_id=r["user_id"], display_name=r.get("display_name"), email=r.get("email"), role=r.get("role"),
+            has_avatar=r.get("has_avatar", False),
         )
         for r in rows
     ]
@@ -570,6 +571,7 @@ def update_member_role(
     return WorkspaceMemberOut(
         user_id=updated["user_id"], display_name=updated.get("display_name"),
         email=updated.get("email"), role=updated.get("role"),
+        has_avatar=updated.get("has_avatar", False),
     )
 
 
@@ -675,7 +677,10 @@ def list_team_members(team_id: str, profile: dict = Depends(get_current_user)):
     _require_workspace(profile)
     rows = db.list_team_members(team_id)
     return [
-        TeamMemberOut(user_id=r["user_id"], display_name=r.get("display_name"), role=r.get("role"))
+        TeamMemberOut(
+            user_id=r["user_id"], display_name=r.get("display_name"), role=r.get("role"),
+            has_avatar=r.get("has_avatar", False),
+        )
         for r in rows
     ]
 
@@ -690,6 +695,7 @@ def list_all_users(profile: dict = Depends(get_current_user)):
         AdminUserOut(
             user_id=r["user_id"], display_name=r.get("display_name"), role=r.get("role"),
             team_id=r.get("team_id"), team_name=r.get("team_name"),
+            has_avatar=r.get("has_avatar", False),
         )
         for r in rows
     ]
@@ -771,11 +777,7 @@ def update_my_profile(body: UpdateProfileRequest, profile: dict = Depends(get_cu
     return _to_profile_out(updated)
 
 
-@app.get("/profile/avatar")
-def get_my_avatar(profile: dict = Depends(get_current_user)):
-    """설정 화면이 apiFetchBlob으로 인증 헤더와 함께 호출한다(다른 버킷들과 동일하게
-    Storage URL을 프론트에 직접 넘기지 않음)."""
-    object_key = profile.get("avatar_object_key")
+def _avatar_response(object_key: Optional[str]) -> Response:
     if not object_key:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필 사진이 없음")
 
@@ -783,6 +785,23 @@ def get_my_avatar(profile: dict = Depends(get_current_user)):
     ext = object_key.rsplit(".", 1)[-1]
     content_type = AVATAR_CONTENT_TYPE_BY_EXT.get(ext, "application/octet-stream")
     return Response(content=data, media_type=content_type)
+
+
+@app.get("/profile/avatar")
+def get_my_avatar(profile: dict = Depends(get_current_user)):
+    """설정 화면이 apiFetchBlob으로 인증 헤더와 함께 호출한다(다른 버킷들과 동일하게
+    Storage URL을 프론트에 직접 넘기지 않음)."""
+    return _avatar_response(profile.get("avatar_object_key"))
+
+
+@app.get("/workspace/members/{user_id}/avatar")
+def get_member_avatar(user_id: str, profile: dict = Depends(get_current_user)):
+    """상단바·팀 로스터가 다른 워크스페이스 멤버의 프로필 사진을 보여줄 때 쓴다.
+    GET /profile/avatar와 달리 대상이 호출자 본인이 아니어도 되지만, 같은
+    워크스페이스 소속이어야 한다(db.get_member_avatar_object_key가 확인)."""
+    workspace_id = _require_workspace(profile)
+    object_key = db.get_member_avatar_object_key(workspace_id, user_id)
+    return _avatar_response(object_key)
 
 
 @app.post("/profile/avatar", response_model=ProfileOut)
