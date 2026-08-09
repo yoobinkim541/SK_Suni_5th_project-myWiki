@@ -300,7 +300,7 @@ async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = f
 }
 
 export async function fetchReportSummary(date) {
-  const view = await buildReportView(date, { generateOnMissing: true });
+  const view = await buildReportView(date, { generateOnMissing: false });
   return view.summary;
 }
 
@@ -318,7 +318,7 @@ export async function fetchReportArchive(_date, limit = HISTORY_ARCHIVE_LIMIT) {
 }
 
 export async function fetchTodayReport(date) {
-  const view = await buildReportView(date, { generateOnMissing: true });
+  const view = await buildReportView(date, { generateOnMissing: false });
   return view.today;
 }
 
