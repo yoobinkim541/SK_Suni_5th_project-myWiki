@@ -22,6 +22,7 @@
 // VITE_USE_MOCK=true면 목업, false면 실제 백엔드(api/wiki.js)를 호출합니다.
 import Spinner from '../components/common/Spinner';
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { WIKI_KEYWORD_LINKS } from '../data/mockWiki';
 import { getKeywordCategory } from '../data/wikiKeywords';
 import {
@@ -37,7 +38,8 @@ import WikiKeywordModal from '../components/wiki/WikiKeywordModal';
 // 렌더마다 새 배열이 생기지 않게 컴포넌트 밖에서 한 번만 계산한다.
 const KEYWORD_LINK_WORDS = getKeywordLinkWords();
 
-export default function WikiPage({ docId }) {
+export default function WikiPage() {
+  const { docId } = useParams();
   const [tree, setTree] = useState(null);
   const [current, setCurrent] = useState(null);
   const [doc, setDoc] = useState(null);
