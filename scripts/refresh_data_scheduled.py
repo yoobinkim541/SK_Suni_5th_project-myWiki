@@ -20,8 +20,11 @@ from src.settings.service import get_workspace_settings, mark_data_refreshed
 GRACE_MINUTES = 15
 
 KST = timezone(timedelta(hours=9))
-NIGHTLY_ANALYSIS_WINDOW_KST = (time(0, 0), time(6, 0))
-"""scripts/run_nightly_analysis.py owns analysis from 00:00 to 06:00 KST."""
+NIGHTLY_ANALYSIS_WINDOW_KST = (time(0, 0), time(7, 15))
+"""scripts/run_nightly_analysis.py(00:00 KST 시작)와 daily-report-analysis-catchup.yml
+(06:00 KST 시작, 내부 마감 07:15 KST)이 이 구간 동안 분석을 전담한다. 예전에는 06:00에
+끝났는데, catchup이 07:00 KST에서 06:00 KST로 앞당겨지면서(2026-08-09) 그 사이(06:00~
+07:15)에 이 스크립트가 같은 문서를 동시에 분석해 LLM 호출을 낭비할 위험이 생겨 넓혔다."""
 
 
 def is_within_nightly_analysis_window(now_utc: datetime) -> bool:
@@ -70,7 +73,7 @@ def run_scheduled_refresh(*, now: datetime | None = None) -> bool:
     log(f"preprocess complete: {preprocess_summary}")
 
     if is_within_nightly_analysis_window(current_time):
-        log("analysis skipped during nightly analysis window (00:00-06:00 KST)")
+        log("analysis skipped during nightly analysis window (00:00-07:15 KST)")
     else:
         analysis_limit = get_adaptive_analysis_limit(workspace_id)
         log(f"analysis pipeline started (limit={analysis_limit})")
