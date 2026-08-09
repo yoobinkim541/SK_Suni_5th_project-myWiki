@@ -1,5 +1,10 @@
-// 카테고리 카드 클릭 시 뜨는 "관련 뉴스" 모달
+// 카테고리 카드 클릭 시 뜨는 "주요 키워드 + 관련 뉴스" 모달
 // 시안 HTML의 .mw-modal/.mw-scrim(리포트 상세 모달과 같은 틀)을 그대로 재사용합니다.
+//
+// ⚠ 키워드 태그(category.tags)는 원래 CategoryCard에 항상 노출돼 있었는데, 맨토님 피드백
+//   "카테고리를 먼저 보여주고 눌렀을 때 주요 키워드와 관련 기사가 펼쳐지도록"에 맞춰
+//   카드에서는 빼고 여기(클릭 후 열리는 모달)로 옮겼습니다. category 객체는 CategoryRow.jsx가
+//   선택한 카드 데이터를 그대로 넘겨주므로 category.tags에 이미 들어 있습니다 — 별도 조회 없음.
 //
 // ⚠ 수정한 부분: 기사 목록을 담는 div에 id="catNewsRows"를 붙였습니다.
 //   시안 CSS가 `#catNewsRows{max-height:...; overflow-y:auto}`로 목록만 따로 스크롤되게
@@ -51,6 +56,13 @@ export default function CategoryNewsModal({ category, newsItems = [], onClose })
           <button className="mw-x" onClick={onClose} aria-label="닫기">✕</button>
         </div>
         <div className="mw-body">
+          {category.tags && category.tags.length > 0 && (
+            <>
+              <div className="mw-lb">주요 키워드</div>
+              <div className="tags cat-modal-tags"><span className="tag">{category.tags.join(' · ')}</span></div>
+            </>
+          )}
+
           <div className="mw-lb">관련 뉴스</div>
           <div id="catNewsRows">
             {newsItems.length === 0 ? (
