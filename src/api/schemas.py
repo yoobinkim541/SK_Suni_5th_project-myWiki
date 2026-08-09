@@ -458,3 +458,8 @@ class CreateTeamRequest(BaseModel):
 
 class AssignTeamRequest(BaseModel):
     team_id: Optional[str] = None
+
+
+class WorkspaceOut(BaseModel):
+    id: str
+    name: str
