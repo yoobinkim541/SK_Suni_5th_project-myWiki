@@ -44,6 +44,13 @@ MAX_TOOL_ROUNDS_SEARCH = 4  # 원문/웹검색+DART 단계 전용 — 검색 후
 # 위키에 없는 질문 하나가 최악의 경우 최대 30라운드(10+10+10)를 순차 호출해 응답이
 # 지연되고 매 요청마다 DART·네이버 API까지 자동으로 붙어 비용이 과도해진다.
 
+# 실측 버그(2026-08-09): 두 경로가 max_tokens=1500 하나를 공유해서, 5개 섹션짜리
+# 종합 답변이 "실적은 AI 메"처럼 문장 중간에 잘렸다 — finish_reason을 안 봐서 정상
+# 완료로 오인하고 그대로 저장·전송됐다. 경로별로 분리해 독립적으로 조정 가능하게 한다.
+LLM_FALLBACK_MAX_TOKENS = 2200  # _llm_fallback_answer — 도구 호출 없이 answer 텍스트만.
+GROUNDED_ANSWER_MAX_TOKENS = 2200  # 그라운딩 라운드 — submit_answer의 citations JSON도
+# 같은 응답 안에 담아야 해서 answer 텍스트만 있는 폴백 경로와 필요량이 비슷하다.
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +89,11 @@ SYSTEM_PROMPT = """\
 LLM_FALLBACK_SYSTEM_PROMPT = """\
 너는 반도체/AI 산업 일반 지식으로 간결하게 답하는 보조 도우미다. 위키 근거 없이
 네 일반 지식으로만 답하고, 확실하지 않으면 그렇다고 말해라.
+
+질문이 여러 주제를 한 번에 묻더라도(예: 동향+실적+공시+주가를 한꺼번에 요청)
+장황하게 전부 나열하지 말고, 각 항목을 핵심 한두 문장으로만 간결하게 요약해라.
+답변이 길어질수록 문장 중간에 잘릴 위험이 커진다 — 분량을 스스로 조절해서
+반드시 완결된 문장으로 끝내라.
 
 이 답변에는 실제 출처(citations)가 전혀 붙지 않는다 — 답변 본문에 [1], [2] 같은
 대괄호 각주 표기를 절대 쓰지 마라. 위키 근거로 답한 것처럼 보이면 사용자가
@@ -464,7 +476,8 @@ class WikiAgent:
         messages.append({"role": "user", "content": question})
         try:
             response = self._call_model(messages, use_tools=False)
-            text = (response.choices[0].message.content or "").strip()
+            choice = response.choices[0]
+            text = (choice.message.content or "").strip()
         except Exception:  # noqa: BLE001 - 폴백은 실패해도 원래 no_answer 결과로 조용히 넘어간다
             return None
         if not text:
@@ -473,6 +486,12 @@ class WikiAgent:
         # 수 있다 — citations가 항상 빈 배열이라 citation_count=0을 넘기면 모든 [N]이
         # 범위 밖으로 걸러진다(submit_answer/submit_no_answer 경로와 같은 안전장치).
         text = strip_orphaned_citation_markers(text, citation_count=0)
+        if choice.finish_reason == "length":
+            # LLM_FALLBACK_MAX_TOKENS를 늘리고 프롬프트로 간결하게 답하라고 지시해도,
+            # 모델이 그래도 그 안에 못 끝낼 수 있다 — 잘린 문장을 정상 완료처럼 그대로
+            # 보여주면 사용자가 못 알아챈다(실측 2026-08-09). 로그로 남기고 안내를 붙인다.
+            logger.warning("llm_fallback_answer_truncated", extra={"model": MODEL_NAME})
+            text = f"{text}\n\n(응답이 길어 일부 내용이 생략됐습니다.)"
         return AgentResult(
             has_answer=True, answer=text, citations=[], is_llm_fallback=True, model_name=MODEL_NAME,
         )
@@ -679,6 +698,13 @@ class WikiAgent:
             choice = response.choices[0]
             message = choice.message
 
+            if choice.finish_reason == "length":
+                # submit_answer의 citations JSON이 GROUNDED_ANSWER_MAX_TOKENS 안에 못 끝나면
+                # tool_call.function.arguments가 잘린 채로 온다 — 아래 json.loads가
+                # JSONDecodeError로 잡아서 이 라운드만 실패로 처리하고 다음 라운드에서
+                # 모델이 다시 시도하게 두지만(원인 파악 불가), 여기서 미리 로그를 남겨야
+                # "모델이 지어낸 근거"와 "그냥 길이 초과로 잘림"을 구분할 수 있다.
+                logger.warning("grounded_answer_response_truncated", extra={"step": "tool_call_round"})
             if choice.finish_reason != "tool_calls" or not message.tool_calls:
                 # 모델이 도구 없이 텍스트로만 끝냈다면, 규칙 위반이므로 근거 없음으로 처리
                 return AgentResult(has_answer=False, no_answer_reason="모델이 근거 조회 없이 응답을 종료함")
@@ -810,12 +836,12 @@ class WikiAgent:
         # WikiTools/citations를 아예 안 주려는 것이므로 도구 자체를 노출하면 안 된다.
         if not use_tools:
             response = self.client.chat.completions.create(
-                model=model, max_tokens=1500, messages=messages,
+                model=model, max_tokens=LLM_FALLBACK_MAX_TOKENS, messages=messages,
             )
         else:
             response = self.client.chat.completions.create(
                 model=model,
-                max_tokens=1500,
+                max_tokens=GROUNDED_ANSWER_MAX_TOKENS,
                 tools=tools if tools is not None else TOOLS,
                 # 매 라운드는 4개 도구 중 하나로 끝나야 한다는 게 아래 로직 전체의 전제다.
                 # tool_choice="auto"(기본값)로 두면 모델이 도구 없이 텍스트로 답을 끝낼 수
