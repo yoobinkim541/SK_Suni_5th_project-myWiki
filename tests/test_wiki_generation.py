@@ -1393,3 +1393,84 @@ def test_generate_wiki_drafts_for_sections_survives_notification_failure(monkeyp
 
     assert len(results) == 1
     assert results[0].issue_page_id == "page-issue"
+
+
+def test_generate_wiki_drafts_for_sections_stops_mid_batch_when_deadline_exceeded(monkeypatch):
+    """시간 예산을 넘기면 남은 섹션은 건너뛰고, 이미 처리한 것만 반환한다.
+
+    wiki-refresh-gate.yml의 GH Actions job timeout(90분)에 강제로 잘리기 전에
+    스스로 멈춰서, last_wiki_refresh_at 갱신 자체가 아예 누락되는 걸 막는다.
+    """
+    processed = []
+
+    monkeypatch.setattr(
+        generation, "_generate_topic_page",
+        lambda section, wiki_contexts, **kwargs: ("skip", None, None),
+    )
+
+    def fake_generate_issue_page(section, **kwargs):
+        processed.append(section.issue_key)
+        return f"page-{section.issue_key}", f"version-{section.issue_key}"
+
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
+
+    deadline = datetime(2026, 1, 1, 0, 30, tzinfo=timezone.utc)
+    clock_calls = iter([
+        datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),  # 첫 섹션 처리 전: 예산 안
+        datetime(2026, 1, 1, 0, 45, tzinfo=timezone.utc),  # 두 번째 섹션 처리 전: 예산 초과
+    ])
+
+    results = generation.generate_wiki_drafts_for_sections(
+        [_section("issue-1"), _section("issue-2")],
+        [_enriched_group("issue-1"), _enriched_group("issue-2")],
+        workspace_id="ws-1",
+        deadline=deadline,
+        clock=lambda: next(clock_calls),
+    )
+
+    assert processed == ["issue-1"]
+    assert [r.issue_key for r in results] == ["issue-1"]
+
+
+def test_generate_wiki_drafts_for_sections_processes_all_when_deadline_is_none(monkeypatch):
+    """deadline을 안 넘기면(기본값 None) 예산 체크 없이 기존과 동일하게 전부 처리한다."""
+    processed = []
+
+    monkeypatch.setattr(
+        generation, "_generate_topic_page",
+        lambda section, wiki_contexts, **kwargs: ("skip", None, None),
+    )
+    monkeypatch.setattr(
+        generation, "_generate_issue_page",
+        lambda section, **kwargs: processed.append(section.issue_key) or (f"page-{section.issue_key}", "v"),
+    )
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: None)
+
+    results = generation.generate_wiki_drafts_for_sections(
+        [_section("issue-1"), _section("issue-2")],
+        [_enriched_group("issue-1"), _enriched_group("issue-2")],
+        workspace_id="ws-1",
+    )
+
+    assert processed == ["issue-1", "issue-2"]
+    assert len(results) == 2
+
+
+def test_refresh_wiki_from_recent_analysis_threads_deadline_into_wiki_drafts(monkeypatch):
+    """스케줄 스크립트가 넘긴 시간 예산이 실제 섹션 처리 단계까지 전달돼야 한다."""
+    calls = []
+    monkeypatch.setattr(generation, "get_recently_analyzed_candidates", lambda **kwargs: [])
+    monkeypatch.setattr(generation, "select_report_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(generation, "group_report_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(generation, "enrich_issue_groups", lambda *a, **k: [])
+    monkeypatch.setattr(generation, "compose_report_sections", lambda *a, **k: [])
+    monkeypatch.setattr(
+        generation, "generate_wiki_drafts_for_sections",
+        lambda *a, **k: calls.append(k.get("deadline")) or [],
+    )
+
+    deadline = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    generation.refresh_wiki_from_recent_analysis("ws-1", deadline=deadline)
+
+    assert calls == [deadline]
