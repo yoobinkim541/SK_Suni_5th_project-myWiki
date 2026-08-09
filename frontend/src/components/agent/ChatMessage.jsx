@@ -132,7 +132,15 @@ export default function ChatMessage({ message, flag, flagPriv = false, onAction,
             먼저 눈에 띄는 자리에 둔다. .none(근거 부족 카드)과 같은 왼쪽 세로선
             표시 언어를 그대로 써서 이 화면 안에서 낯설지 않게 한다. */}
         {message.llmFallback && (
-          <div className="llm-note">LLM 답변 · 위키 근거 아님</div>
+          <div className="llm-note">
+            {/* webSearchExhausted는 백엔드가 안 주는 값이라(AgentResult엔 이 라운드에서
+                웹 검색을 실제로 시도했는지 구분하는 필드가 없음) 지속되지 않는다 — "웹에서
+                찾아줘"를 누른 그 응답에서만 AgentPage.jsx가 즉석에서 표시해 준다. 대화를
+                새로고침하면 이 문구 없이 일반 "LLM 답변" 배지로 보인다. */}
+            {message.webSearchExhausted
+              ? 'LLM 답변 · 웹 검색에서도 근거를 찾지 못함'
+              : 'LLM 답변 · 위키 근거 아님'}
+          </div>
         )}
 
         {message.none ? (
