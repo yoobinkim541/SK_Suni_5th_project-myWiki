@@ -1,38 +1,19 @@
-"""매일 자정(KST)부터 도는 분석 전용 배치 — 아침 리포트 마감(오전 8시) 전에
-분류->신뢰도->중요도->랭킹을 최대한 끝내는 게 목적이다.
+"""Nightly analysis batch for the next scheduled Daily Report.
 
-배경: refresh_data_scheduled.py(30분 주기, collect->preprocess->analyze를 한 실행
-안에서 순서대로 돎)는 백로그가 크면 각 실행의 55분(현재 워크플로우 설정) 안에
-분류까지만 가고 신뢰도·중요도·랭킹은 시작도 못 하는 경우가 잦다(2026-08-07 확인,
-run 31135258583 — 분류 끝나고 신뢰도 도중 타임아웃). 리포트는 importance_score·
-reliability_score가 둘 다 있어야 후보로 뽑히므로, 뒷단계가 밀리면 "오늘 발행된
-기사인데 리포트엔 하나도 안 뜨는" 상태가 된다.
+The scheduled report uses an operational publication window of 08:00 KST to
+08:00 KST, not the KST calendar day. This job spends each stage's capacity on
+that report window first, then fills any remaining capacity with the existing
+backlog. Backlog processing is intentionally preserved.
 
-이 스크립트는 그 문제를 두 가지로 푼다:
-    1. 오늘(KST) 발행된 문서부터 4단계를 전부 먼저 끝낸다
-       (restrict_to_document_ids/restrict_to_version_ids로 좁혀서 — 안 그러면
-       재정제된 오래된 문서가 "최근 처리 시각" 정렬에서 오늘 기사보다 앞에 서서
-       계속 순서를 뺏는다).
-    2. 남은 시간 동안 일반 백로그를 이어서 처리한다.
-
-GitHub Actions 호스팅 러너는 job 하나가 최대 6시간까지만 돈다(플랫폼 한도,
-timeout-minutes를 그 이상으로 잡아도 강제 종료된다) — 그래서 자정 시작 기준
-6시간(=오전 6시 KST)이 아니라 그보다 살짝 못 미치는 350분을 안전 마진으로 잡는다.
-
-collect·preprocess는 이 스크립트가 건드리지 않는다 — 낮 동안의 scheduled-data-
-refresh.yml이 계속 30분 주기로 새 기사를 모아온다. 그 워크플로우가 오늘의 분석
-단계는 이 스크립트와 겹치지 않도록, 이 스크립트가 도는 시간대(KST 00:00~06:00)에는
-자기 쪽 분석 단계를 건너뛴다 (refresh_data_scheduled.py의 야간 창 체크 참조) — 같은
-문서를 두 프로세스가 동시에 분석하면 LLM 호출이 낭비된다.
-
-사용법:
+Usage:
     python scripts/run_nightly_analysis.py
-    python scripts/run_nightly_analysis.py --budget-minutes 60  # 로컬 테스트용
+    python scripts/run_nightly_analysis.py --budget-minutes 60
 """
 from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -42,6 +23,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from scripts.generate_daily_report_scheduled import get_daily_report_window
 from src.analysis.importance import evaluate_and_save_importances
 from src.analysis.interface import classify_document_versions, evaluate_reliability_for_documents
 from src.analysis.ranking import rank_analysis_results
@@ -55,16 +37,31 @@ from src.analysis.repository import (
 )
 
 STAGE_LIMIT = 50
-# GitHub Actions 호스팅 러너의 job 최대 실행 시간(6시간)에서 로그·정리 시간과
-# 단계 하나(STAGE_LIMIT건)의 최악 소요 시간(실측 최대 ~15분)을 뺀 안전 마진.
-# run_stages_until_exhausted가 단계마다 deadline을 다시 확인하므로, 이 예산을
-# 넘기고도 진행 중이던 단계 하나만큼만 더 걸리고 스스로 멈춘다 — 그래도 여유가
-# 빠듯했다 (2026-08-07 관측: 350분 예산 + 라운드 단위 체크만으로는 355분 GitHub
-# 강제종료에 걸림). 335분으로 낮추고 단계별 체크를 더해 이중으로 여유를 뒀다.
+# GitHub-hosted runners hard-stop jobs at roughly six hours. Keep the existing
+# safety budget and stage-by-stage deadline checks; this change only changes
+# which candidates get the budget first.
 DEFAULT_BUDGET_MINUTES = 335
+LOG_CANDIDATE_LIMIT = 1000
 KST = timezone(timedelta(hours=9))
-"""한국은 DST가 없어 UTC+9 고정 오프셋으로 충분하다 (zoneinfo의 IANA tzdata
-의존성을 피한다 — 일부 환경엔 tzdata 패키지가 없어 zoneinfo가 바로 깨진다)."""
+
+
+@dataclass
+class StageRunStats:
+    report_window_version_ids: set[str] = field(default_factory=set)
+    backlog_version_ids: set[str] = field(default_factory=set)
+    classification_attempts: int = 0
+    reliability_attempts: int = 0
+    importance_attempts: int = 0
+    ranking_attempts: int = 0
+    deadline_reached: bool = False
+
+    @property
+    def processed_report_window(self) -> int:
+        return len(self.report_window_version_ids)
+
+    @property
+    def processed_backlog(self) -> int:
+        return len(self.backlog_version_ids)
 
 
 def log(msg: str) -> None:
@@ -74,152 +71,362 @@ def log(msg: str) -> None:
 def get_workspace_id() -> str:
     rows = get_supabase().table("workspaces").select("id, name").limit(2).execute().data
     if len(rows) != 1:
-        raise SystemExit(f"workspace_id를 자동으로 하나로 못 정했다 (workspaces 행 {len(rows)}개).")
+        raise SystemExit(f"workspace_id could not be resolved automatically (workspaces={len(rows)}).")
     return str(rows[0]["id"])
 
 
-def _kst_today_bounds_utc(now_utc: datetime) -> tuple[str, str]:
-    """지금(UTC) 기준 KST 오늘 하루의 [00:00, 24:00) 경계를 UTC ISO 문자열로."""
-    now_kst = now_utc.astimezone(KST)
-    start_kst = now_kst.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_kst = start_kst + timedelta(days=1)
-    return start_kst.astimezone(timezone.utc).isoformat(), end_kst.astimezone(timezone.utc).isoformat()
-
-
-def get_today_document_ids(workspace_id: str, *, now_utc: datetime) -> list[str]:
-    """KST 기준 오늘 발행된 active 문서 id. 없으면 빈 리스트."""
-    start_iso, end_iso = _kst_today_bounds_utc(now_utc)
+def get_report_window_document_ids(
+    workspace_id: str,
+    *,
+    window_start: datetime,
+    window_end: datetime,
+) -> list[str]:
+    """Return active document ids inside the Daily Report publication window."""
     db = get_supabase()
-    rows = (
-        db.table("documents")
-        .select("id")
-        .eq("workspace_id", workspace_id)
-        .eq("status", "active")
-        .gte("published_at", start_iso)
-        .lt("published_at", end_iso)
-        .execute()
-        .data
-    )
-    return [row["id"] for row in rows]
+    rows: list[dict] = []
+    start = 0
+    page_size = 1000
+    while True:
+        page = (
+            db.table("documents")
+            .select("id")
+            .eq("workspace_id", workspace_id)
+            .eq("status", "active")
+            .gte("published_at", window_start.isoformat())
+            .lt("published_at", window_end.isoformat())
+            .range(start, start + page_size - 1)
+            .execute()
+            .data
+        )
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        start += page_size
+    return [str(row["id"]) for row in rows]
 
 
 def get_version_ids_for_documents(document_ids: list[str]) -> list[str]:
-    """document_id 목록에 딸린 document_versions.id 전부. 정제(preprocess)가 아직
-    안 된 문서는 버전이 없어 결과에서 자연히 빠진다."""
+    """Return all document_versions.id values for the supplied documents."""
     if not document_ids:
         return []
     db = get_supabase()
     version_ids: list[str] = []
     for chunk in _chunked(document_ids):
         rows = db.table("document_versions").select("id").in_("document_id", chunk).execute().data
-        version_ids.extend(row["id"] for row in rows)
+        version_ids.extend(str(row["id"]) for row in rows)
     return version_ids
 
 
-def run_stages_until_exhausted(
+def _merge_priority_candidates(priority_ids: list[str], backlog_ids: list[str], *, limit: int) -> list[str]:
+    """Return up to limit ids, always placing report-window ids first."""
+    selected: list[str] = []
+    seen: set[str] = set()
+    for document_version_id in [*priority_ids, *backlog_ids]:
+        if document_version_id in seen:
+            continue
+        selected.append(document_version_id)
+        seen.add(document_version_id)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _split_report_window_and_backlog(
+    document_version_ids: list[str],
+    *,
+    report_window_version_ids: set[str],
+) -> tuple[list[str], list[str]]:
+    report_window = [item for item in document_version_ids if item in report_window_version_ids]
+    backlog = [item for item in document_version_ids if item not in report_window_version_ids]
+    return report_window, backlog
+
+
+def _collect_ready_version_ids(
+    *,
+    workspace_id: str,
+    limit: int,
+    restrict_to_document_ids: list[str] | None = None,
+    restrict_to_version_ids: list[str] | None = None,
+) -> set[str]:
+    ready: set[str] = set()
+    ready.update(
+        get_documents_ready_for_classification(
+            workspace_id=workspace_id,
+            limit=limit,
+            restrict_to_document_ids=restrict_to_document_ids,
+        )
+    )
+    ready.update(
+        get_documents_ready_for_reliability(
+            workspace_id=workspace_id,
+            limit=limit,
+            restrict_to_version_ids=restrict_to_version_ids,
+        )
+    )
+    ready.update(
+        get_documents_ready_for_importance(
+            workspace_id=workspace_id,
+            limit=limit,
+            restrict_to_version_ids=restrict_to_version_ids,
+        )
+    )
+    ready.update(
+        get_documents_ready_for_ranking(
+            workspace_id=workspace_id,
+            limit=limit,
+            restrict_to_version_ids=restrict_to_version_ids,
+        )
+    )
+    return ready
+
+
+def summarize_initial_candidates(
+    *,
+    workspace_id: str,
+    report_window_document_ids: list[str],
+    report_window_version_ids: list[str],
+) -> tuple[int, int, int]:
+    window_limit = max(LOG_CANDIDATE_LIMIT, len(report_window_version_ids))
+    report_window_ready = _collect_ready_version_ids(
+        workspace_id=workspace_id,
+        limit=window_limit,
+        restrict_to_document_ids=report_window_document_ids,
+        restrict_to_version_ids=report_window_version_ids,
+    )
+    report_window_resumable: set[str] = set()
+    for ready_ids in (
+        get_documents_ready_for_reliability(
+            workspace_id=workspace_id,
+            limit=window_limit,
+            restrict_to_version_ids=report_window_version_ids,
+        ),
+        get_documents_ready_for_importance(
+            workspace_id=workspace_id,
+            limit=window_limit,
+            restrict_to_version_ids=report_window_version_ids,
+        ),
+        get_documents_ready_for_ranking(
+            workspace_id=workspace_id,
+            limit=window_limit,
+            restrict_to_version_ids=report_window_version_ids,
+        ),
+    ):
+        report_window_resumable.update(ready_ids)
+
+    backlog_ready = _collect_ready_version_ids(workspace_id=workspace_id, limit=LOG_CANDIDATE_LIMIT)
+    backlog_ready.difference_update(report_window_ready)
+    return len(report_window_ready), len(report_window_resumable), len(backlog_ready)
+
+
+def _record_stage_stats(
+    stats: StageRunStats,
+    *,
+    stage_name: str,
+    document_version_ids: list[str],
+    report_window_version_ids: set[str],
+) -> tuple[int, int]:
+    report_window, backlog = _split_report_window_and_backlog(
+        document_version_ids,
+        report_window_version_ids=report_window_version_ids,
+    )
+    if stage_name == "classification":
+        stats.classification_attempts += len(document_version_ids)
+    elif stage_name == "reliability":
+        stats.reliability_attempts += len(document_version_ids)
+    elif stage_name == "importance":
+        stats.importance_attempts += len(document_version_ids)
+    elif stage_name == "ranking":
+        stats.ranking_attempts += len(document_version_ids)
+    stats.report_window_version_ids.update(report_window)
+    stats.backlog_version_ids.update(backlog)
+    return len(report_window), len(backlog)
+
+
+def run_prioritized_stages_until_exhausted(
     workspace_id: str,
     deadline: datetime,
     *,
-    restrict_to_document_ids: list[str] | None,
-    restrict_to_version_ids: list[str] | None,
-    label: str,
-) -> None:
-    """네 단계를 반복 호출해서, 이번 restrict 범위 안에서 더 할 게 없어지거나
-    deadline을 넘길 때까지 돈다. restrict가 None이면 일반 백로그 전체가 대상이다.
-
-    collect()·preprocess()·run_analysis_pipeline()과 같은 계약 — 문서 1건 실패는
-    각 evaluate_*/classify_* 함수 내부에서 실패로 기록되고 여기서는 예외를 던지지
-    않는다. 그래야 1건 실패로 이 배치 전체가 멈추지 않는다.
-    """
+    report_window_document_ids: list[str],
+    report_window_version_ids: list[str],
+) -> StageRunStats:
+    """Run stages until no candidates remain or the existing deadline is reached."""
+    report_window_version_set = set(report_window_version_ids)
+    stats = StageRunStats()
     round_no = 0
     while datetime.now(timezone.utc) < deadline:
         round_no += 1
         made_progress = False
 
-        # 라운드 시작 시점만 보면 안 된다 — 4단계 전부가 끝나야 다음 체크라
-        # 한 라운드(최대 STAGE_LIMIT*4건, 실측 30분+)만큼 deadline을 넘길 수
-        # 있었다 (2026-08-07 관측: 350분 예산인데 355분 GitHub 강제종료로 끝남).
-        # 단계마다 다시 확인해서 초과 폭을 단계 하나 크기로 줄인다.
         if datetime.now(timezone.utc) >= deadline:
             break
-
-        pending_classify = get_documents_ready_for_classification(
-            workspace_id=workspace_id, limit=STAGE_LIMIT, restrict_to_document_ids=restrict_to_document_ids
+        report_window_classify = get_documents_ready_for_classification(
+            workspace_id=workspace_id,
+            limit=STAGE_LIMIT,
+            restrict_to_document_ids=report_window_document_ids,
         )
+        backlog_classify = (
+            get_documents_ready_for_classification(workspace_id=workspace_id, limit=STAGE_LIMIT)
+            if len(report_window_classify) < STAGE_LIMIT
+            else []
+        )
+        pending_classify = _merge_priority_candidates(report_window_classify, backlog_classify, limit=STAGE_LIMIT)
         if pending_classify:
-            log(f"[{label}] round {round_no} 분류 대상 {len(pending_classify)}건")
+            report_count, backlog_count = _record_stage_stats(
+                stats,
+                stage_name="classification",
+                document_version_ids=pending_classify,
+                report_window_version_ids=report_window_version_set,
+            )
+            log(
+                f"[priority] round {round_no} classification "
+                f"report_window={report_count} backlog={backlog_count} total={len(pending_classify)}"
+            )
             classify_document_versions(workspace_id=workspace_id, document_version_ids=pending_classify)
             made_progress = True
 
         if datetime.now(timezone.utc) >= deadline:
             break
-
-        pending_reliability = get_documents_ready_for_reliability(
-            workspace_id=workspace_id, limit=STAGE_LIMIT, restrict_to_version_ids=restrict_to_version_ids
+        report_window_reliability = get_documents_ready_for_reliability(
+            workspace_id=workspace_id,
+            limit=STAGE_LIMIT,
+            restrict_to_version_ids=report_window_version_ids,
         )
+        backlog_reliability = (
+            get_documents_ready_for_reliability(workspace_id=workspace_id, limit=STAGE_LIMIT)
+            if len(report_window_reliability) < STAGE_LIMIT
+            else []
+        )
+        pending_reliability = _merge_priority_candidates(report_window_reliability, backlog_reliability, limit=STAGE_LIMIT)
         if pending_reliability:
-            log(f"[{label}] round {round_no} 신뢰도 대상 {len(pending_reliability)}건")
+            report_count, backlog_count = _record_stage_stats(
+                stats,
+                stage_name="reliability",
+                document_version_ids=pending_reliability,
+                report_window_version_ids=report_window_version_set,
+            )
+            log(
+                f"[priority] round {round_no} reliability "
+                f"report_window={report_count} backlog={backlog_count} total={len(pending_reliability)}"
+            )
             evaluate_reliability_for_documents(workspace_id=workspace_id, document_version_ids=pending_reliability)
             made_progress = True
 
         if datetime.now(timezone.utc) >= deadline:
             break
-
-        pending_importance = get_documents_ready_for_importance(
-            workspace_id=workspace_id, limit=STAGE_LIMIT, restrict_to_version_ids=restrict_to_version_ids
+        report_window_importance = get_documents_ready_for_importance(
+            workspace_id=workspace_id,
+            limit=STAGE_LIMIT,
+            restrict_to_version_ids=report_window_version_ids,
         )
+        backlog_importance = (
+            get_documents_ready_for_importance(workspace_id=workspace_id, limit=STAGE_LIMIT)
+            if len(report_window_importance) < STAGE_LIMIT
+            else []
+        )
+        pending_importance = _merge_priority_candidates(report_window_importance, backlog_importance, limit=STAGE_LIMIT)
         if pending_importance:
-            log(f"[{label}] round {round_no} 중요도 대상 {len(pending_importance)}건")
+            report_count, backlog_count = _record_stage_stats(
+                stats,
+                stage_name="importance",
+                document_version_ids=pending_importance,
+                report_window_version_ids=report_window_version_set,
+            )
+            log(
+                f"[priority] round {round_no} importance "
+                f"report_window={report_count} backlog={backlog_count} total={len(pending_importance)}"
+            )
             evaluate_and_save_importances(workspace_id=workspace_id, document_version_ids=pending_importance)
             made_progress = True
 
         if datetime.now(timezone.utc) >= deadline:
             break
-
-        pending_ranking = get_documents_ready_for_ranking(
-            workspace_id=workspace_id, limit=STAGE_LIMIT, restrict_to_version_ids=restrict_to_version_ids
+        report_window_ranking = get_documents_ready_for_ranking(
+            workspace_id=workspace_id,
+            limit=STAGE_LIMIT,
+            restrict_to_version_ids=report_window_version_ids,
         )
+        backlog_ranking = (
+            get_documents_ready_for_ranking(workspace_id=workspace_id, limit=STAGE_LIMIT)
+            if len(report_window_ranking) < STAGE_LIMIT
+            else []
+        )
+        pending_ranking = _merge_priority_candidates(report_window_ranking, backlog_ranking, limit=STAGE_LIMIT)
         if pending_ranking:
-            log(f"[{label}] round {round_no} 랭킹 대상 {len(pending_ranking)}건")
+            report_count, backlog_count = _record_stage_stats(
+                stats,
+                stage_name="ranking",
+                document_version_ids=pending_ranking,
+                report_window_version_ids=report_window_version_set,
+            )
+            log(
+                f"[priority] round {round_no} ranking "
+                f"report_window={report_count} backlog={backlog_count} total={len(pending_ranking)}"
+            )
             rank_analysis_results(workspace_id=workspace_id, document_version_ids=pending_ranking)
             made_progress = True
 
         if not made_progress:
-            log(f"[{label}] round {round_no} — 더 처리할 게 없음, 종료")
-            return
-    log(f"[{label}] 시간 예산 소진으로 종료 (round {round_no})")
+            log(f"[priority] round {round_no} no candidates left; stopping")
+            return stats
+
+    stats.deadline_reached = datetime.now(timezone.utc) >= deadline
+    log(f"[priority] stopping after round {round_no}; deadline_reached={stats.deadline_reached}")
+    return stats
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="야간 분석 배치 — 오늘자 문서 우선, 이후 백로그")
+    parser = argparse.ArgumentParser(description="Nightly analysis batch for Daily Report priority and backlog")
     parser.add_argument("--budget-minutes", type=int, default=DEFAULT_BUDGET_MINUTES)
     args = parser.parse_args()
 
     workspace_id = get_workspace_id()
     start = datetime.now(timezone.utc)
     deadline = start + timedelta(minutes=args.budget_minutes)
-    log(f"시작 (예산 {args.budget_minutes}분, 마감 {deadline.isoformat()})")
-
-    today_document_ids = get_today_document_ids(workspace_id, now_utc=start)
-    log(f"오늘(KST) 발행 문서 {len(today_document_ids)}건")
-    if today_document_ids:
-        today_version_ids = get_version_ids_for_documents(today_document_ids)
-        run_stages_until_exhausted(
-            workspace_id,
-            deadline,
-            restrict_to_document_ids=today_document_ids,
-            restrict_to_version_ids=today_version_ids,
-            label="오늘자 우선",
-        )
-
-    if datetime.now(timezone.utc) >= deadline:
-        log("오늘자 처리만으로 시간 예산 소진 — 백로그 단계 생략")
-        return 0
-
-    run_stages_until_exhausted(
-        workspace_id, deadline, restrict_to_document_ids=None, restrict_to_version_ids=None, label="백로그"
+    report_window_start, report_window_end = get_daily_report_window(start)
+    log(f"start budget_minutes={args.budget_minutes} deadline={deadline.isoformat()}")
+    log(
+        f"report_window_start={report_window_start.isoformat()} "
+        f"report_window_end={report_window_end.isoformat()}"
     )
-    log("완료")
+
+    report_window_document_ids = get_report_window_document_ids(
+        workspace_id,
+        window_start=report_window_start,
+        window_end=report_window_end,
+    )
+    report_window_version_ids = get_version_ids_for_documents(report_window_document_ids)
+    report_window_candidates, report_window_resumable, backlog_candidates = summarize_initial_candidates(
+        workspace_id=workspace_id,
+        report_window_document_ids=report_window_document_ids,
+        report_window_version_ids=report_window_version_ids,
+    )
+    log(
+        "[Nightly Analysis] "
+        f"report_window_documents={len(report_window_document_ids)} "
+        f"report_window_versions={len(report_window_version_ids)} "
+        f"report_window_candidates={report_window_candidates} "
+        f"report_window_resumable={report_window_resumable} "
+        f"backlog_candidates={backlog_candidates} "
+        "processing_priority=report_window->backlog"
+    )
+
+    stats = run_prioritized_stages_until_exhausted(
+        workspace_id,
+        deadline,
+        report_window_document_ids=report_window_document_ids,
+        report_window_version_ids=report_window_version_ids,
+    )
+    log(
+        "[Nightly Analysis] "
+        f"processed_report_window={stats.processed_report_window} "
+        f"processed_backlog={stats.processed_backlog} "
+        f"classification_attempts={stats.classification_attempts} "
+        f"reliability_attempts={stats.reliability_attempts} "
+        f"importance_attempts={stats.importance_attempts} "
+        f"ranking_attempts={stats.ranking_attempts} "
+        f"deadline_reached={stats.deadline_reached}"
+    )
+    log("complete")
     return 0
 
 
