@@ -8,7 +8,11 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 백로그가 크면(예: 게이트가 여러 사이클 밀렸다 재개) 처리할 섹션이 많아져 30분으로도
+    # 부족할 수 있다(2026-08-09 실측: since_hours=8일 때 30분 타임아웃에 걸려 중간에 취소됨).
+    # 넉넉하게 늘려도 리포트(scheduled-daily-report.yml, KST 08:30 마감)와 안 겹치는 건
+    # refresh_wiki_scheduled.py의 REPORT_CRITICAL_WINDOW_KST(06:00~08:30 스킵)가 보장한다.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
