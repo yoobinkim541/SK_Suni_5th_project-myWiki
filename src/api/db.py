@@ -50,6 +50,18 @@ def get_default_workspace_id(user_id: str) -> Optional[str]:
     return res.data["workspace_id"] if res.data else None
 
 
+def get_workspace(workspace_id: str) -> Optional[dict]:
+    res = (
+        get_supabase()
+        .table("workspaces")
+        .select("id, name")
+        .eq("id", workspace_id)
+        .maybe_single()
+        .execute()
+    )
+    return res.data
+
+
 def create_chat_session(
     workspace_id: str, user_id: str, title: Optional[str] = None, visibility: str = "private"
 ) -> dict:

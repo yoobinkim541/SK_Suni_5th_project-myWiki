@@ -47,6 +47,7 @@ from .schemas import (
     TeamOut,
     UpdateMemberRoleRequest,
     WorkspaceMemberOut,
+    WorkspaceOut,
 )
 from .category_router import router as category_router
 from .dashboard_router import router as dashboard_router
@@ -501,6 +502,16 @@ def remove_participant(session_id: str, user_id: str, profile: dict = Depends(ge
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="다른 참여자는 세션 생성자이거나 관리자·팀장만 뺄 수 있음")
 
     db.remove_chat_session_participant(session_id, user_id)
+
+
+@app.get("/workspace", response_model=WorkspaceOut)
+def get_workspace(profile: dict = Depends(get_current_user)):
+    """내 워크스페이스 이름 — 설정 화면 "소속 팀" 표시용. 워크스페이스 멤버 누구나 조회 가능."""
+    workspace_id = _require_workspace(profile)
+    workspace = db.get_workspace(workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="워크스페이스를 찾을 수 없음")
+    return WorkspaceOut(**workspace)
 
 
 @app.get("/workspace/members", response_model=list[WorkspaceMemberOut])
