@@ -18,6 +18,7 @@ from .interface import (
     publish_wiki_version,
     record_wiki_validation,
     review_wiki_version,
+    update_wiki_page_title,
 )
 from .query import get_published_wiki_page
 
@@ -70,7 +71,7 @@ def _judge_and_merge(
     }
     valid_claims = [c for c in result.claims if c.document_version_id in allowed_document_version_ids]
 
-    if not valid_claims or not (result.markdown or "").strip():
+    if not valid_claims or not (result.markdown or "").strip() or not (result.title or "").strip():
         return not_duplicate
 
     sources = [
@@ -85,7 +86,7 @@ def _judge_and_merge(
     draft = WikiDraftInput(
         workspace_id=workspace_id,
         slug=representative_info.slug,
-        title=representative_info.title,
+        title=result.title,
         page_type=representative_info.page_type,
         parent_page_id=representative_info.parent_page_id,
         markdown=result.markdown or "",
@@ -98,6 +99,7 @@ def _judge_and_merge(
     record_wiki_validation(version_id, "passed", None, supabase=supabase)
     review_wiki_version(version_id, None, "approved", supabase=supabase)
     publish_wiki_version(representative_info.page_id, version_id, supabase=supabase)
+    update_wiki_page_title(representative_info.page_id, result.title.strip(), supabase=supabase)
     archive_wiki_page(other_info.page_id, supabase=supabase)
     reparent_children(other_info.page_id, representative_info.page_id, workspace_id=workspace_id, supabase=supabase)
 
