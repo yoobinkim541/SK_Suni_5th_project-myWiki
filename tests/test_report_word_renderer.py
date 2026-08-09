@@ -2,13 +2,25 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from io import BytesIO
+from zipfile import ZipFile
 
 from docx import Document
 
 from src.analysis.importance_models import ImpactDirection, TimeHorizon
 from src.analysis.models import Category
-from src.report.models import ReportCitationDraft, ReportSectionDraft, ReportSectionStatus
+from src.report.models import (
+    ReportCategoryGroup,
+    ReportCitationDraft,
+    ReportExecutiveSummary,
+    ReportIssueSummaryRow,
+    ReportNewsSource,
+    ReportOverallImplications,
+    ReportSectionDraft,
+    ReportSectionStatus,
+    ReportWikiSource,
+)
 from src.report.word_renderer import (
+    DEFAULT_WORD_LOGO_PATH,
     DEFAULT_WORD_TITLE,
     WordReportDocument,
     build_daily_report_word_document,
@@ -116,9 +128,9 @@ def test_render_daily_report_word_returns_docx_bytes() -> None:
 
     assert docx_bytes[:2] == b"PK"
     assert K_TITLE in text
-    assert "2026\ub144 8\uc6d4 3\uc77c" in text
+    assert "기준일 2026.08.03" in text
     assert "2026.08.03" in text
-    assert "Mywiki" in text
+    assert "MyWiki" in text
     assert K_SECTION in text
     assert K_BODY in text
     assert K_EVIDENCE in text
@@ -172,4 +184,147 @@ def test_render_daily_report_word_prefers_report_date_over_generated_at() -> Non
     text = collect_docx_text(docx_bytes)
 
     assert "2026.08.03" in text
-    assert "2026\ub144 8\uc6d4 3\uc77c" in text
+    assert "기준일 2026.08.03" in text
+
+
+def _docx_xml(docx_bytes: bytes, name: str) -> str:
+    with ZipFile(BytesIO(docx_bytes)) as archive:
+        return archive.read(name).decode("utf-8")
+
+
+def test_render_daily_report_word_embeds_mysuni_logo_to_right_of_mywiki() -> None:
+    assert DEFAULT_WORD_LOGO_PATH.exists()
+    report_document = build_daily_report_word_document(
+        report_key="daily-trends-2026-08-03",
+        version=1,
+        sections=[make_section()],
+        generated_at="2026-08-03T09:00:00+09:00",
+        report_date=date(2026, 8, 3),
+        title=K_TITLE,
+    )
+
+    docx_bytes = render_daily_report_word(report_document)
+    header_xml = _docx_xml(docx_bytes, "word/header1.xml")
+    header_rels_xml = _docx_xml(docx_bytes, "word/_rels/header1.xml.rels")
+    with ZipFile(BytesIO(docx_bytes)) as archive:
+        media_names = [name for name in archive.namelist() if name.startswith("word/media/")]
+
+    assert header_xml.index("MyWiki") < header_xml.index("<w:drawing>")
+    assert "relationships/image" in header_rels_xml
+    assert media_names
+
+def test_render_daily_report_word_uses_executive_brief_sections_and_report_sources() -> None:
+    section = make_section()
+    report_document = build_daily_report_word_document(
+        report_key="daily:ws-1:2026-08-08",
+        version=28,
+        sections=[section],
+        generated_at="2026-08-08T08:27:00+09:00",
+        report_date=date(2026, 8, 8),
+        title=K_TITLE,
+        executive_summaries=[
+            ReportExecutiveSummary(
+                issue_key="issue-1",
+                title="SK하이닉스, AI 메모리 수요 대응 투자 확대",
+                summary="HBM·DRAM·NAND 생산능력 확대를 위한 중장기 투자 흐름입니다.",
+                importance_score=96,
+                impact_direction=ImpactDirection.OPPORTUNITY,
+                time_horizon=TimeHorizon.LONG_TERM,
+            )
+        ],
+        issue_summary_rows=[
+            ReportIssueSummaryRow(
+                issue_key="issue-1",
+                category=Category.SUPPLY_PRODUCTION,
+                title=section.title,
+                importance_score=96,
+            )
+        ],
+        category_groups=[ReportCategoryGroup(category=category, sections=[] if category != Category.SUPPLY_PRODUCTION else [section]) for category in Category],
+        overall_implications=ReportOverallImplications(
+            opportunities=["HBM 중심의 고부가 메모리 수요 확대를 확인합니다."],
+            risks=["장비 수급과 투자 집행 속도 변동성을 점검해야 합니다."],
+            monitoring_points=["고객사 수요와 경쟁사 증설 속도를 함께 확인합니다."],
+        ),
+        news_sources=[
+            ReportNewsSource(
+                document_version_id="doc-ver-1",
+                document_title="매우 긴 기사 제목 " * 12,
+                source_name="테스트뉴스",
+                published_at="2026-08-07T10:00:00+09:00",
+                source_url="https://example.com/very/long/source/url",
+            ),
+            ReportNewsSource(document_version_id="doc-ver-2"),
+        ],
+        wiki_sources=[ReportWikiSource(wiki_page_id="wiki-1", wiki_version_id="wiki-v1", wiki_title="HBM 내부 위키")],
+    )
+
+    docx_bytes = render_daily_report_word(report_document)
+    text = collect_docx_text(docx_bytes)
+    document_xml = _docx_xml(docx_bytes, "word/document.xml")
+    footer_xml = _docx_xml(docx_bytes, "word/footer1.xml")
+
+    assert "DAILY INDUSTRY BRIEF" in text
+    assert "오늘의 핵심 요약" in text
+    assert "ISSUE 01" in text
+    assert "현재 상황" in text
+    assert "카테고리별 정리" in text
+    assert "제품·기술" in text
+    assert "공급망·생산" in text
+    assert "주요 동향 없음" in text
+    assert "OPPORTUNITY" in text
+    assert "RISK" in text
+    assert "NEXT WATCH" in text
+    assert "NEWS" in text
+    assert "MYWIKI" in text
+    assert "https://example.com/very/long/source/url" not in text
+    assert "PAGE" in footer_xml
+    assert "NUMPAGES" in footer_xml
+    assert "w:cantSplit" in document_xml
+    assert "w:tblHeader" in document_xml
+
+
+def test_render_daily_report_word_sets_layout_styles_for_long_content() -> None:
+    section = make_section()
+    section.title = "SK하이닉스 " + ("차세대 HBM 투자와 공급망 재편 장기 이슈 " * 8)
+    section.current_summary = K_BODY * 25
+    section.key_facts = ["한글 bullet 정상 출력: SK하이닉스 용인 청주 공급망 생산 " * 8]
+    report_document = build_daily_report_word_document(
+        report_key="daily-trends-2026-08-08",
+        version=1,
+        sections=[section],
+        generated_at="2026-08-08T08:27:00+09:00",
+        report_date=date(2026, 8, 8),
+        news_sources=[ReportNewsSource(document_version_id="doc-ver-1", document_title="긴 출처 제목 " * 20)],
+    )
+
+    docx_bytes = render_daily_report_word(report_document)
+    document = Document(BytesIO(docx_bytes))
+    styles = document.styles
+    grids = _docx_xml(docx_bytes, "word/document.xml")
+
+    assert docx_bytes[:2] == b"PK"
+    assert styles["MyWikiIssueTitle"].font.size.pt == 14
+    assert styles["MyWikiBody"].font.size.pt == 10
+    assert styles["MyWikiSubheading"].paragraph_format.keep_with_next is True
+    assert styles["MyWikiIssueTitle"].paragraph_format.keep_with_next is True
+    assert "w:tblGrid" in grids
+
+
+def test_render_daily_report_word_handles_empty_categories_sources_and_missing_logo() -> None:
+    report_document = build_daily_report_word_document(
+        report_key="daily-trends-2026-08-08",
+        version=1,
+        sections=[make_section()],
+        generated_at="2026-08-08T08:27:00+09:00",
+        report_date=date(2026, 8, 8),
+        category_groups=[ReportCategoryGroup(category=category, sections=[]) for category in Category],
+        news_sources=[ReportNewsSource(document_version_id="doc-empty", document_title=None, source_name=None, published_at=None, source_url=None)],
+        wiki_sources=[],
+    )
+
+    text = collect_docx_text(render_daily_report_word(report_document))
+
+    assert "주요 동향 없음" in text
+    assert "doc-empty" in text
+    assert "-" in text
