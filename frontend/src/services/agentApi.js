@@ -140,10 +140,16 @@ function toViewMessage(msg, scope) {
       role: 'ai',
       llmFallback: true,
       paragraphs: [[msg.content]],
+      // 위키·원문에 이어 이 일반 지식 답변도 실은 웹 검색(3단계)을 안 거치고 바로
+      // 온 것이다(PR #200 이후 allow_web_search 기본값 False) — 이 버튼이 없으면
+      // 사용자가 3단계를 시도할 방법 자체가 없다. regenerateMessage(allowWebSearch=true)로
+      // 다시 시도해 근거를 찾으면 이 메시지가 cites/acts(위키에 저장 포함) 있는
+      // 정상 응답으로 자동 교체된다(toViewMessage가 응답 shape만 보고 분기하므로
+      // 여기서 별도 처리가 필요 없다).
       acts:
         scope === 'mine'
-          ? ['팀에 공유', '관련 문서 찾아보기', '복사', '다시 생성', '삭제']
-          : ['관련 문서 찾아보기', '복사', '다시 생성', '삭제'],
+          ? ['웹에서 찾아줘', '팀에 공유', '관련 문서 찾아보기', '복사', '다시 생성', '삭제']
+          : ['웹에서 찾아줘', '관련 문서 찾아보기', '복사', '다시 생성', '삭제'],
       _id: msg.id,
     };
   }

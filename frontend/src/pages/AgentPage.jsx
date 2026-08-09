@@ -38,6 +38,7 @@ import ChatComposer from '../components/agent/ChatComposer';
 import ShareToTeamModal from '../components/agent/ShareToTeamModal';
 import ParticipantsModal from '../components/agent/ParticipantsModal';
 import mascotImg from '../assets/mascot.png';
+import { fetchKpiSummary } from '../services/dashboardApi';
 
 const PANE_KEYS = ['team', 'mine'];
 const PANE_VISIBILITY = { team: 'team', mine: 'private' };
@@ -75,6 +76,11 @@ export default function AgentPage({ profile }) {
   // 참여자 목록 — chat_session_participants는 대화(session)마다 다를 수 있어
   // team pane에서 보고 있는 대화가 바뀔 때마다 다시 불러옵니다.
   const [currentTeamParticipants, setCurrentTeamParticipants] = useState(null);
+  // 헤더 "참조 범위"/힌트에 쓰는 실제 위키 문서 수 — DashboardPage KPI 카드와 같은
+  // /dashboard/summary(wiki_docs)를 재사용한다. 못 불러오면(게스트 등) null로 두고
+  // 화면에서 "—"로 표시한다(mockWiki.js의 "위키 124문서"는 대화 목록이 그렇듯 하드코딩
+  // 목업이라 대시보드처럼 실 API로 대체한다).
+  const [wikiDocCount, setWikiDocCount] = useState(null);
 
   // 참여자 모달을 열면 참여자 목록 + 워크스페이스 멤버 전체 목록을 같이 불러옵니다.
   useEffect(() => {
@@ -129,6 +135,15 @@ export default function AgentPage({ profile }) {
     return () => { alive = false; };
   }, []);
 
+  // 위키 문서 수 — 대화 목록과 별도 실패로 다룬다(게스트라 401이 나도 대화는 정상 써야 함).
+  useEffect(() => {
+    let alive = true;
+    fetchKpiSummary()
+      .then((summary) => alive && setWikiDocCount(summary.wikiDocs.value))
+      .catch(() => alive && setWikiDocCount(null));
+    return () => { alive = false; };
+  }, []);
+
   const pane = panes?.[activePane];
   const current =
     pane?.conversations.find((c) => c.id === currentIds[activePane]) ||
@@ -175,6 +190,12 @@ export default function AgentPage({ profile }) {
     const shown = names.slice(0, 3).join(', ');
     const rest = names.length > 3 ? ` 외 ${names.length - 3}명` : '';
     return `${shown}${rest} · 총 ${names.length}명이 열람·이어서 질문할 수 있습니다`;
+  }
+
+  // "위키 124문서만 참조합니다" — mockWiki.js의 hints[0]은 모든 대화에서 항상 똑같이
+  // 뜨는 하드코딩이라, wikiDocCount(실제 /dashboard/summary 값)로 대체한다.
+  function wikiScopeHint() {
+    return wikiDocCount != null ? `위키 ${wikiDocCount}문서만 참조합니다` : '위키 문서만 참조합니다';
   }
 
   // 특정 pane의 대화 하나만 바꾸는 공용 헬퍼. pane을 인자로 받아서, 방금 전환한
@@ -555,7 +576,7 @@ export default function AgentPage({ profile }) {
       <div className="ph">
         <h2>에이전트</h2>
         <span className="dt">축적된 위키 문서만 근거로 사용</span>
-        <span className="st">참조 범위 <b>위키 124문서</b></span>
+        <span className="st">참조 범위 <b>위키 {wikiDocCount ?? '—'}문서</b></span>
       </div>
 
       <div className="sp-seg ag-seg" role="tablist" aria-label="에이전트 구분">
@@ -714,8 +735,8 @@ export default function AgentPage({ profile }) {
 
           <div className="hint">
             {(pane.key === 'team'
-              ? [pane.hints[0], participantsHint(profile?.id, currentTeamParticipants)]
-              : pane.hints
+              ? [wikiScopeHint(), participantsHint(profile?.id, currentTeamParticipants)]
+              : [wikiScopeHint(), pane.hints[1]]
             ).map((h, i) => <span key={i}>{h}</span>)}
           </div>
         </div>
