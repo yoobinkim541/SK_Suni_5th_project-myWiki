@@ -168,17 +168,18 @@ def test_search_recent_disclosures_delegates_to_dart_lookup_module(monkeypatch):
     tools = WikiTools(workspace_id="ws-1")
     called = {}
 
-    def fake_search(workspace_id, days):
+    def fake_search(workspace_id, days, pblntf_ty):
         called["workspace_id"] = workspace_id
         called["days"] = days
+        called["pblntf_ty"] = pblntf_ty
         return ["fake-hit"]
 
     monkeypatch.setattr(wiki_tools_module.dart_lookup, "search_recent_disclosures", fake_search)
 
-    result = tools.search_recent_disclosures(days=7)
+    result = tools.search_recent_disclosures(days=7, pblntf_ty="B")
 
     assert result == ["fake-hit"]
-    assert called == {"workspace_id": "ws-1", "days": 7}
+    assert called == {"workspace_id": "ws-1", "days": 7, "pblntf_ty": "B"}
 
 
 def test_read_disclosure_delegates_to_dart_lookup_module(monkeypatch):

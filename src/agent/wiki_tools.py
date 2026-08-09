@@ -105,11 +105,12 @@ class WikiTools:
         return web_search.search_web(query, limit)
 
     def search_recent_disclosures(
-        self, days: int = dart_lookup.DEFAULT_LOOKBACK_DAYS
+        self, days: int = dart_lookup.DEFAULT_LOOKBACK_DAYS, pblntf_ty: str | None = None
     ) -> list[dart_lookup.DisclosureHit]:
         """이 워크스페이스에 등록된 회사들의 최근 N일 DART 공시 목록. 위키·원문·웹
-        검색 어디에도 없을 때(_web_search_answer)만 쓰는 3차 그라운딩 도구."""
-        return dart_lookup.search_recent_disclosures(self.workspace_id, days)
+        검색 어디에도 없을 때(_web_search_answer)만 쓰는 3차 그라운딩 도구.
+        pblntf_ty로 공시유형 하나를 좁혀서 조회할 수 있다(예: 'B'=주요사항보고)."""
+        return dart_lookup.search_recent_disclosures(self.workspace_id, days, pblntf_ty)
 
     def read_disclosure(self, rcept_no: str) -> Optional[str]:
         """공시 1건의 실제 본문(태그 제거·길이 상한 적용된 일반 텍스트)."""

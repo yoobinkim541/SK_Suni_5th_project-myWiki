@@ -103,8 +103,17 @@ def _registered_corp_codes(workspace_id: str, db) -> list[str]:
 
 
 def search_recent_disclosures(
-    workspace_id: str, days: int = DEFAULT_LOOKBACK_DAYS, *, supabase=None
+    workspace_id: str,
+    days: int = DEFAULT_LOOKBACK_DAYS,
+    pblntf_ty: str | None = None,
+    *,
+    supabase=None,
 ) -> list[DisclosureHit]:
+    """pblntf_ty(공시유형, 예: 'B'=주요사항보고 'C'=발행공시)로 좁혀서 조회할 수 있다.
+    DART API는 한 번에 유형 하나만 받는다 — 'B,C'처럼 콤마로 여러 개를 넣으면
+    "공시유형(pblntf_ty) 필드의 부적절한 값"으로 거절당한다(2026-08-09 실측 확인).
+    여러 유형을 보고 싶으면 이 함수를 유형별로 따로 호출해야 한다. None(기본값)이면
+    필터 없이 전체 유형을 조회한다 — 기존 동작 그대로."""
     db = supabase or get_supabase()
     corp_codes = _registered_corp_codes(workspace_id, db)
     if not corp_codes:
@@ -131,20 +140,19 @@ def search_recent_disclosures(
         try:
             page_no = 1
             while page_no <= _MAX_PAGES:
-                response = httpx.get(
-                    _DART_LIST_URL,
-                    params={
-                        "crtfc_key": api_key,
-                        "corp_code": corp_code,
-                        "bgn_de": bgn_de,
-                        "end_de": end_de,
-                        "page_no": page_no,
-                        "page_count": _PAGE_COUNT,
-                        "sort": "date",
-                        "sort_mth": "desc",
-                    },
-                    timeout=_TIMEOUT_SEC,
-                )
+                params = {
+                    "crtfc_key": api_key,
+                    "corp_code": corp_code,
+                    "bgn_de": bgn_de,
+                    "end_de": end_de,
+                    "page_no": page_no,
+                    "page_count": _PAGE_COUNT,
+                    "sort": "date",
+                    "sort_mth": "desc",
+                }
+                if pblntf_ty:
+                    params["pblntf_ty"] = pblntf_ty
+                response = httpx.get(_DART_LIST_URL, params=params, timeout=_TIMEOUT_SEC)
                 payload = response.json()
 
                 status = payload.get("status")
