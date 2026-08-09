@@ -50,6 +50,22 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 // 하려는 장치라, 실제 백엔드가 생기면 이 함수가 아니라 각 fetch* 함수 안을 바꿉니다.
 const delay = (value) => Promise.resolve(value);
 
+// 대시보드는 App.jsx가 세션을 확인(authChecked=true)한 뒤에만 그려지지만, 그 시점에도
+// Supabase 클라이언트 내부 세션 복원이 완전히 끝나 있다는 보장은 없다 — 실사용에서
+// 로그인된 사용자의 첫 로드에서 apiFetch가 토큰 없이 나가 "missing bearer token"(401)이
+// 나는 게 콘솔에 확인됐다(2026-08-09). 네트워크가 느릴 때 나는 "Failed to fetch"도 같은
+// 증상(반응이 없다가 대시보드만 비어 보임)이라 같이 묶어서 처리한다.
+// 세션은 보통 1~2초 안에 복원되므로, 실패하면 한 번만 짧게 기다렸다가 재시도한다 —
+// 그래도 실패하면(진짜 로그인 안 된 상태 등) 기존처럼 실패로 처리한다(무한 재시도 안 함).
+async function withRetry(fn) {
+  try {
+    return await fn();
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return fn();
+  }
+}
+
 // 발행 시각 -> '12분 전' 같은 상대 시간. 백엔드는 ISO 그대로 주고 여기서 만듭니다 —
 // 서버 시각과 보는 사람의 시각이 다를 수 있어서, 서버가 미리 계산하면 어긋납니다.
 // 하루가 넘으면 상대 표기가 오히려 안 읽혀서 날짜로 바꿉니다.
@@ -171,8 +187,8 @@ export function fetchKpiSummary() {
 // 백엔드가 죽은 걸 정상 화면처럼 보이게 만듭니다.
 export async function fetchDashboard() {
   const [kpiSummary, trend, news, keywords] = await Promise.all([
-    fetchKpiSummary().catch((err) => {
-      console.error('[dashboardApi] KPI 조회 실패(게스트이거나 인증 만료) — KPI만 빈 상태로 둡니다:', err);
+    withRetry(fetchKpiSummary).catch((err) => {
+      console.error('[dashboardApi] KPI 조회 실패(재시도 후에도 실패 — 게스트이거나 인증 만료) — KPI만 빈 상태로 둡니다:', err);
       return {
         collectedDocs: { value: '—', desc: '' },
         generatedReports: { value: '—', desc: '' },
@@ -180,16 +196,16 @@ export async function fetchDashboard() {
         avgConfidence: { value: '—', desc: '' },
       };
     }),
-    fetchTrend().catch((err) => {
-      console.error('[dashboardApi] 추이 조회 실패 — 차트만 빈 상태로 둡니다:', err);
+    withRetry(fetchTrend).catch((err) => {
+      console.error('[dashboardApi] 추이 조회 실패(재시도 후에도 실패) — 차트만 빈 상태로 둡니다:', err);
       return [];
     }),
-    fetchNews().catch((err) => {
-      console.error('[dashboardApi] 뉴스 조회 실패 — 뉴스만 빈 상태로 둡니다:', err);
+    withRetry(fetchNews).catch((err) => {
+      console.error('[dashboardApi] 뉴스 조회 실패(재시도 후에도 실패) — 뉴스만 빈 상태로 둡니다:', err);
       return [];
     }),
-    fetchKeywords().catch((err) => {
-      console.error('[dashboardApi] 키워드 조회 실패 — 칩만 빈 상태로 둡니다:', err);
+    withRetry(fetchKeywords).catch((err) => {
+      console.error('[dashboardApi] 키워드 조회 실패(재시도 후에도 실패) — 칩만 빈 상태로 둡니다:', err);
       return [];
     }),
   ]);
