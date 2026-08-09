@@ -295,7 +295,10 @@ WEB_SEARCH_ANSWER_SYSTEM_PROMPT = """\
    제품·기술 등 어떤 종류든 — 공시 유형을 미리 짐작해서 거르지 마라)
    search_recent_disclosures로 최근 DART 공시 목록도 같이 확인하고, 관련 있어
    보이는 제목이 있으면 read_disclosure로 본문을 읽어라. 회사와 무관한 일반
-   산업 동향 질문일 때만 DART 조회를 생략해도 된다.
+   산업 동향 질문일 때만 DART 조회를 생략해도 된다. 처음엔 유형 필터 없이
+   전체로 조회해라 — 상장·증권발행처럼 유형이 뚜렷이 짐작되는 질문에서 결과가
+   너무 많아 훑기 부담스러울 때만 search_recent_disclosures의 pblntf_ty로
+   좁혀서 다시 불러라(예: 상장 관련이면 B, 그다음 C로 한 번씩 더).
 2. 찾은 결과(뉴스 요약 또는 공시 본문)에 실제로 있는 내용만 근거로 답변해라.
    사전 지식이나 추측으로 빈틈을 채우지 마라. 검색 결과 요약이 짧아 구체적인 내용이
    부족하면, 그 부족한 부분은 답변에 넣지 마라.
@@ -343,7 +346,8 @@ WEB_SEARCH_TOOLS = [
                 "계약/투자/상장/증권발행 등)을 미리 짐작해서 거르지 말고 일단 시도해라 — "
                 "제목만 봐서는 관련 여부를 알 수 없는 경우가 많다. 자유 검색어는 지원 안 "
                 "됨 — 최근 공시 전체 목록만 준다, 관련 있어 보이는 제목을 read_disclosure로 "
-                "읽어서 확인해라."
+                "읽어서 확인해라. pblntf_ty를 비워두면(기본) 전체 유형을 준다 — 결과가 너무 "
+                "많아 훑어보기 부담스러울 때만 유형을 좁혀라."
             ),
             "parameters": {
                 "type": "object",
@@ -351,6 +355,19 @@ WEB_SEARCH_TOOLS = [
                     "days": {
                         "type": "integer",
                         "description": "최근 며칠치 공시를 볼지(기본 14일)",
+                    },
+                    "pblntf_ty": {
+                        "type": "string",
+                        "description": (
+                            "공시유형 한 글자로 좁혀서 조회(선택, 기본은 전체 유형). "
+                            "A=정기공시(실적 등) B=주요사항보고(상장·유상증자·합병 등) "
+                            "C=발행공시(증권신고·투자설명서 등) D=지분공시 E=기타공시. "
+                            "DART API는 한 번에 유형 하나만 받는다 — 'B,C'처럼 콤마로 "
+                            "여러 개를 넣으면 오류가 난다. 여러 유형을 다 보고 싶으면 이 "
+                            "도구를 유형별로 따로 호출해라(예: 상장·증권 관련 질문이면 "
+                            "B로 한 번, C로 한 번). 확실하지 않으면 비워두고 전체를 봐라 "
+                            "— 잘못 좁히면 오히려 정작 필요한 공시를 놓친다."
+                        ),
                     },
                 },
             },
@@ -597,7 +614,8 @@ class WikiAgent:
                 # 같은 원칙으로 기본값으로 방어한다.
                 days = dart_lookup.DEFAULT_LOOKBACK_DAYS
             days = max(1, min(days, 90))
-            hits = self.wiki_tools.search_recent_disclosures(days)
+            pblntf_ty = (args.get("pblntf_ty") or "").strip() or None
+            hits = self.wiki_tools.search_recent_disclosures(days, pblntf_ty)
             disclosure_hits.update({h.rcept_no: h for h in hits})
             return [h.__dict__ for h in hits]
 

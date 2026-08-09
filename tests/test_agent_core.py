@@ -864,7 +864,7 @@ def test_web_search_answer_grounds_on_disclosure_via_read_disclosure(agent, wiki
     assert result.citations[0].document_version_id is None
     assert result.citations[0].source_title == "주식등의대량보유상황보고서"
     assert result.citations[0].source_published_at == "2026-08-05T00:00:00+00:00"
-    wiki_tools.search_recent_disclosures.assert_called_once_with(14)
+    wiki_tools.search_recent_disclosures.assert_called_once_with(14, None)
     wiki_tools.read_disclosure.assert_called_once_with("20260805000123")
 
 
@@ -911,7 +911,7 @@ def test_handle_search_recent_disclosures_defaults_when_days_is_non_numeric_stri
     result = agent._web_search_answer("질문")
 
     assert result.has_answer is False
-    wiki_tools.search_recent_disclosures.assert_called_once_with(core.dart_lookup.DEFAULT_LOOKBACK_DAYS)
+    wiki_tools.search_recent_disclosures.assert_called_once_with(core.dart_lookup.DEFAULT_LOOKBACK_DAYS, None)
 
 
 def test_handle_search_recent_disclosures_clamps_out_of_range_days(agent, wiki_tools, monkeypatch):
@@ -927,7 +927,39 @@ def test_handle_search_recent_disclosures_clamps_out_of_range_days(agent, wiki_t
     result = agent._web_search_answer("질문")
 
     assert result.has_answer is False
-    wiki_tools.search_recent_disclosures.assert_called_once_with(1)
+    wiki_tools.search_recent_disclosures.assert_called_once_with(1, None)
+
+
+def test_handle_search_recent_disclosures_passes_pblntf_ty_filter(agent, wiki_tools, monkeypatch):
+    """모델이 pblntf_ty를 지정하면 WikiTools.search_recent_disclosures로 그대로
+    전달돼야 한다(예: 상장 관련 질문 -> 'B'=주요사항보고로 좁혀 조회)."""
+    wiki_tools.search_web.return_value = []
+    wiki_tools.search_recent_disclosures.return_value = []
+    responses = [
+        tool_call_response(("call-1", "search_recent_disclosures", {"days": 90, "pblntf_ty": "B"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "근거 없음"})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent._web_search_answer("질문")
+
+    assert result.has_answer is False
+    wiki_tools.search_recent_disclosures.assert_called_once_with(90, "B")
+
+
+def test_handle_search_recent_disclosures_treats_blank_pblntf_ty_as_no_filter(agent, wiki_tools, monkeypatch):
+    """빈 문자열/공백은 필터 없음(None)으로 정규화돼야 한다."""
+    wiki_tools.search_web.return_value = []
+    wiki_tools.search_recent_disclosures.return_value = []
+    responses = [
+        tool_call_response(("call-1", "search_recent_disclosures", {"days": 14, "pblntf_ty": "  "})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "근거 없음"})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    agent._web_search_answer("질문")
+
+    wiki_tools.search_recent_disclosures.assert_called_once_with(14, None)
 
 
 def test_web_search_tools_include_disclosure_tools(agent, wiki_tools, monkeypatch):

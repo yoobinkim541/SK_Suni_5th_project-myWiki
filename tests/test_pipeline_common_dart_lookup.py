@@ -277,6 +277,40 @@ def test_search_recent_disclosures_merges_hits_from_multiple_corp_codes(monkeypa
     assert {h.rcept_no for h in hits} == {"A", "B"}
 
 
+def test_search_recent_disclosures_passes_pblntf_ty_when_given(monkeypatch):
+    """실측 확인(2026-08-09): DART API는 pblntf_ty에 콤마로 여러 유형을 넣으면
+    '공시유형(pblntf_ty) 필드의 부적절한 값'으로 거절한다 — 한 번에 하나만 보낸다."""
+    supabase = FakeSupabase(tables={"sources": [_source_row("00164779")]})
+    captured = {}
+
+    def fake_get(url, *, params, timeout):
+        captured["pblntf_ty"] = params.get("pblntf_ty")
+        return FakeListResponse({"status": "000", "list": []})
+
+    monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+
+    dart_lookup.search_recent_disclosures(WORKSPACE_ID, days=90, pblntf_ty="B", supabase=supabase)
+
+    assert captured["pblntf_ty"] == "B"
+
+
+def test_search_recent_disclosures_omits_pblntf_ty_param_when_not_given(monkeypatch):
+    supabase = FakeSupabase(tables={"sources": [_source_row("00164779")]})
+    captured = {}
+
+    def fake_get(url, *, params, timeout):
+        captured["has_pblntf_ty"] = "pblntf_ty" in params
+        return FakeListResponse({"status": "000", "list": []})
+
+    monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+
+    dart_lookup.search_recent_disclosures(WORKSPACE_ID, days=90, supabase=supabase)
+
+    assert captured["has_pblntf_ty"] is False
+
+
 def test_search_recent_disclosures_follows_total_page_pagination(monkeypatch):
     """실측 버그(2026-08-09): page_count(100)를 넘는 공시가 있는 회사(나스닥 상장
     직후 등)는 1페이지만 보면 최신 공시가 누락된다 — total_page를 보고 이어 받아야
