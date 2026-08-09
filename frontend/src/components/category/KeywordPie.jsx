@@ -11,6 +11,19 @@
 //  · activeWord : 강조할 조각 이름
 //
 // 반응형: svg에 viewBox만 주고 CSS(.pie svg{width:100%;height:auto})가 폭을 맞춥니다.
+//
+// ⚠ [2026-08-10] 애니메이션 추가/정리:
+//  · 진입 시 조각이 각도 순서대로 살짝 늦게 튀어나오며 채워지는 느낌(0.8~1.2s 구간에
+//    스태거드 딜레이) — 진짜 각도 스윕(부채꼴이 커지는 방식)은 순수 CSS로는 힘들어서
+//    (조각마다 path가 다 다른 다각형이라 stroke-dasharray 트릭을 못 씀) 대신 각 조각이
+//    중심에서 scale 0.4→1 + fade로 튀어나오는 방식을 각도 순서대로 스태거드 처리했다.
+//    한 바퀴 빙 돌면서 채워지는 인상은 그대로 준다. 페이지 진입 시 한 번만 재생(반복 없음).
+//  · hover 시 그 조각만 살짝(3~5%) 확대 + 밝기 증가, 나머지는 그대로 — 이미 있던
+//    .sl.on(scale 1.045)을 hover 전용으로 재활용하고 밝기만 추가했다.
+//  · hover 중엔 중앙 숫자/라벨이 그 조각 값으로 바뀌고, 벗어나면 원래 합계로 돌아온다.
+//  · 원그래프 전체가 계속 회전/pulse하는 애니메이션은 없다(피드백으로 명시적으로 뺐다).
+
+import { useState } from 'react';
 
 // 진한 색 → 밝은 색 순. 비중이 큰 조각일수록 앞쪽(진한 색)을 씁니다.
 const PALETTE = ['#347FA3', '#4B94B5', '#63A9C4', '#86AABD', '#A7CBD8', '#C8E0E7'];
@@ -43,6 +56,7 @@ function arcPath(startAngle, endAngle) {
 }
 
 export default function KeywordPie({ items = [], title, total, onSlice, activeWord }) {
+  const [hoverWord, setHoverWord] = useState(null);
   const sum = items.reduce((s, i) => s + i.count, 0);
 
   if (!sum) {
@@ -70,8 +84,14 @@ export default function KeywordPie({ items = [], title, total, onSlice, activeWo
       share,
       color: colorByIndex[idx],
       d: arcPath(start, Math.min(end, 359.99)),
+      // 각도 순서(0~1)대로 스태거드 딜레이 — 한 바퀴 도는 동안 0.15~1.05s 사이로 흩뿌린다.
+      enterDelay: 0.15 + start / 360 * 0.9,
     };
   });
+
+  const hovered = hoverWord ? slices.find((s) => s.word === hoverWord) : null;
+  const centerValue = hovered ? hovered.count : total ?? sum;
+  const centerLabel = hovered ? hovered.word : title || '건';
 
   return (
     <div className="pie">
@@ -79,24 +99,29 @@ export default function KeywordPie({ items = [], title, total, onSlice, activeWo
         {slices.map((s) => (
           <path
             key={s.word}
-            className={`sl${activeWord === s.word ? ' on' : ''}${onSlice ? ' clickable' : ''}`}
+            className={`sl${activeWord === s.word ? ' on' : ''}${hoverWord === s.word ? ' hover' : ''}${onSlice ? ' clickable' : ''}`}
             d={s.d}
             fill={s.color}
+            style={{ animationDelay: `${s.enterDelay}s` }}
             onClick={onSlice ? () => onSlice(s.word) : undefined}
+            onMouseEnter={() => setHoverWord(s.word)}
+            onMouseLeave={() => setHoverWord((prev) => (prev === s.word ? null : prev))}
           >
             <title>{`${s.word} · ${s.count}건 (${Math.round(s.share * 100)}%)`}</title>
           </path>
         ))}
-        <text className="pie-ct" x={CX} y={CY - 4}>{total ?? sum}</text>
-        <text className="pie-cl" x={CX} y={CY + 13}>{title || '건'}</text>
+        <text key={`ct-${centerValue}`} className="pie-ct" x={CX} y={CY - 4}>{centerValue}</text>
+        <text key={`cl-${centerLabel}`} className="pie-cl" x={CX} y={CY + 13}>{centerLabel}</text>
       </svg>
 
       <ul className="pie-legend">
         {slices.map((s) => (
           <li
             key={s.word}
-            className={`${activeWord === s.word ? 'on ' : ''}${onSlice ? 'clickable' : ''}`.trim()}
+            className={`${activeWord === s.word ? 'on ' : ''}${hoverWord === s.word ? 'hover ' : ''}${onSlice ? 'clickable' : ''}`.trim()}
             onClick={onSlice ? () => onSlice(s.word) : undefined}
+            onMouseEnter={() => setHoverWord(s.word)}
+            onMouseLeave={() => setHoverWord((prev) => (prev === s.word ? null : prev))}
           >
             <span className="sw" style={{ background: s.color }}></span>
             <span className="w">{s.word}</span>
