@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -35,9 +35,23 @@ from src.wiki.generation_models import WikiDraftGenerationResult
 SINCE_HOURS_LOOKBACK = 24
 GRACE_MINUTES = 15
 
+KST = timezone(timedelta(hours=9))
+REPORT_CRITICAL_WINDOW_KST = (time(6, 0), time(8, 30))
+"""이 구간(KST 06:00~08:30) 동안은 위키 갱신을 아예 건너뛴다. daily-report-analysis-catchup.yml
+(06:00 KST 시작)과 scheduled-daily-report.yml(07:30 KST 시작, 08:30 KST 마감)이 도는 시간대라,
+위키 갱신이 같은 OpenRouter 호출 자원을 나눠 쓰면 리포트 완료가 늦어질 위험이 있다.
+wiki-refresh-gate.yml의 job 타임아웃을 넉넉하게 늘려도(예: 90분) 이 구간을 건드리지 않게,
+구간 시작 전 마지막 실행(05:30 KST 틱)이 최대치로 돌아도 07:00 KST에는 끝나 있어 안전 마진이 크다."""
+
 
 def log(msg: str) -> None:
     print(f"[refresh_wiki_scheduled] {msg}", flush=True)
+
+
+def is_within_report_critical_window(now_utc: datetime) -> bool:
+    now_kst_time = now_utc.astimezone(KST).time()
+    start, end = REPORT_CRITICAL_WINDOW_KST
+    return start <= now_kst_time < end
 
 
 def is_refresh_due(last_wiki_refresh_at: str | None, cycle_minutes: int, *, now: datetime) -> bool:
@@ -99,6 +113,9 @@ if __name__ == "__main__":
     settings = get_workspace_settings(workspace_id)
 
     now = datetime.now(timezone.utc)
+    if is_within_report_critical_window(now):
+        log("리포트 준비 구간(KST 06:00~08:30)이라 위키 갱신을 건너뜀")
+        sys.exit(0)
     if not is_refresh_due(settings.last_wiki_refresh_at, settings.wiki_update_cycle_minutes, now=now):
         log(
             f"아직 주기 안 됨 (주기={settings.wiki_update_cycle_minutes}분, "

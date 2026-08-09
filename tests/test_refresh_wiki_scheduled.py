@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from scripts.refresh_wiki_scheduled import is_refresh_due
+from scripts.refresh_wiki_scheduled import is_refresh_due, is_within_report_critical_window
 
 
 def test_is_refresh_due_true_when_never_refreshed():
@@ -40,3 +40,33 @@ def test_is_refresh_due_false_just_outside_grace_window():
     now = datetime.now(timezone.utc)
     last = (now - timedelta(minutes=344)).isoformat()
     assert is_refresh_due(last, 360, now=now) is False
+
+
+def test_is_within_report_critical_window_false_just_before_kst_6am():
+    # KST 05:59 = UTC 전날 20:59
+    now = datetime(2026, 8, 8, 20, 59, tzinfo=timezone.utc)
+    assert is_within_report_critical_window(now) is False
+
+
+def test_is_within_report_critical_window_true_at_kst_6am():
+    # KST 06:00 = UTC 전날 21:00 — 구간 시작(포함)
+    now = datetime(2026, 8, 8, 21, 0, tzinfo=timezone.utc)
+    assert is_within_report_critical_window(now) is True
+
+
+def test_is_within_report_critical_window_true_just_before_kst_830am():
+    # KST 08:29 = UTC 전날 23:29
+    now = datetime(2026, 8, 8, 23, 29, tzinfo=timezone.utc)
+    assert is_within_report_critical_window(now) is True
+
+
+def test_is_within_report_critical_window_false_at_kst_830am():
+    # KST 08:30 = UTC 전날 23:30 — 구간 끝(제외)
+    now = datetime(2026, 8, 8, 23, 30, tzinfo=timezone.utc)
+    assert is_within_report_critical_window(now) is False
+
+
+def test_is_within_report_critical_window_false_at_midday_kst():
+    # KST 15:00 = UTC 06:00 — 구간과 무관한 시각
+    now = datetime(2026, 8, 9, 6, 0, tzinfo=timezone.utc)
+    assert is_within_report_critical_window(now) is False
