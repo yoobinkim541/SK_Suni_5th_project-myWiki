@@ -275,3 +275,56 @@ def test_search_recent_disclosures_merges_hits_from_multiple_corp_codes(monkeypa
     hits = dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
 
     assert {h.rcept_no for h in hits} == {"A", "B"}
+
+
+def test_search_recent_disclosures_follows_total_page_pagination(monkeypatch):
+    """실측 버그(2026-08-09): page_count(100)를 넘는 공시가 있는 회사(나스닥 상장
+    직후 등)는 1페이지만 보면 최신 공시가 누락된다 — total_page를 보고 이어 받아야
+    한다."""
+    supabase = FakeSupabase(tables={"sources": [_source_row("00164779")]})
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+    seen_page_nos = []
+
+    def fake_get(url, *, params, timeout):
+        seen_page_nos.append(params["page_no"])
+        if params["page_no"] == 1:
+            return FakeListResponse({
+                "status": "000",
+                "total_page": 2,
+                "list": [{"rcept_no": "PAGE1", "report_nm": "1페이지 공시", "corp_name": "SK하이닉스", "rcept_dt": "20260805"}],
+            })
+        return FakeListResponse({
+            "status": "000",
+            "total_page": 2,
+            "list": [{"rcept_no": "PAGE2", "report_nm": "2페이지 공시", "corp_name": "SK하이닉스", "rcept_dt": "20260804"}],
+        })
+
+    monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
+
+    hits = dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
+
+    assert seen_page_nos == [1, 2]
+    assert {h.rcept_no for h in hits} == {"PAGE1", "PAGE2"}
+
+
+def test_search_recent_disclosures_stops_at_max_pages_safety_cap(monkeypatch):
+    """total_page가 비정상적으로 크게 와도(혹은 API가 계속 total_page를 부풀려도)
+    무한정 페이지를 이어 받지 않고 _MAX_PAGES에서 멈춰야 한다."""
+    supabase = FakeSupabase(tables={"sources": [_source_row("00164779")]})
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+    call_count = {"n": 0}
+
+    def fake_get(url, *, params, timeout):
+        call_count["n"] += 1
+        return FakeListResponse({
+            "status": "000",
+            "total_page": 999,
+            "list": [{"rcept_no": f"P{params['page_no']}", "report_nm": "공시", "corp_name": "SK하이닉스", "rcept_dt": "20260805"}],
+        })
+
+    monkeypatch.setattr(dart_lookup.httpx, "get", fake_get)
+
+    hits = dart_lookup.search_recent_disclosures(WORKSPACE_ID, supabase=supabase)
+
+    assert call_count["n"] == dart_lookup._MAX_PAGES
+    assert len(hits) == dart_lookup._MAX_PAGES

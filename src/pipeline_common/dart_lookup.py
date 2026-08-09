@@ -36,6 +36,10 @@ _TIMEOUT_SEC = 10.0
 
 _STATUS_OK = "000"
 _STATUS_NO_DATA = "013"
+_PAGE_COUNT = 100
+_MAX_PAGES = 5  # 한 회사당 최대 500건 — 나스닥 상장 직후처럼 특정 기간에 공시가
+# 몰리는 회사도 실측상 이 안에서 커버되고(2026-08-09 확인: SK하이닉스 90일치 56건),
+# 무한 페이지 호출로 응답이 느려지는 걸 막는 안전 상한이다.
 
 _HTML_TAG = re.compile(r"<[^>]+>")
 _MAX_TEXT_CHARS = 30_000  # 모델 컨텍스트 안에 안전하게 들어가는 상한
@@ -117,52 +121,77 @@ def search_recent_disclosures(
     hits: list[DisclosureHit] = []
     failed = 0
     for corp_code in corp_codes:
+        # 나스닥 상장 직후처럼 특정 기간에 공시가 몰리는 회사는 90일치가 page_count(100)를
+        # 넘길 수 있다 — 1페이지만 보면 최신/중요 공시가 조용히 누락된다(실측 버그:
+        # SK하이닉스 ADR 상장 공시를 못 찾음). total_page를 보고 page_no를 늘려가며
+        # _MAX_PAGES까지 이어 받는다. sort=date/sort_mth=desc로 최신순 보장 — 상한에
+        # 걸려도 최신 공시가 먼저 잘리지 않는다.
+        corp_hits: list[DisclosureHit] = []
+        corp_failed = False
         try:
-            response = httpx.get(
-                _DART_LIST_URL,
-                params={
-                    "crtfc_key": api_key,
-                    "corp_code": corp_code,
-                    "bgn_de": bgn_de,
-                    "end_de": end_de,
-                    "page_count": 100,
-                },
-                timeout=_TIMEOUT_SEC,
-            )
-            payload = response.json()
-        except Exception as exc:  # noqa: BLE001
-            failed += 1
+            page_no = 1
+            while page_no <= _MAX_PAGES:
+                response = httpx.get(
+                    _DART_LIST_URL,
+                    params={
+                        "crtfc_key": api_key,
+                        "corp_code": corp_code,
+                        "bgn_de": bgn_de,
+                        "end_de": end_de,
+                        "page_no": page_no,
+                        "page_count": _PAGE_COUNT,
+                        "sort": "date",
+                        "sort_mth": "desc",
+                    },
+                    timeout=_TIMEOUT_SEC,
+                )
+                payload = response.json()
+
+                status = payload.get("status")
+                if status == _STATUS_NO_DATA:
+                    break
+                if status != _STATUS_OK:
+                    if page_no == 1:
+                        corp_failed = True
+                        logger.warning(
+                            "dart_lookup: 공시검색 API 응답 오류, 이 회사만 건너뜀 (corp_code=%s, status=%s, message=%s)",
+                            corp_code, status, payload.get("message"),
+                        )
+                    break
+
+                for entry in payload.get("list", []):
+                    rcept_no = (entry.get("rcept_no") or "").strip()
+                    if not rcept_no:
+                        continue
+                    published = _parse_dart_date(entry.get("rcept_dt"))
+                    corp_hits.append(
+                        DisclosureHit(
+                            rcept_no=rcept_no,
+                            report_name=(entry.get("report_nm") or "").strip(),
+                            corp_name=(entry.get("corp_name") or "").strip(),
+                            published_at=published.isoformat() if published else None,
+                        )
+                    )
+
+                try:
+                    total_page = int(payload.get("total_page") or 1)
+                except (TypeError, ValueError):
+                    total_page = 1
+                if page_no >= total_page:
+                    break
+                page_no += 1
+        except Exception:  # noqa: BLE001
+            corp_failed = True
             logger.warning(
                 "dart_lookup: 공시 목록 조회 실패, 이 회사만 건너뜀 (corp_code=%s)",
                 corp_code,
                 exc_info=True,
             )
-            continue
 
-        status = payload.get("status")
-        if status == _STATUS_NO_DATA:
-            continue
-        if status != _STATUS_OK:
+        if corp_failed:
             failed += 1
-            logger.warning(
-                "dart_lookup: 공시검색 API 응답 오류, 이 회사만 건너뜀 (corp_code=%s, status=%s, message=%s)",
-                corp_code, status, payload.get("message"),
-            )
             continue
-
-        for entry in payload.get("list", []):
-            rcept_no = (entry.get("rcept_no") or "").strip()
-            if not rcept_no:
-                continue
-            published = _parse_dart_date(entry.get("rcept_dt"))
-            hits.append(
-                DisclosureHit(
-                    rcept_no=rcept_no,
-                    report_name=(entry.get("report_nm") or "").strip(),
-                    corp_name=(entry.get("corp_name") or "").strip(),
-                    published_at=published.isoformat() if published else None,
-                )
-            )
+        hits.extend(corp_hits)
 
     # 등록된 회사 전부가 실패하면(네트워크/인증/한도 초과 등) "공시 0건"으로 조용히
     # 넘어가지 않는다 — fetchers.py의 네이버 관련 교훈과 같은 함정: 인증 실패도
