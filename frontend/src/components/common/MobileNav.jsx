@@ -70,7 +70,7 @@ export function Drawer({ isOpen, onClose, onLogoClick, lastCollected = '07:42', 
           onClick={() => { onLogoClick?.(); onClose?.(); }}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onLogoClick?.(); onClose?.(); } }}
         >
-          <div className="eb">반도체 동향 시스템</div>
+          <div className="eb">반도체 산업 동향 자동 큐레이션</div>
           <div className="nm"><LogoMark className="nm-ic" />myWiki</div>
           <div className="rule"></div>
         </div>
