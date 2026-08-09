@@ -34,6 +34,7 @@ def test_merge_creates_version_archives_other_and_reparents_children(monkeypatch
         lambda **kwargs: json.dumps({
             "decision": "merge",
             "representative_page_id": "page-b",
+            "title": "통합 제목",
             "markdown": "# 통합 본문",
             "change_summary": "두 문서를 통합",
             "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
@@ -43,6 +44,7 @@ def test_merge_creates_version_archives_other_and_reparents_children(monkeypatch
     monkeypatch.setattr(dedup, "record_wiki_validation", lambda *a, **k: calls.append(("validate", a)))
     monkeypatch.setattr(dedup, "review_wiki_version", lambda *a, **k: calls.append(("review", a)))
     monkeypatch.setattr(dedup, "publish_wiki_version", lambda *a, **k: calls.append(("publish", a)))
+    monkeypatch.setattr(dedup, "update_wiki_page_title", lambda page_id, title, **k: calls.append(("update_title", page_id, title)))
     monkeypatch.setattr(dedup, "archive_wiki_page", lambda page_id, **k: calls.append(("archive", page_id)))
     monkeypatch.setattr(dedup, "reparent_children", lambda old, new, **k: calls.append(("reparent", old, new)) or 0)
 
@@ -62,8 +64,40 @@ def test_merge_creates_version_archives_other_and_reparents_children(monkeypatch
     assert create_call[1:4] == ("b", "market", None)  # 대표(page-b)의 slug/page_type/parent_page_id 유지
     assert create_call[4] == ["doc-1"]
     assert ("publish", ("page-b", "version-new")) in calls
+    assert ("update_title", "page-b", "통합 제목") in calls
     assert ("archive", "page-a") in calls
     assert ("reparent", "page-a", "page-b") in calls
+
+
+def test_merge_skipped_when_title_is_blank(monkeypatch):
+    """병합을 결정했는데 title을 못 만들면(빈 문자열/공백) 본문만 바뀌고 제목은 그대로인
+    반쪽짜리 상태를 막기 위해 병합 자체를 취소한다."""
+    calls = []
+    monkeypatch.setattr(
+        dedup, "create_json_completion",
+        lambda **kwargs: json.dumps({
+            "decision": "merge",
+            "representative_page_id": "page-b",
+            "title": "   ",
+            "markdown": "# 통합 본문",
+            "change_summary": "두 문서를 통합",
+            "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+        }),
+    )
+    monkeypatch.setattr(dedup, "create_wiki_version", lambda draft, **k: calls.append(("create",)) or "should-not-run")
+    monkeypatch.setattr(dedup, "update_wiki_page_title", lambda page_id, title, **k: calls.append(("update_title",)))
+    monkeypatch.setattr(dedup, "archive_wiki_page", lambda page_id, **k: calls.append(("archive", page_id)))
+
+    pair = _pair()
+    content_a = _content("page-a", "a", "제목 A", "issue", "# A", [
+        WikiSource(document_version_id="doc-1", citation_order=1, claim_text="근거", support_type="supports", source_start_line=None, source_end_line=None),
+    ])
+    content_b = _content("page-b", "b", "제목 B", "market", "# B", [])
+
+    result = dedup._judge_and_merge(pair, content_a, content_b, workspace_id=WORKSPACE_ID, requested_by=None)
+
+    assert result.decision == "not_duplicate"
+    assert calls == []
 
 
 def test_not_duplicate_decision_does_nothing(monkeypatch):

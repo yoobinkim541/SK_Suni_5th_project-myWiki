@@ -31,6 +31,7 @@ class WikiDedupClaim(BaseModel):
 class WikiDedupLLMResult(BaseModel):
     decision: WikiDedupDecision
     representative_page_id: str | None = None
+    title: str | None = None
     markdown: str | None = None
     change_summary: str | None = None
     claims: list[WikiDedupClaim] = Field(default_factory=list)
