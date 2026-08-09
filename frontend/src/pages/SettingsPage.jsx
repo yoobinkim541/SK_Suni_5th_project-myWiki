@@ -49,6 +49,7 @@ import ToggleSwitch from '../components/common/ToggleSwitch';
 import SegmentedControl from '../components/common/SegmentedControl';
 import { roleLabel, roleClass } from '../constants/roles';
 import AdminPanel from '../components/settings/AdminPanel';
+import TeamPanel from '../components/settings/TeamPanel';
 import {
   fetchCollectSources,
   formatSourceSummary,
@@ -201,6 +202,8 @@ export default function SettingsPage({
           </SettingsRow>
         )}
       </SettingsGroup>
+
+      {myRole && <TeamPanel myRole={myRole} myUserId={profile?.id} />}
 
       <SettingsGroup title="알림">
         <SettingsRow label="일일 리포트 생성 알림" desc="일일 동향 보고서가 생성되면 알립니다">
