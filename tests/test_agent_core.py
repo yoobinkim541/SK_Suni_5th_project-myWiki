@@ -1138,6 +1138,48 @@ def test_llm_fallback_answer_strips_fake_citation_markers(agent, wiki_tools, mon
     assert "[2]" not in result.answer
 
 
+def test_llm_fallback_answer_appends_notice_when_response_truncated(agent, wiki_tools, monkeypatch, caplog):
+    """실측 버그(2026-08-09): max_tokens=1500 고정 + finish_reason 미체크로, 5개
+    섹션짜리 종합 답변이 "실적은 AI 메"에서 그대로 잘려 정상 완료처럼 저장됐다.
+    finish_reason == 'length'면 로그를 남기고 사용자에게 잘렸다는 걸 알려야 한다."""
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
+        FakeResponse([FakeChoice(FakeMessage(content="실적은 AI 메"), "length")]),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    with caplog.at_level("WARNING"):
+        result = agent.answer("아무 질문")  # allow_web_search 기본값 False — 위키/원문 다음 곧장 폴백
+
+    assert result.is_llm_fallback is True
+    assert result.answer.startswith("실적은 AI 메")
+    assert "생략" in result.answer
+    assert any(r.message == "llm_fallback_answer_truncated" for r in caplog.records)
+
+
+def test_complete_uses_dedicated_max_tokens_per_path(agent, wiki_tools):
+    """max_tokens가 use_tools 분기별로 분리된 상수를 쓰는지 확인 — 하나(1500)로
+    고정돼 있으면 긴 일반 지식 답변이 문장 중간에 잘리는 문제가 재발한다."""
+    agent.client.chat.completions.create = MagicMock(
+        side_effect=[
+            tool_call_response(("call-1", "submit_no_answer", {"reason": "위키 근거 없음"})),
+            tool_call_response(("call-2", "submit_no_answer", {"reason": "원문 근거 없음"})),
+            plain_text_response("일반 지식 답변"),
+        ]
+    )
+
+    agent.answer("질문")
+
+    call_list = agent.client.chat.completions.create.call_args_list
+    tool_call_kwargs = call_list[0].kwargs
+    fallback_kwargs = call_list[-1].kwargs
+    assert tool_call_kwargs["max_tokens"] == core.GROUNDED_ANSWER_MAX_TOKENS
+    assert fallback_kwargs["max_tokens"] == core.LLM_FALLBACK_MAX_TOKENS
+    assert fallback_kwargs["max_tokens"] > 1500
+    assert tool_call_kwargs["max_tokens"] > 1500
+
+
 def test_answer_keeps_no_answer_when_llm_fallback_raises(agent, wiki_tools, monkeypatch):
     """폴백 호출 자체가 실패하면(예외) 폴백 실패를 감추지 않고 원래의 근거 없음
     결과를 그대로 낸다 — 거짓 답을 주면 안 된다.
