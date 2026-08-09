@@ -19,6 +19,7 @@ import ReportSection from '../components/report/ReportSection';
 export default function ReportPage({ onNavigate }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [historyError, setHistoryError] = useState('');
   const [summary, setSummary] = useState(null);
   const [archive, setArchive] = useState([]);
   const [today, setToday] = useState(null);
@@ -27,17 +28,26 @@ export default function ReportPage({ onNavigate }) {
     let alive = true;
     setLoading(true);
     setError('');
+    setHistoryError('');
 
     Promise.all([
       fetchReportSummary(),
-      fetchReportArchive(),
       fetchTodayReport(),
+      fetchReportArchive().then(
+        (items) => ({ ok: true, items }),
+        (err) => ({ ok: false, err }),
+      ),
     ])
-      .then(([s, a, t]) => {
+      .then(([s, t, historyResult]) => {
         if (!alive) return;
         setSummary(s);
-        setArchive(a);
         setToday(t);
+        if (historyResult.ok) {
+          setArchive(historyResult.items);
+        } else {
+          setArchive([]);
+          setHistoryError(historyResult.err?.message || '\uB9AC\uD3EC\uD2B8 \uD788\uC2A4\uD1A0\uB9AC\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.');
+        }
       })
       .catch((err) => {
         if (!alive) return;
@@ -84,6 +94,7 @@ export default function ReportPage({ onNavigate }) {
         archive={archive}
         today={today}
         summary={summary}
+        historyError={historyError}
         onSelectWiki={(wikiId) => onNavigate?.('wiki', wikiId)}
       />
     </section>
