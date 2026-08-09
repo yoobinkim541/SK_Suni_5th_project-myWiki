@@ -36,6 +36,12 @@ def mark_analysis_batch_completed(*, workspace_id: str, report_date: date, compl
     ).eq("workspace_id", workspace_id).eq("report_date", report_date.isoformat()).execute()
 
 
+def mark_analysis_batch_insufficient(*, workspace_id: str, report_date: date, completed_at: datetime) -> None:
+    get_client().table(DAILY_REPORT_ANALYSIS_BATCHES_TABLE).update(
+        {"status": "insufficient", "completed_at": completed_at.isoformat()}
+    ).eq("workspace_id", workspace_id).eq("report_date", report_date.isoformat()).execute()
+
+
 def get_completed_analysis_batch_document_ids(*, workspace_id: str, report_date: date) -> list[str]:
     rows = (
         get_client().table(DAILY_REPORT_ANALYSIS_BATCHES_TABLE)
