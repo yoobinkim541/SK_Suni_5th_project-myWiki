@@ -198,6 +198,10 @@ def remove_chat_session_participant(session_id: str, user_id: str) -> None:
 def _flatten_display_name(row: dict) -> dict:
     profile = row.pop("profiles", None) or {}
     row["display_name"] = profile.get("display_name")
+    # avatar_object_key 자체는 프론트에 안 넘긴다(다른 사람이 object_key를 조립해
+    # 접근 시도할 여지를 안 만든다) — 존재 여부만 노출하고, 실제 조회는
+    # GET /workspace/members/{user_id}/avatar가 서버에서 인가 확인 후 처리한다.
+    row["has_avatar"] = bool(profile.get("avatar_object_key"))
     return row
 
 
@@ -259,7 +263,7 @@ def list_workspace_members(workspace_id: str) -> list[dict]:
     res = (
         get_supabase()
         .table("workspace_members")
-        .select("user_id, role, profiles(display_name)")
+        .select("user_id, role, profiles(display_name, avatar_object_key)")
         .eq("workspace_id", workspace_id)
         .execute()
     )
@@ -808,7 +812,7 @@ def list_team_members(team_id: str) -> list[dict]:
     res = (
         get_supabase()
         .table("workspace_members")
-        .select("user_id, role, profiles(display_name)")
+        .select("user_id, role, profiles(display_name, avatar_object_key)")
         .eq("team_id", team_id)
         .execute()
     )
@@ -819,7 +823,7 @@ def list_workspace_users_with_team(workspace_id: str) -> list[dict]:
     members_res = (
         get_supabase()
         .table("workspace_members")
-        .select("user_id, role, team_id, profiles(display_name)")
+        .select("user_id, role, team_id, profiles(display_name, avatar_object_key)")
         .eq("workspace_id", workspace_id)
         .execute()
     )
@@ -881,3 +885,22 @@ def download_avatar_object(object_key: str) -> bytes:
 
 def delete_avatar_object(object_key: str) -> None:
     get_supabase().storage.from_(AVATAR_BUCKET).remove([object_key])
+
+
+def get_member_avatar_object_key(workspace_id: str, user_id: str) -> Optional[str]:
+    """다른 워크스페이스 멤버의 프로필 사진을 팀 로스터·상단바에 보여줄 때 쓴다 —
+    대상이 같은 워크스페이스 소속인지 먼저 확인해서, workspace_id 없이 아무 user_id나
+    넣어 남의 사진을 긁어가는 걸 막는다."""
+    membership = (
+        get_supabase()
+        .table("workspace_members")
+        .select("user_id")
+        .eq("workspace_id", workspace_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if membership.data is None:
+        return None
+    profile = get_profile(user_id)
+    return profile.get("avatar_object_key") if profile else None

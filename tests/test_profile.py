@@ -6,6 +6,9 @@ import pytest
 from src.api import db
 
 USER_ID = "55555555-5555-5555-5555-555555555555"
+WORKSPACE_ID = "44444444-4444-4444-4444-444444444444"
+OTHER_USER_ID = "66666666-6666-6666-6666-666666666666"
+NON_MEMBER_ID = "77777777-7777-7777-7777-777777777777"
 
 
 class FakeResult:
@@ -30,9 +33,34 @@ class FakeUpdateQuery:
         return FakeResult(matched)
 
 
+class FakeQuery:
+    def __init__(self, rows: list[dict]):
+        self._rows = rows
+        self._single = False
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, key, value):
+        self._rows = [r for r in self._rows if r.get(key) == value]
+        return self
+
+    def maybe_single(self):
+        self._single = True
+        return self
+
+    def execute(self):
+        if self._single:
+            return FakeResult(self._rows[0] if self._rows else None)
+        return FakeResult(list(self._rows))
+
+
 class FakeTable:
     def __init__(self, rows: list[dict]):
         self._rows = rows
+
+    def select(self, *args, **kwargs):
+        return FakeQuery(list(self._rows)).select(*args, **kwargs)
 
     def update(self, patch: dict):
         return FakeUpdateQuery(self._rows, patch)
@@ -77,7 +105,14 @@ class FakeSupabaseClient:
 @pytest.fixture
 def fake_db(monkeypatch):
     client = FakeSupabaseClient({
-        "profiles": [{"id": USER_ID, "display_name": "기존이름", "avatar_object_key": None}],
+        "profiles": [
+            {"id": USER_ID, "display_name": "기존이름", "avatar_object_key": None},
+            {"id": OTHER_USER_ID, "display_name": "동료", "avatar_object_key": f"{OTHER_USER_ID}/avatar.png"},
+        ],
+        "workspace_members": [
+            {"workspace_id": WORKSPACE_ID, "user_id": USER_ID},
+            {"workspace_id": WORKSPACE_ID, "user_id": OTHER_USER_ID},
+        ],
     })
     monkeypatch.setattr(db, "get_supabase", lambda: client)
     return client
@@ -122,3 +157,21 @@ def test_delete_avatar_object(fake_db):
 
     bucket = fake_db.storage.buckets["avatars"]
     assert bucket.removed == [[object_key]]
+
+
+def test_get_member_avatar_object_key_returns_key_for_fellow_member(fake_db):
+    result = db.get_member_avatar_object_key(WORKSPACE_ID, OTHER_USER_ID)
+
+    assert result == f"{OTHER_USER_ID}/avatar.png"
+
+
+def test_get_member_avatar_object_key_none_when_no_avatar(fake_db):
+    result = db.get_member_avatar_object_key(WORKSPACE_ID, USER_ID)
+
+    assert result is None
+
+
+def test_get_member_avatar_object_key_none_when_not_a_member(fake_db):
+    result = db.get_member_avatar_object_key(WORKSPACE_ID, NON_MEMBER_ID)
+
+    assert result is None

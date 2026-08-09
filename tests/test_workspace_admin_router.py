@@ -87,7 +87,9 @@ def test_update_role_success_for_owner(client_as, monkeypatch):
     res = client_as(OWNER_ID).patch(f"/workspace/members/{TARGET_ID}/role", json={"role": "admin"})
 
     assert res.status_code == 200
-    assert res.json() == {"user_id": TARGET_ID, "display_name": "박하늘", "email": None, "role": "admin"}
+    assert res.json() == {
+        "user_id": TARGET_ID, "display_name": "박하늘", "email": None, "role": "admin", "has_avatar": False,
+    }
     assert calls == [(WORKSPACE_ID, TARGET_ID, "admin")]
 
 
