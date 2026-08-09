@@ -30,16 +30,21 @@ from .auth import get_current_user
 from .schemas import (
     AddParticipantRequest,
     AdminSessionOut,
+    AdminUserOut,
+    AssignTeamRequest,
     ChatMessageOut,
     ChatSessionOut,
     CitationOut,
     CreateSessionRequest,
+    CreateTeamRequest,
     ParticipantOut,
     RenameSessionRequest,
     SaveToWikiResponse,
     SendMessageRequest,
     SendMessageResponse,
     ShareToTeamRequest,
+    TeamMemberOut,
+    TeamOut,
     UpdateMemberRoleRequest,
     WorkspaceMemberOut,
 )
@@ -115,6 +120,13 @@ def _require_workspace(profile: dict) -> str:
 def _require_owner(profile: dict, workspace_id: str) -> None:
     if db.get_workspace_role(workspace_id, profile["id"]) != "owner":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="오너만 할 수 있음")
+
+
+def _require_team_scope(profile: dict, workspace_id: str, team_id: str, allow_roles: set[str]) -> dict:
+    member = db.get_workspace_member(workspace_id, profile["id"])
+    if member is None or member.get("role") not in allow_roles or member.get("team_id") != team_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="이 팀에 대한 권한이 없음")
+    return member
 
 
 def _to_message_out(message: dict) -> ChatMessageOut:
@@ -600,3 +612,117 @@ def delete_account(profile: dict = Depends(get_current_user)):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/teams", response_model=TeamOut)
+def create_team(body: CreateTeamRequest, profile: dict = Depends(get_current_user)):
+    """팀 생성 — 관리자(오너) 전용."""
+    workspace_id = _require_workspace(profile)
+    _require_owner(profile, workspace_id)
+    try:
+        team = db.create_team(workspace_id, body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return TeamOut(id=team["id"], name=team["name"], member_count=0)
+
+
+@app.delete("/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_team(team_id: str, profile: dict = Depends(get_current_user)):
+    """팀 삭제 — 관리자(오너) 전용. 소속 인원이 있으면 400."""
+    workspace_id = _require_workspace(profile)
+    _require_owner(profile, workspace_id)
+    try:
+        db.delete_team(team_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.get("/teams", response_model=list[TeamOut])
+def list_teams(profile: dict = Depends(get_current_user)):
+    """팀 목록 + 인원수 — 워크스페이스 멤버 누구나 열람 가능."""
+    workspace_id = _require_workspace(profile)
+    rows = db.list_teams(workspace_id)
+    return [TeamOut(**r) for r in rows]
+
+
+@app.get("/teams/{team_id}/members", response_model=list[TeamMemberOut])
+def list_team_members(team_id: str, profile: dict = Depends(get_current_user)):
+    """팀별 멤버 명단 — 워크스페이스 멤버 누구나 열람 가능."""
+    _require_workspace(profile)
+    rows = db.list_team_members(team_id)
+    return [
+        TeamMemberOut(user_id=r["user_id"], display_name=r.get("display_name"), role=r.get("role"))
+        for r in rows
+    ]
+
+
+@app.get("/admin/users", response_model=list[AdminUserOut])
+def list_all_users(profile: dict = Depends(get_current_user)):
+    """전체 사용자 + 소속 팀 — 관리자(오너) 전용."""
+    workspace_id = _require_workspace(profile)
+    _require_owner(profile, workspace_id)
+    rows = db.list_workspace_users_with_team(workspace_id)
+    return [
+        AdminUserOut(
+            user_id=r["user_id"], display_name=r.get("display_name"), role=r.get("role"),
+            team_id=r.get("team_id"), team_name=r.get("team_name"),
+        )
+        for r in rows
+    ]
+
+
+@app.patch("/admin/users/{user_id}/team", status_code=status.HTTP_204_NO_CONTENT)
+def assign_user_team(user_id: str, body: AssignTeamRequest, profile: dict = Depends(get_current_user)):
+    """사용자를 임의 팀에 배치/제외(team_id=null) — 관리자(오너) 전용, 자기 팀 범위 제한 없음."""
+    workspace_id = _require_workspace(profile)
+    _require_owner(profile, workspace_id)
+    db.move_member_to_team(workspace_id, user_id, body.team_id)
+
+
+@app.post("/teams/{team_id}/members", status_code=status.HTTP_204_NO_CONTENT)
+def invite_team_member(team_id: str, body: AddParticipantRequest, profile: dict = Depends(get_current_user)):
+    """팀원 초대 — 팀원/팀장 모두 자기 팀에만 가능. 대상은 미배치 사용자만(이미 배치된
+    사용자는 팀장의 영입 엔드포인트를 써야 함)."""
+    workspace_id = _require_workspace(profile)
+    _require_team_scope(profile, workspace_id, team_id, {"admin", "editor"})
+
+    target = db.get_workspace_member(workspace_id, body.user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="워크스페이스 멤버가 아님")
+    if target.get("team_id") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 배치된 사용자입니다. 팀장만 영입할 수 있음",
+        )
+
+    db.move_member_to_team(workspace_id, body.user_id, team_id)
+
+
+@app.post("/teams/{team_id}/members/recruit", status_code=status.HTTP_204_NO_CONTENT)
+def recruit_team_member(team_id: str, body: AddParticipantRequest, profile: dict = Depends(get_current_user)):
+    """팀원 영입 — 팀장 전용, 자기 팀만. 대상이 다른 팀 소속이어도 데려올 수 있다."""
+    workspace_id = _require_workspace(profile)
+    _require_team_scope(profile, workspace_id, team_id, {"admin"})
+
+    target = db.get_workspace_member(workspace_id, body.user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="워크스페이스 멤버가 아님")
+    if target.get("team_id") == team_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이미 같은 팀임")
+
+    db.move_member_to_team(workspace_id, body.user_id, team_id)
+
+
+@app.delete("/teams/{team_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_team_member(team_id: str, user_id: str, profile: dict = Depends(get_current_user)):
+    """팀원 제외(팀에서만, 워크스페이스 방출 아님) — 팀장 전용, 자기 팀만. 본인은 대상 불가."""
+    workspace_id = _require_workspace(profile)
+    _require_team_scope(profile, workspace_id, team_id, {"admin"})
+    if user_id == profile["id"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="본인은 제외할 수 없음")
+
+    target = db.get_workspace_member(workspace_id, user_id)
+    if target is None or target.get("team_id") != team_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="이 팀 소속이 아님")
+
+    db.move_member_to_team(workspace_id, user_id, None)
