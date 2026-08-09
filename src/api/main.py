@@ -311,6 +311,16 @@ def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depen
             detail="위키 근거 없이 LLM 일반 지식으로 답한 내용은 위키에 저장할 수 없음(할루시네이션 가능성)",
         )
 
+    # submit_no_answer도 이제 참고할 만큼만 읽은 문서를 citations로 선택적으로 실어
+    # 보낼 수 있어서(불완전한 답변이지만 각주 클릭이 죽은 링크가 아니게 하기 위함),
+    # "citations가 있으면 저장 가능"으로만 판단하면 근거 부족 응답도 위키에 저장될 수
+    # 있다 — has_answer=False는 content가 NO_ANSWER_PREFIX로 시작하는 것으로 구분되므로
+    # 별도로 걸러낸다.
+    if message["content"].startswith(db.NO_ANSWER_PREFIX):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="근거가 부족해 확정된 답이 아닌 내용은 위키에 저장할 수 없음"
+        )
+
     citations = db.list_message_citations(message_id)
     if not citations:
         raise HTTPException(

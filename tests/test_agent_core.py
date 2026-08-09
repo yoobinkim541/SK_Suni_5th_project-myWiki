@@ -152,6 +152,16 @@ def agent(wiki_tools: MagicMock) -> WikiAgent:
     return WikiAgent(wiki_tools=wiki_tools, openrouter_client=MagicMock())
 
 
+def test_default_openai_client_uses_configured_timeout(wiki_tools, monkeypatch):
+    """실측 버그: OpenAI SDK 기본 read timeout(600초)을 그대로 두면, primary 모델이
+    막혔을 때 폴백으로 넘어가기까지 라운드 하나가 몇 분씩 걸려 프론트에서 완전
+    무응답처럼 보였다(2026-08-09) — openrouter_client를 안 넘겨서 WikiAgent가 직접
+    OpenAI 클라이언트를 만들 때 OPENROUTER_TIMEOUT_SECONDS가 실제로 적용돼야 한다."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    agent = WikiAgent(wiki_tools=wiki_tools)
+    assert agent.client.timeout == core.OPENROUTER_TIMEOUT_SECONDS
+
+
 # ---------------------------------------------------------------------------
 # 정상 흐름: list_wiki_topics → read_wiki_page → submit_answer
 # ---------------------------------------------------------------------------
@@ -297,7 +307,97 @@ def test_answer_returns_no_answer_when_model_calls_submit_no_answer(agent, wiki_
     assert result.has_answer is False
     assert result.answer is None
     assert result.citations == []
-    assert result.no_answer_reason == "원문에도 관련 문서 없음"
+
+
+def test_answer_strips_dead_citation_markers_from_no_answer_reason(agent, wiki_tools, monkeypatch):
+    """실사용 버그: submit_no_answer 경로는 citations가 아예 없는데도, LLM이 reason에서
+    자기가 읽은 문서를 언급하며 습관적으로 [1] 같은 각주 표기를 섞어 쓰는 경우가 있다 —
+    그대로 프론트로 나가면 클릭해도 아무 데도 안 걸리는 죽은 각주가 된다.
+    submit_answer가 strip_orphaned_citation_markers를 쓰는 것과 동일하게, reason도
+    citation_count=0으로 모든 [N]을 제거해야 한다."""
+    responses = [
+        tool_call_response(
+            ("call-1", "submit_no_answer", {"reason": "HBM4 로드맵을 선보였습니다[1]만 실적은 확인 못함"})
+        ),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 근거 없음[2]"})),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("HBM4 양산 로드맵과 실적을 종합해서 정리해줘")
+
+    assert result.has_answer is False
+    assert result.no_answer_reason == "원문에도 근거 없음"
+    assert "[" not in result.no_answer_reason
+
+
+def test_document_answer_keeps_valid_citations_on_no_answer(agent, wiki_tools, monkeypatch):
+    """원문 단계에서 실제로 읽은 문서를 reason의 [1]과 함께 citations로 제출하면 —
+    완전한 답은 아니어도(has_answer=False) 그 citation은 살아남아야 하고(각주가 실제
+    문서로 연결됨), 유효 범위 안의 [1]은 지워지지 않아야 한다. wiki_slug는 원문 단계
+    citation이므로 실수로 채워 보내도 강제로 None이 돼야 한다(기존 submit_answer
+    경로와 동일 원칙). LLM 폴백은 빈 텍스트로 실패시켜, 원문 단계의 no-answer 결과가
+    최종 결과로 그대로 반환되는지 확인한다."""
+    wiki_tools.list_wiki_topics.return_value = []
+    wiki_tools.search_documents.return_value = [
+        FakeDocumentSearchHit(document_version_id="doc-ver-1", title="SK하이닉스 ADR 상장 공시", score=0.7)
+    ]
+    wiki_tools.read_document.return_value = FakeDocumentDetail(
+        document_version_id="doc-ver-1",
+        title="SK하이닉스 ADR 상장 공시",
+        markdown="SK하이닉스가 나스닥에 ADR을 상장했다.",
+        canonical_url="https://dart.fss.or.kr/example",
+        source_name="DART - SK하이닉스",
+        published_at="2026-07-10T00:00:00+00:00",
+    )
+    citation = {
+        "document_version_id": "doc-ver-1",
+        "wiki_slug": "hbm4",  # 실수로 채워 보낸 값 — 원문 단계 결과에선 None으로 강제돼야 함
+        "quote": "SK하이닉스가 나스닥에 ADR을 상장했다.",
+    }
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "search_documents", {"query": "SK하이닉스 실적"})),
+        tool_call_response(("call-3", "read_document", {"document_version_id": "doc-ver-1"})),
+        tool_call_response(("call-4", "submit_no_answer", {
+            "reason": "ADR 상장은 확인했지만[1] 최근 실적 정보는 없음",
+            "citations": [citation],
+        })),
+        plain_text_response("   "),  # LLM 폴백도 실패시켜 원문 단계 결과가 최종값이 되게 한다
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("SK하이닉스 최근 실적을 정리해줘")
+
+    assert result.has_answer is False
+    assert result.no_answer_reason == "ADR 상장은 확인했지만[1] 최근 실적 정보는 없음"
+    assert len(result.citations) == 1
+    assert result.citations[0].document_version_id == "doc-ver-1"
+    assert result.citations[0].wiki_slug is None
+
+
+def test_document_answer_drops_hallucinated_citation_on_no_answer(agent, wiki_tools, monkeypatch):
+    """reason에 [1]을 언급했지만 citations의 document_version_id가 실제로 조회한 적
+    없는(지어낸) 값이면, submit_answer처럼 전체를 거부하는 대신 그 citation만 조용히
+    버려야 한다 — 여기는 애초에 정상 답변이 아니라 강등할 대상이 없다. reason의 [1]
+    표기도 유효 근거가 0개가 됐으니 죽은 링크로 남지 않게 제거된다."""
+    wiki_tools.list_wiki_topics.return_value = []
+    wiki_tools.search_documents.return_value = []
+    citation = {"document_version_id": "never-read", "quote": "지어낸 근거"}
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {
+            "reason": "관련 있어 보이지만[1] 확정 근거는 아님",
+            "citations": [citation],
+        })),
+        plain_text_response("   "),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("근거 없는 질문")
+
+    assert result.has_answer is False
+    assert result.citations == []
+    assert result.no_answer_reason == "관련 있어 보이지만 확정 근거는 아님"
 
 
 def test_answer_returns_no_answer_when_model_ends_without_tool_calls(agent, wiki_tools, monkeypatch):
@@ -634,6 +734,44 @@ def test_answer_tries_web_search_when_allowed(agent, wiki_tools, monkeypatch):
     assert result.citations[0].document_version_id is None  # DB 행이 아니므로 항상 None
     assert result.citations[0].source_title == "SK하이닉스 ADR 상장"  # search_web 결과에서 채움
     assert result.citations[0].source_published_at == "2026-08-07T09:00:00+09:00"
+
+
+def test_web_search_answer_enriches_citations_on_no_answer(agent, wiki_tools, monkeypatch):
+    """웹검색 단계에서 확정 답은 못 내도(submit_no_answer) 실제로 검색한 결과를
+    citations로 같이 제출하면, source_title/source_published_at이 search_web
+    결과에서 채워져야 한다(submit_answer 경로와 동일) — LLM 폴백은 실패시켜서 이
+    citation이 최종 결과에 그대로 남는지 확인한다."""
+    wiki_tools.search_wiki_pages.return_value = []
+    wiki_tools.search_documents.return_value = []
+    wiki_tools.search_web.return_value = [
+        FakeWebSearchHit(
+            title="SK하이닉스 ADR 상장",
+            url="https://example.com/a",
+            snippet="SK하이닉스가 나스닥에 ADR을 상장했다.",
+            published_at="2026-08-07T09:00:00+09:00",
+        )
+    ]
+    citation = {"source_url": "https://example.com/a", "quote": "ADR을 상장했다"}
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키 근거 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문 근거 없음"})),
+        tool_call_response(("call-3", "search_web", {"query": "SK하이닉스 ADR"})),
+        tool_call_response(("call-4", "submit_no_answer", {
+            "reason": "ADR 상장 관련 기사는 찾았지만[1] 질문에 대한 확정 답은 아님",
+            "citations": [citation],
+        })),
+        plain_text_response("   "),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("SK하이닉스 ADR 상장이 뭐야?", allow_web_search=True)
+
+    assert result.has_answer is False
+    assert len(result.citations) == 1
+    assert result.citations[0].source_url == "https://example.com/a"
+    assert result.citations[0].source_title == "SK하이닉스 ADR 상장"
+    assert result.citations[0].source_published_at == "2026-08-07T09:00:00+09:00"
+    assert "[1]" in result.no_answer_reason
 
 
 def test_answer_falls_back_to_llm_when_web_search_also_fails(agent, wiki_tools, monkeypatch):
@@ -1176,9 +1314,10 @@ def test_init_uses_env_var_and_openrouter_base_url(monkeypatch, wiki_tools):
     captured = {}
 
     class FakeOpenAI:
-        def __init__(self, base_url, api_key):
+        def __init__(self, base_url, api_key, timeout=None):
             captured["base_url"] = base_url
             captured["api_key"] = api_key
+            captured["timeout"] = timeout
 
     monkeypatch.setattr("src.agent.core.OpenAI", FakeOpenAI)
 
@@ -1186,6 +1325,7 @@ def test_init_uses_env_var_and_openrouter_base_url(monkeypatch, wiki_tools):
 
     assert captured["api_key"] == "test-key"
     assert captured["base_url"] == "https://openrouter.ai/api/v1"
+    assert captured["timeout"] == core.OPENROUTER_TIMEOUT_SECONDS
 
 
 def test_init_raises_when_api_key_missing(monkeypatch, wiki_tools):
