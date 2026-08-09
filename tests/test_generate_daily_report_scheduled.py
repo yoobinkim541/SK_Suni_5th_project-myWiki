@@ -44,7 +44,7 @@ def test_daily_report_window_is_previous_24_hours_ending_at_08_kst():
     assert end == datetime(2026, 8, 6, 23, tzinfo=timezone.utc)
 
 
-def test_scheduled_daily_report_falls_back_to_recent_analysis_when_batch_missing(monkeypatch):
+def test_scheduled_daily_report_falls_back_to_publication_window_when_batch_missing(monkeypatch):
     calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
@@ -55,9 +55,11 @@ def test_scheduled_daily_report_falls_back_to_recent_analysis_when_batch_missing
         "scripts.generate_daily_report_scheduled.get_completed_analysis_batch_document_ids",
         lambda **kwargs: (_ for _ in ()).throw(LookupError("missing batch")),
     )
+    candidate_calls: list[dict[str, object]] = []
     monkeypatch.setattr(
-        "scripts.generate_daily_report_scheduled.get_recently_analyzed_candidates",
-        lambda **kwargs: [type("Candidate", (), {"document_version_id": "doc-version-1"})()],
+        "scripts.generate_daily_report_scheduled.get_report_candidates",
+        lambda **kwargs: candidate_calls.append(kwargs)
+        or [type("Candidate", (), {"document_version_id": "doc-version-1"})()],
     )
     monkeypatch.setattr(
         "scripts.generate_daily_report_scheduled.generate_daily_report_artifacts",
@@ -69,3 +71,11 @@ def test_scheduled_daily_report_falls_back_to_recent_analysis_when_batch_missing
 
     assert result["report_id"] == "report-1"
     assert calls[0]["analysis_document_version_ids"] == ["doc-version-1"]
+    assert candidate_calls == [
+        {
+            "workspace_id": "00000000-0000-0000-0000-000000000001",
+            "report_date": datetime(2026, 8, 7, 8, tzinfo=timezone.utc).date(),
+            "published_from": datetime(2026, 8, 5, 23, tzinfo=timezone.utc),
+            "published_to": datetime(2026, 8, 6, 23, tzinfo=timezone.utc),
+        }
+    ]
