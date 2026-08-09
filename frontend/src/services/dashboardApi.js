@@ -174,41 +174,43 @@ export function fetchKpiSummary() {
 // 대시보드 화면 하나가 여러 API를 한 번에 부르지 않게, 한 번에 다 가져오는 편의 함수도 둡니다.
 // kpiSummary·trend가 실데이터이고 나머지는 목업인 혼합 상태입니다 — 항목별로 하나씩 교체합니다.
 //
-// 목업 항목은 fetch* 함수를 거치지 않고 상수를 그대로 씁니다. 실연동된 둘만
-// 병렬로 호출해서, 화면이 두 응답을 순차로 기다리지 않게 합니다.
+// 목업 항목은 fetch* 함수를 거치지 않고 상수를 그대로 씁니다.
 //
-// 실연동된 둘 다 각자 실패해도 서로, 그리고 목업 항목을 물고 들어가지 않게 합니다.
-// Promise.all로 그냥 묶으면 하나만 실패해도 DashboardPage의 .catch가 걸려서
-// KPI·차트·뉴스·이슈까지 전부 빈 화면이 됩니다(예: 게스트는 /dashboard/summary가
-// 401을 냅니다). 그래서 각자 자기 실패만 책임지도록 개별 try/catch로 갈라둡니다.
+// ⚠ 원래는 실연동된 넷을 Promise.all로 동시에 불렀는데, 실제 로그인 세션 콘솔에서 직접
+// 확인해보니(2026-08-09) api.mywiki.pe.kr에 4개를 동시에 쏘면 상당수가 "Failed to fetch"로
+// 죽는다 — 같은 요청을 하나씩 순서대로 보내면 15/15 전부 성공하고, 2개씩 동시에 보내도
+// 12/12 성공하는데 4개를 한 번에 보내면 5라운드 중 2라운드가 4개 전부 실패했다. Cloudflare
+// Tunnel(cloudflared)이나 백엔드 쪽에 동시 연결 상한이 있는 것으로 보이는데, 그 값을 직접
+// 조정할 권한/접근이 없어서(VM 설정) 프론트에서 애초에 그 상한을 안 건드리도록 순서대로
+// 호출한다. 각자 1.5초 응답이라 넷을 순서대로 불러도 체감상 크게 느리지 않다(기존에도
+// KPI/추이만 실데이터였을 때부터 이미 이 정도 지연은 있었다).
 //
+// 그래도 각자 실패하면 서로, 그리고 목업 항목을 물고 들어가지 않게 개별 try/catch로 갈라둔다.
 // KPI 실패는 카드에 "—"를 채우고, 추이 실패는 목업으로 메우지 않고 빈 배열을
 // 돌려줍니다(차트는 "표시할 추이 데이터가 없습니다"를 그립니다) — 목업으로 덮으면
 // 백엔드가 죽은 걸 정상 화면처럼 보이게 만듭니다.
 export async function fetchDashboard() {
-  const [kpiSummary, trend, news, keywords] = await Promise.all([
-    withRetry(fetchKpiSummary).catch((err) => {
-      console.error('[dashboardApi] KPI 조회 실패(재시도 후에도 실패 — 게스트이거나 인증 만료) — KPI만 빈 상태로 둡니다:', err);
-      return {
-        collectedDocs: { value: '—', desc: '' },
-        generatedReports: { value: '—', desc: '' },
-        wikiDocs: { value: '—', desc: '' },
-        avgConfidence: { value: '—', desc: '' },
-      };
-    }),
-    withRetry(fetchTrend).catch((err) => {
-      console.error('[dashboardApi] 추이 조회 실패(재시도 후에도 실패) — 차트만 빈 상태로 둡니다:', err);
-      return [];
-    }),
-    withRetry(fetchNews).catch((err) => {
-      console.error('[dashboardApi] 뉴스 조회 실패(재시도 후에도 실패) — 뉴스만 빈 상태로 둡니다:', err);
-      return [];
-    }),
-    withRetry(fetchKeywords).catch((err) => {
-      console.error('[dashboardApi] 키워드 조회 실패(재시도 후에도 실패) — 칩만 빈 상태로 둡니다:', err);
-      return [];
-    }),
-  ]);
+  const kpiSummary = await withRetry(fetchKpiSummary).catch((err) => {
+    console.error('[dashboardApi] KPI 조회 실패(재시도 후에도 실패 — 게스트이거나 인증 만료) — KPI만 빈 상태로 둡니다:', err);
+    return {
+      collectedDocs: { value: '—', desc: '' },
+      generatedReports: { value: '—', desc: '' },
+      wikiDocs: { value: '—', desc: '' },
+      avgConfidence: { value: '—', desc: '' },
+    };
+  });
+  const trend = await withRetry(fetchTrend).catch((err) => {
+    console.error('[dashboardApi] 추이 조회 실패(재시도 후에도 실패) — 차트만 빈 상태로 둡니다:', err);
+    return [];
+  });
+  const news = await withRetry(fetchNews).catch((err) => {
+    console.error('[dashboardApi] 뉴스 조회 실패(재시도 후에도 실패) — 뉴스만 빈 상태로 둡니다:', err);
+    return [];
+  });
+  const keywords = await withRetry(fetchKeywords).catch((err) => {
+    console.error('[dashboardApi] 키워드 조회 실패(재시도 후에도 실패) — 칩만 빈 상태로 둡니다:', err);
+    return [];
+  });
   return {
     news,
     issues: MOCK_ISSUES,
