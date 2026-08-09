@@ -35,7 +35,6 @@ export default function CategoryRow({ categories }) {
             // 모달은 최신 몇 건만 보여주고 카드는 그 분류 전체를 셉니다.
             count={c.count}
             topIssue={c.topIssue}
-            tags={c.tags}
             level={c.level}
             onClick={() => setSelected(c)}
           />
