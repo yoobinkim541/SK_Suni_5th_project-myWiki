@@ -41,3 +41,12 @@ export function uploadAvatar(file) {
 export function deleteAvatar() {
   return apiFetch('/profile/avatar', { method: 'DELETE' });
 }
+
+/**
+ * 다른 워크스페이스 멤버의 프로필 사진 바이트 — 상단바·팀 로스터가 각 멤버의
+ * has_avatar가 true일 때만 부른다(false면 조회할 필요가 없다 — 항상 404이므로).
+ * @returns {Promise<{blob: Blob, contentType: string}>}
+ */
+export function fetchMemberAvatarBlob(userId) {
+  return apiFetchBlob(`/workspace/members/${userId}/avatar`);
+}

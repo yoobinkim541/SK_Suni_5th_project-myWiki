@@ -15,9 +15,26 @@ import SettingsRow from './SettingsRow';
 import { roleLabel, roleClass, canInviteToTeam, canRecruitToTeam, canRemoveFromTeam } from '../../constants/roles';
 import { listTeams, listTeamMembers, inviteTeamMember, recruitTeamMember, removeTeamMember } from '../../api/teams';
 import { listWorkspaceMembers } from '../../services/agentApi';
+import useAvatarUrl from '../../hooks/useAvatarUrl';
 
 function initialOf(nameOrId) {
   return (nameOrId || '?').charAt(0).toUpperCase();
+}
+
+// pt-chip(22px)/pt-row(24px) 두 크기 모두 여기서 처리한다 — 사진이 있으면 <img>,
+// 없으면 기존 이니셜 원(.av)을 그대로 보여준다.
+function MemberAvatar({ userId, hasAvatar, name, size }) {
+  const avatarUrl = useAvatarUrl(userId, hasAvatar);
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flex: 'none' }}
+      />
+    );
+  }
+  return <i className="av">{initialOf(name)}</i>;
 }
 
 export default function TeamPanel({ myRole, myUserId }) {
@@ -112,7 +129,7 @@ export default function TeamPanel({ myRole, myUserId }) {
               const mayRemove = canRemoveFromTeam(myRole) && !isSelf;
               return (
                 <span className="pt-chip" key={m.user_id}>
-                  <i className="av">{initialOf(name)}</i>
+                  <MemberAvatar userId={m.user_id} hasAvatar={m.has_avatar} name={name} size={22} />
                   <span className="nm">{name}{isSelf ? ' (나)' : ''}</span>
                   {m.role && <span className={`pt-role ${roleClass(m.role)}`}>{roleLabel(m.role)}</span>}
                   {mayRemove && (
@@ -145,7 +162,7 @@ export default function TeamPanel({ myRole, myUserId }) {
                     const name = m.display_name || m.user_id;
                     return (
                       <div className="pt-row" key={m.user_id}>
-                        <i className="av">{initialOf(name)}</i>
+                        <MemberAvatar userId={m.user_id} hasAvatar={m.has_avatar} name={name} size={24} />
                         <span className="nm">{name}</span>
                         <span
                           role="button"
@@ -177,7 +194,7 @@ export default function TeamPanel({ myRole, myUserId }) {
                     const name = m.display_name || m.user_id;
                     return (
                       <div className="pt-row" key={m.user_id}>
-                        <i className="av">{initialOf(name)}</i>
+                        <MemberAvatar userId={m.user_id} hasAvatar={m.has_avatar} name={name} size={24} />
                         <span className="nm">{name} <span className="d">({teamNameByMemberId[m.user_id]})</span></span>
                         <span
                           role="button"
