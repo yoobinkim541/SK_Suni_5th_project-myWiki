@@ -87,7 +87,7 @@ export default function KnowledgeGraph() {
       }`}
     >
       <svg
-        className="kg-svg block h-auto w-full max-h-[300px] sm:max-h-[360px] lg:max-h-[420px]"
+        className="kg-svg block h-auto w-full max-h-[380px] sm:max-h-[480px] lg:max-h-[580px]"
         viewBox="0 0 1000 680"
         role="img"
         aria-label="myWiki 지식 축적 네트워크 — 6개 카테고리와 키워드"
