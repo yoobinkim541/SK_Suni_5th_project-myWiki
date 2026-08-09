@@ -203,7 +203,7 @@ def test_create_and_save_pptx_artifact_uses_renderer_when_bytes_missing() -> Non
     presentation = Presentation(BytesIO(uploaded["file"]))
     text = "\n".join(shape.text for slide in presentation.slides for shape in slide.shapes if hasattr(shape, "text"))
     assert "\uc77c\uc77c \ubcf4\uace0\uc11c" in text
-    assert "2026\ub144 8\uc6d4 3\uc77c" in text
+    assert "2026.08.03" in text
     assert "\uc0d8\ud50c \uc139\uc158 \uc81c\ubaa9" in text
 
 
