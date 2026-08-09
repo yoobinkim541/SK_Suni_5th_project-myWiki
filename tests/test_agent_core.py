@@ -539,6 +539,27 @@ def test_answer_falls_back_to_llm_when_wiki_answer_raises(agent, wiki_tools, mon
     assert result.answer == "일반 지식 답변"
 
 
+def test_safe_run_logs_exception_type_and_message(agent, wiki_tools, monkeypatch, caplog):
+    """_safe_run이 예외를 조용히 삼킬 때, "진짜 에러"와 "정상 호출인데 근거 0건"을
+    로그만 보고 구분할 수 있어야 한다 — exception_type/exception_message가 extra에
+    남아야 한다(실측: DART_API_KEY 누락 같은 설정 오류도 이 경로로 삼켜져서 원인
+    파악이 어려웠다)."""
+    def fake_call_model(messages, use_tools=True, tools=None):
+        if use_tools:
+            raise RuntimeError("OpenRouter returned no choices")
+        return plain_text_response("일반 지식 답변")
+
+    monkeypatch.setattr(agent, "_call_model", fake_call_model)
+
+    with caplog.at_level("WARNING"):
+        agent.answer("질문", allow_web_search=True)
+
+    records = [r for r in caplog.records if r.message == "grounded_answer_step_failed"]
+    assert records, "grounded_answer_step_failed 로그가 안 찍힘"
+    assert records[0].exception_type == "RuntimeError"
+    assert records[0].exception_message == "OpenRouter returned no choices"
+
+
 # ---------------------------------------------------------------------------
 # 원문 문서 그라운딩 — 위키에 근거가 없어도 수집된 원문(뉴스+DART)에 근거가
 # 있으면 그걸로 답변한다. citations[0].wiki_slug는 위키 페이지가 아니므로 None.
