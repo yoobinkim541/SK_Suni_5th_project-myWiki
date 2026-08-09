@@ -173,7 +173,7 @@ export default function ReportSection({ archive, today, summary, historyError, o
                   onClick={() => {
                     if (!disabled) handleDownload(today.date, f.key, `${f.label}${f.ext}`);
                   }}
-                  title={disabled ? '??? ??? ????.' : undefined}
+                  title={disabled ? '\uC0DD\uC131\uB41C \uD30C\uC77C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.' : undefined}
                 >
                   <DownloadBadge formatKey={f.key} />
                   {f.label} <span className="ext">{f.ext}</span>
@@ -233,7 +233,7 @@ export default function ReportSection({ archive, today, summary, historyError, o
                         onClick={() => {
                           if (!disabled) handleDownload(r.date, f.key, `${r.label} ${f.label}${f.ext}`);
                         }}
-                        title={disabled ? '??? ??? ????.' : undefined}
+                        title={disabled ? '\uC0DD\uC131\uB41C \uD30C\uC77C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.' : undefined}
                       >
                         <DownloadBadge formatKey={f.key} />
                         {f.label}
