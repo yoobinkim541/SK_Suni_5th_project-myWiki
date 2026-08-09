@@ -46,13 +46,15 @@ def test_is_within_nightly_analysis_window_true_at_kst_midnight():
     assert is_within_nightly_analysis_window(now_utc) is True
 
 
-def test_is_within_nightly_analysis_window_true_just_before_kst_6am():
-    now_utc = datetime(2026, 8, 6, 20, 59, tzinfo=timezone.utc)
+def test_is_within_nightly_analysis_window_true_just_before_kst_715am():
+    # 2026-08-09 daily-report-analysis-catchup.yml이 07:00->06:00 KST로 앞당겨지면서
+    # 이 창도 06:00 KST가 아니라 07:15 KST(catchup 내부 마감)까지로 넓어졌다.
+    now_utc = datetime(2026, 8, 6, 22, 14, tzinfo=timezone.utc)
     assert is_within_nightly_analysis_window(now_utc) is True
 
 
-def test_is_within_nightly_analysis_window_false_at_kst_6am():
-    now_utc = datetime(2026, 8, 6, 21, 0, tzinfo=timezone.utc)
+def test_is_within_nightly_analysis_window_false_at_kst_715am():
+    now_utc = datetime(2026, 8, 6, 22, 15, tzinfo=timezone.utc)
     assert is_within_nightly_analysis_window(now_utc) is False
 
 
@@ -175,6 +177,43 @@ def test_run_scheduled_refresh_leaves_daily_report_for_08_kst_schedule(monkeypat
 def test_run_scheduled_refresh_skips_analysis_during_nightly_window(monkeypatch):
     steps: list[tuple[str, object]] = []
     now = datetime(2026, 8, 6, 15, 30, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("scripts.refresh_data_scheduled.get_workspace_id", lambda: WORKSPACE_ID)
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.get_workspace_settings",
+        lambda workspace_id: SimpleNamespace(last_data_refresh_at=None, data_refresh_cycle_minutes=120),
+    )
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.run_collect",
+        lambda workspace_id, limit, source_id: steps.append(("collect", str(workspace_id))) or {"collected": 1},
+    )
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.run_preprocess",
+        lambda workspace_id: steps.append(("preprocess", str(workspace_id))) or {"processed": 1},
+    )
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.run_analysis_pipeline",
+        lambda workspace_id, limit: steps.append(("analysis", limit)) or ["doc-1"],
+    )
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.mark_data_refreshed",
+        lambda workspace_id, at: steps.append(("mark", at.isoformat())),
+    )
+
+    assert run_scheduled_refresh(now=now) is True
+    assert steps == [
+        ("collect", WORKSPACE_ID),
+        ("preprocess", WORKSPACE_ID),
+        ("mark", now.isoformat()),
+    ]
+
+
+def test_run_scheduled_refresh_skips_analysis_during_catchup_window(monkeypatch):
+    """07:00 KST는 daily-report-analysis-catchup.yml(06:00~07:15 KST)이 아직 돌고 있을
+    시간대라 분석 단계는 건너뛰어야 한다 — 예전 창(00:00-06:00 KST)에서는 여기서
+    실행됐었다(이번에 고친 버그, catchup과 같은 문서를 동시에 분석해 LLM 호출 낭비)."""
+    steps: list[tuple[str, object]] = []
+    now = datetime(2026, 8, 6, 22, 0, tzinfo=timezone.utc)  # 07:00 KST
 
     monkeypatch.setattr("scripts.refresh_data_scheduled.get_workspace_id", lambda: WORKSPACE_ID)
     monkeypatch.setattr(
