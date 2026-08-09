@@ -843,3 +843,41 @@ def move_member_to_team(workspace_id: str, user_id: str, team_id: Optional[str])
     get_supabase().table("workspace_members").update({"team_id": team_id}).eq(
         "workspace_id", workspace_id
     ).eq("user_id", user_id).execute()
+
+
+# ---------------------------------------------------------------------------
+# 프로필 편집 — 이름(profiles.display_name) + 프로필 사진(avatars 버킷, 비공개).
+# 다른 버킷들과 동일하게 프론트는 Storage에 직접 접근하지 않는다 — 백엔드가
+# GET /profile/avatar에서 바이트를 직접 스트리밍해서 내려준다(서명 URL 방식 아님).
+# ---------------------------------------------------------------------------
+
+AVATAR_BUCKET = "avatars"
+
+
+def update_profile_display_name(user_id: str, display_name: str) -> dict:
+    res = (
+        get_supabase()
+        .table("profiles")
+        .update({"display_name": display_name})
+        .eq("id", user_id)
+        .execute()
+    )
+    return res.data[0]
+
+
+def set_profile_avatar_object_key(user_id: str, object_key: Optional[str]) -> None:
+    get_supabase().table("profiles").update({"avatar_object_key": object_key}).eq("id", user_id).execute()
+
+
+def upload_avatar_object(object_key: str, data: bytes, content_type: str) -> None:
+    get_supabase().storage.from_(AVATAR_BUCKET).upload(
+        path=object_key, file=data, file_options={"content-type": content_type, "upsert": "true"},
+    )
+
+
+def download_avatar_object(object_key: str) -> bytes:
+    return get_supabase().storage.from_(AVATAR_BUCKET).download(object_key)
+
+
+def delete_avatar_object(object_key: str) -> None:
+    get_supabase().storage.from_(AVATAR_BUCKET).remove([object_key])
