@@ -5,6 +5,11 @@ export function fetchDailyReport(date) {
   return apiFetch(`/reports/daily${q}`);
 }
 
+export function fetchDailyReportHistory(limit = 30) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return apiFetch(`/reports/daily/history?${params.toString()}`);
+}
+
 export function downloadDailyReport(date, format) {
   const params = new URLSearchParams({ date, format });
   return apiFetchBlob(`/reports/daily/download?${params.toString()}`);
