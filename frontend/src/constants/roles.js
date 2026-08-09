@@ -80,3 +80,37 @@ export function canRemoveFromSession(role, { isSelf = false } = {}) {
   if (isSelf) return true;
   return role === ROLE.ADMIN || role === ROLE.LEADER;
 }
+
+// ---------- 팀(teams 테이블) 스코프 권한 판정 ----------
+//
+// 위 canInviteToWorkspace 등과는 별개다 — 저건 "워크스페이스"(우리 팀 전체) 단위이고
+// 여기는 워크스페이스 안의 하위 그룹인 teams 테이블 기준이다. 팀장/팀원의 액션은
+// 항상 자기 소속 팀 범위 안에서만 허용되며, 그 범위 체크는 화면(TeamPanel)에서
+// myTeamId와 대상 teamId를 비교해서 한다 — 여기 함수들은 역할만 판정한다.
+//
+//                관리자  팀장  팀원
+// 팀 생성/삭제      O      X     X
+// 전체 배치 관리    O      X     X
+// 팀원 초대         X      O     O   (미배치 사용자만, 자기 팀에)
+// 팀원 영입         X      O     X   (타 팀 소속자도 가능, 자기 팀에)
+// 팀원 제외         X      O     X   (자기 팀에서만)
+
+/** 팀 생성·삭제·전체 사용자 배치 관리를 할 수 있는가 */
+export function canManageTeams(role) {
+  return role === ROLE.ADMIN;
+}
+
+/** 자기 팀에 미배치 사용자를 초대할 수 있는가 */
+export function canInviteToTeam(role) {
+  return role === ROLE.LEADER || role === ROLE.MEMBER;
+}
+
+/** 자기 팀으로 타 팀 소속자를 영입할 수 있는가 */
+export function canRecruitToTeam(role) {
+  return role === ROLE.LEADER;
+}
+
+/** 자기 팀에서 팀원을 제외할 수 있는가 */
+export function canRemoveFromTeam(role) {
+  return role === ROLE.LEADER;
+}

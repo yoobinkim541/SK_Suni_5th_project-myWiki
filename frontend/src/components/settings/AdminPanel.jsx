@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import SettingsGroup from './SettingsGroup';
 import SettingsRow from './SettingsRow';
 import AdminSessionViewModal from './AdminSessionViewModal';
+import TeamAdminSection from './TeamAdminSection';
 import { roleLabel, roleClass } from '../../constants/roles';
 import { listWorkspaceMembers } from '../../services/agentApi';
 import {
@@ -183,6 +184,8 @@ export default function AdminPanel() {
 
       <SessionListBlock title="팀 세션 전체 보기" visibility="team" onOpenSession={openSession} />
       <SessionListBlock title="개인 세션 전체 보기" visibility="private" onOpenSession={openSession} />
+
+      <TeamAdminSection />
 
       <AdminSessionViewModal
         open={viewingSession !== null}
