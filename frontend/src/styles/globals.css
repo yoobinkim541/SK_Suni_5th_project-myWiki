@@ -736,7 +736,7 @@ svg text{font-family:inherit}
   display:flex;align-items:baseline;gap:12px}
 .ph2 h2{font-size:23px;font-weight:900;letter-spacing:-.03em}
 .ph2 .dt{font-size:12px;font-weight:300;color:var(--ink)}
-.set-lb{font-size:9.5px;font-weight:700;letter-spacing:.14em;color:var(--ink);margin:26px 0 10px}
+.set-lb{font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink);margin:26px 0 10px}
 .set-card{border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:var(--panel);max-width:640px}
 .set-row{display:flex;align-items:center;gap:18px;padding:16px 18px;border-top:1px solid var(--hair-2)}
 .set-row:first-child{border-top:0}
@@ -787,6 +787,15 @@ input[type="text"].fld,input[type="email"].fld{min-width:196px}
 
 /* 참여자 관리 모달 — 현재 참여자(칩+x)/추가 후보(행+plus) */
 .pt-chips{display:flex;flex-wrap:wrap;gap:8px}
+/* 설정 페이지(TeamPanel)에서만 — 이 클래스들은 원래 참여자 관리 모달용이라 자체 좌우
+   여백이 없다. .set-row(라벨 폭 18px 인셋)와 나란히 놓이니, 같은 18px로 맞춰서 이름·
+   아바타가 카드 왼쪽에, +버튼이 카드 오른쪽에 딱 붙어 보이던 걸 자연스럽게 안쪽으로
+   들였다. .pt-row 자체 padding은 호버 배경 박스용으로만 작게 남긴다. */
+.set-card .pt-chips{padding:0 18px 4px}
+.set-card .mw-lb{padding:0 18px;font-size:11px;letter-spacing:.08em;color:var(--ink)}
+.set-card .kwm-empty{padding:8px 18px;font-size:12px;font-weight:400;color:var(--ink)}
+.set-card .pt-list{padding:0 18px}
+.set-card .pt-row{padding:6px 2px;gap:11px}
 .pt-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);
   border:1px solid var(--hair);border-radius:20px;padding:4px 6px 4px 4px}
 .pt-chip .av{width:22px;height:22px;border-radius:50%;flex:none;font-style:normal;
@@ -1786,10 +1795,12 @@ a.fn:hover{text-decoration:underline}
 /* max-height를 뷰포트 높이 기준 calc()로 잡는다 — .kg-svg는 폭 100%에 viewBox 비율(원형)로
    높이가 정해지는데, 그 자연 높이가 이 상한을 넘으면 SVG가 (좌우 여백을 더 두고) 비율을
    유지한 채로 줄어들어서, 원 모양이 찌그러지지 않으면서도 화면 높이 안에 항상 다 들어온다.
-   160px = 상단바(.deck)+.main 위쪽 패딩+.ph.ph-tight+.hero 위 여백 등 그래프 위에 쌓이는
+   100px = 상단바(.deck)+.main 위쪽 패딩+.ph.ph-tight+.hero 위 여백 등 그래프 위에 쌓이는
    실측 높이 + .hero 아래쪽 padding/border 여유분. min/max는 아주 짧거나 아주 긴 화면에서
-   그래프가 너무 작아지거나 커지지 않게 잡은 상한/하한이다. */
-.kg-svg{max-height:clamp(260px,calc(100vh - 160px),640px)}
+   그래프가 너무 작아지거나 커지지 않게 잡은 상한/하한이다 — "여전히 작아 보인다"는
+   피드백으로 상/하한을 300~760→380~1000으로 한 번 더 크게 올렸다(뷰포트가 짧으면
+   calc(100vh-100px) 쪽이 이겨서 여전히 화면 안에는 다 들어온다). */
+.kg-svg{max-height:clamp(380px,calc(100vh - 100px),1000px)}
 
 .kg-line{stroke:var(--hair);stroke-width:1.5;opacity:0;
   transition:opacity .6s var(--ease)}
@@ -1827,7 +1838,7 @@ a.fn:hover{text-decoration:underline}
 /* 다크모드에서는 주요 카테고리 노드(밝은 --green)와 구분되도록, 리프 점은 더 차분하게
    가라앉힌 muted green을 쓴다 — 전부 같은 초록으로 뭉쳐 보이지 않게. */
 :root[data-theme="dark"] .kg-leaf-dot{fill:#5C8A79;opacity:.8}
-.kg-leaf-label{fill:#17201E;font-size:16px;font-weight:600}
+.kg-leaf-label{fill:#17201E;font-size:18px;font-weight:600}
 
 /* 중앙 허브 — 그라디언트 글로우 + myWiki 로고 이미지(아이콘+텍스트 전체).
    글로우/그라디언트 원 둘 다 허브 중심(CX=500,CY=340)에서 하위 카테고리 원이 있는
@@ -1911,7 +1922,7 @@ a.fn:hover{text-decoration:underline}
 
 @media (max-width:720px){
   .kg-cat-label{font-size:14.5px}
-  .kg-leaf-label{font-size:13px}
+  .kg-leaf-label{font-size:14.5px}
 }
 /* ===== 모바일 상단바 로고 이미지 — globals.css 맨 아래에 붙여넣기 ===== */
 
