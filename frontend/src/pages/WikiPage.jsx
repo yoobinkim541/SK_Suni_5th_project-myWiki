@@ -33,6 +33,7 @@ import WikiSideNav from '../components/wiki/WikiSideNav';
 import WikiCard from '../components/wiki/WikiCard';
 import WikiKeywordDocsModal from '../components/wiki/WikiKeywordDocsModal';
 import WikiKeywordModal from '../components/wiki/WikiKeywordModal';
+import mascotWikiImg from '../assets/mascot-wiki.png';
 
 // 목업 모드에서만 값이 있음(실제 모드는 빈 배열) — services/wikiApi.js 참고.
 // 렌더마다 새 배열이 생기지 않게 컴포넌트 밖에서 한 번만 계산한다.
@@ -182,6 +183,9 @@ export default function WikiPage() {
                 <b>{l.title}</b>{l.desc}
               </button>
             ))}
+            <div className="mascot-float">
+              <img src={mascotWikiImg} alt="마이위키 마스코트" />
+            </div>
           </div>
         </div>
       </div>
