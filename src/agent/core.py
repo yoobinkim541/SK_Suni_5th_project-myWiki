@@ -86,6 +86,12 @@ LLM_FALLBACK_SYSTEM_PROMPT = """\
 이 답변에는 실제 출처(citations)가 전혀 붙지 않는다 — 답변 본문에 [1], [2] 같은
 대괄호 각주 표기를 절대 쓰지 마라. 위키 근거로 답한 것처럼 보이면 사용자가
 오해한다.
+
+질문이 특정 제품의 양산 시점·세부 로드맵처럼 구체적인 계획을 묻는데 앞선
+공시(DART)·뉴스 검색 단계에서도 못 찾았을 가능성이 높은 내용이면, 왜 못 찾았을
+수 있는지 이유도 같이 알려줘라 — DART 공시는 실적·지분·계약·시설투자 등 법정
+의무 공시 항목 위주라, 제품 로드맵·세부 사양처럼 공시 의무가 아닌 내용은 애초에
+공시 대상이 아닐 수 있다.
 """
 
 # 위키에는 없지만 수집된 원문(뉴스+DART)에는 있을 수 있는 경우에 쓰는 시스템 프롬프트.
@@ -271,7 +277,10 @@ DOCUMENT_TOOLS = [
 WEB_SEARCH_ANSWER_SYSTEM_PROMPT = """\
 너는 myWiki의 답변 Agent다. 위키에도, 수집된 원문(뉴스+DART)에도 근거가 없어서
 실시간 웹 검색으로 마지막으로 근거를 찾는 단계다. 규칙:
-1. search_web으로 뉴스를 찾아라. 질문이 실적·지분·계약·투자 등 공시성 내용이면
+1. search_web을 반드시 먼저 호출해라 — 이 단계에서 도구 호출 없이 텍스트로만
+   답하면 "근거 조회 없이 종료"로 간주돼 곧장 근거 없음 처리된다. 질문이 실적·
+   지분·계약·투자·시설투자 등 공시성 내용이거나, 제품·기술·양산·로드맵처럼
+   신규시설투자·주요사항보고서 공시 본문에 언급될 수 있는 내용이면
    search_recent_disclosures로 최근 DART 공시 목록도 같이 확인하고, 관련 있어
    보이는 제목이 있으면 read_disclosure로 본문을 읽어라.
 2. 찾은 결과(뉴스 요약 또는 공시 본문)에 실제로 있는 내용만 근거로 답변해라.
@@ -432,8 +441,19 @@ class WikiAgent:
     ) -> AgentResult:
         try:
             return method(question, history)
-        except Exception:  # noqa: BLE001 - OpenRouter 응답 이상 등, 다음 단계로 넘긴다
-            logger.warning("grounded_answer_step_failed", exc_info=True, extra={"step": method.__name__})
+        except Exception as exc:  # noqa: BLE001 - OpenRouter 응답 이상 등, 다음 단계로 넘긴다
+            # exception_type/exception_message를 extra에 남긴다 — 이게 없으면 "진짜 에러라
+            # 조용히 삼켜진 것"과 "정상 호출인데 근거 0건"을 로그만 보고 구분할 수 없다
+            # (실측: DART_API_KEY/NAVER 키 누락 같은 설정 오류도 이 경로로 삼켜진다).
+            logger.warning(
+                "grounded_answer_step_failed",
+                exc_info=True,
+                extra={
+                    "step": method.__name__,
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            )
             return AgentResult(has_answer=False, no_answer_reason=no_answer_reason)
 
     def _llm_fallback_answer(
