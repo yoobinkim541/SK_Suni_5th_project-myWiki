@@ -252,6 +252,12 @@ def create_and_save_docx_artifact(
             generated_at=generated_at,
             report_date=render_report.report_date,
             title=render_report.title,
+            executive_summaries=render_report.executive_summaries,
+            issue_summary_rows=render_report.issue_summary_rows,
+            category_groups=render_report.category_groups,
+            overall_implications=render_report.overall_implications,
+            news_sources=render_report.news_sources,
+            wiki_sources=render_report.wiki_sources,
         )
         rendered_docx = render_daily_report_word(word_document)
 
