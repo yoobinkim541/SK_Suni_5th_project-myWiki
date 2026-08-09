@@ -472,6 +472,38 @@ export default function App() {
     setSettingsOpen(false);
     setProfileOpen((o) => !o);
   }
+
+  // 설정/프로필 드롭다운 바깥 클릭 시 닫기 (+ ESC).
+  // ⚠ 'click'이 아니라 'mousedown'을 듣는다 — 톱니바퀴/프로필 아이콘을 다시 눌러서 닫는
+  //   기존 토글도 그대로 살려둬야 하는데, 'click'으로 들으면 그 클릭 자체가 이 리스너에도
+  //   먼저 잡혀 setOpen(false)를 부르고, 그 다음 TopBar의 onClick이 handleSettingsClick을
+  //   불러 다시 setOpen(true)로 되돌리는 식으로 앞뒤가 꼬인다. mousedown은 click보다 먼저
+  //   일어나므로, 여기서는 아이콘 자체를 누른 경우(.gear/.avatar)는 애초에 안 닫히게
+  //   걸러내고, 그 뒤에 이어지는 click이 TopBar의 토글을 정상적으로 처리하게 둔다.
+  useEffect(() => {
+    if (!settingsOpen && !profileOpen) return;
+    function handleOutside(e) {
+      const target = e.target;
+      if (settingsOpen && !target.closest('.settings-panel') && !target.closest('.gear')) {
+        setSettingsOpen(false);
+      }
+      if (profileOpen && !target.closest('.profile-panel') && !target.closest('.avatar')) {
+        setProfileOpen(false);
+      }
+    }
+    function handleEscape(e) {
+      if (e.key === 'Escape') {
+        setSettingsOpen(false);
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [settingsOpen, profileOpen]);
   // provider: 'google' | 'github' | 'custom:naver' — 브라우저가 OAuth 제공자로 리다이렉트된다.
   // 돌아온 뒤의 상태 반영은 위 onAuthStateChange가 처리한다.
   function handleLogin(provider) {
