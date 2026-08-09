@@ -150,14 +150,16 @@ export default function ReportSection({ archive, today, summary, historyError, o
             <>
               <h4 className="rt">{todayCard.title}</h4>
               {todayCard.summary && <p className="rsum">{todayCard.summary}</p>}
-              <div className="rmeta">
-                ?? {formatIssueCount(todayCard.issues)}?{renderWikiCount(todayCard.wiki)}
-                {todayCard.level && (
-                  <span className={`cf ${LEVEL_CLASS[todayCard.level]}`.trim()}>
-                    <i></i>??? : {LEVEL_LABEL[todayCard.level]}
-                  </span>
-                )}
-              </div>
+              {summary?.statusLabel !== '\uC0DD\uC131 \uB300\uAE30' && (
+                <div className="rmeta">
+                  ?? {formatIssueCount(todayCard.issues)}?{renderWikiCount(todayCard.wiki)}
+                  {todayCard.level && (
+                    <span className={`cf ${LEVEL_CLASS[todayCard.level]}`.trim()}>
+                      <i></i>??? : {LEVEL_LABEL[todayCard.level]}
+                    </span>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -214,14 +216,6 @@ export default function ReportSection({ archive, today, summary, historyError, o
                 </div>
                 <h4 className="rt">{r.title}</h4>
                 {r.summary && <p className="rsum">{r.summary}</p>}
-                <div className="rmeta">
-                  ?? {formatIssueCount(r.issues)}?{renderWikiCount(r.wiki)}
-                  {r.level && (
-                    <span className={`cf ${LEVEL_CLASS[r.level]}`.trim()}>
-                      <i></i>??? : {LEVEL_LABEL[r.level]}
-                    </span>
-                  )}
-                </div>
                 <div className="rdl" onClick={(e) => e.stopPropagation()}>
                   {FORMATS.map((f) => {
                     const disabled = !canDownload(r, f);
