@@ -751,9 +751,16 @@ export default function AgentPage({ profile }) {
             // e.sourceName이 null일 수 있습니다(문서에 매체 정보가 연결 안 된 경우).
             // e.isWeb이면 DB 문서(위키/원문)가 아니라 실시간 웹 검색 근거다(agentApi.js
             // toEvidence 참고) — 위키 저장 여부를 판단할 때 이 배지로 구분하시면 됩니다.
+            //
+            // isDoc 판정은 sourceName뿐 아니라 url도 봐야 한다 — scripts/register_sources.py가
+            // 실제로 등록하는 소스명은 "DART - 삼성전자"/"네이버 - HBM" 형태라 '공시'/'IR'
+            // 문자열이 절대 안 걸린다(예전엔 이 조건이 사실상 죽은 코드였다). DART 실시간
+            // 조회(_web_search_answer)는 document_version_id가 없어 isWeb=true로 오지만
+            // source_url이 dart.fss.or.kr이므로 이걸로 잡는다.
             const sourceName = e.sourceName || '출처 확인 중';
-            const isDoc = sourceName.includes('공시') || sourceName.includes('IR');
-            const srcClass = e.isWeb ? ' web' : isDoc ? ' doc' : '';
+            const isDartUrl = e.url ? e.url.includes('dart.fss.or.kr') : false;
+            const isDoc = isDartUrl || sourceName.includes('DART') || sourceName.includes('공시') || sourceName.includes('IR');
+            const srcClass = isDoc ? ' doc' : e.isWeb ? ' web' : '';
             const linkLabel = isDoc ? 'DART 원문 열기 ↗' : e.isWeb ? '웹 검색 결과 열기 ↗' : '원문 열기 ↗';
             return (
               <div className="ev" key={e.no}>
