@@ -25,13 +25,21 @@ from src.collectors.interface import register_source
 from src.pipeline_common import repository
 from src.pipeline_common.db import get_client
 
-NAVER_QUERIES = ["SK하이닉스", "HBM", "DRAM", "반도체 수출"]
-GNEWS_QUERIES = ["semiconductor", "HBM memory", "SK Hynix"]
+# 멘토 관심 키워드: SK하이닉스·삼성전자·Micron·NVIDIA·TSMC / HBM·DRAM·NAND·AI 서버·메모리 가격·수출 규제.
+# HBM/DRAM/SK하이닉스는 이미 아래 목록에 있어 중복 추가하지 않는다.
+NAVER_QUERIES = ["SK하이닉스", "HBM", "DRAM", "반도체 수출", "삼성전자", "NAND", "AI 서버", "메모리 가격", "수출 규제"]
+GNEWS_QUERIES = ["semiconductor", "HBM memory", "SK Hynix", "Micron", "NVIDIA", "TSMC"]
 GOOGLE_RSS_QUERIES = ["SK하이닉스"]
 # DART는 검색어가 아니라 회사 단위다 — Open API가 corp_code + 날짜 범위로만 조회되고
 # 자유 검색어를 지원하지 않는다(fetch_disclosure()도 config.corp_code만 읽음).
-# (회사명, DART 고유번호 8자리) 쌍으로 등록한다.
-DART_COMPANIES = [("SK하이닉스", "00164779")]
+# (회사명, DART 고유번호 8자리) 쌍으로 등록한다. Micron/NVIDIA/TSMC는 해외기업이라 DART에
+# corp_code가 없다 — 뉴스(GNEWS_QUERIES)로만 커버한다.
+DART_COMPANIES = [
+    ("SK하이닉스", "00164779"),
+    ("삼성전자", "00126380"),
+    ("SK스퀘어", "01596425"),
+    ("한미반도체", "00161383"),
+]
 
 
 def google_news_rss_url(query: str) -> str:
