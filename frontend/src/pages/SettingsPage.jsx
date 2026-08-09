@@ -50,6 +50,7 @@ import SegmentedControl from '../components/common/SegmentedControl';
 import { roleLabel, roleClass } from '../constants/roles';
 import AdminPanel from '../components/settings/AdminPanel';
 import TeamPanel from '../components/settings/TeamPanel';
+import ProfileFields from '../components/settings/ProfileFields';
 import {
   fetchCollectSources,
   formatSourceSummary,
@@ -100,7 +101,6 @@ export default function SettingsPage({
   // 수집 소스 — 백엔드 조회 엔드포인트가 열리면 settingsApi 쪽만 바뀝니다.
   const [sources, setSources] = useState([]);
 
-  const accountName = profile?.user_metadata?.full_name || profile?.user_metadata?.name || profile?.email || '';
   const accountEmail = profile?.email || '';
   const hasTeam = Boolean(workspaceName || myRole);
 
@@ -175,18 +175,12 @@ export default function SettingsPage({
         <span className="dt">myWiki · 개인 환경 설정</span>
       </div>
 
-      {/* ⚠ 수정: "계정 설정" → "계정". 편집 기능(이미지 변경·이름/이메일 입력·비밀번호 변경)을
-          전부 빼고, 로그인 계정 정보를 그대로 보여주기만 하는 읽기 전용 섹션으로 바꿨습니다.
-          App.jsx가 실제 Supabase 세션(profile)을 내려준다. */}
+      {/* ⚠ 수정(2026-08-09): 프로필 사진·이름을 다시 편집 가능하게 바꿨습니다 — profiles.
+          display_name/avatar_object_key를 ProfileFields가 직접 조회·수정합니다(OAuth
+          로그인 이름을 그대로 보여주기만 하던 읽기전용에서 전환). 이메일은 로그인 계정
+          자체라 여전히 읽기전용입니다. */}
       <SettingsGroup title="계정">
-        <SettingsRow label="프로필" desc="에이전트 답변·리포트에 표시되는 프로필입니다">
-          <div className="set-av">
-            <span className="av">{accountName.charAt(0).toUpperCase()}</span>
-          </div>
-        </SettingsRow>
-        <SettingsRow label="이름" desc="워크스페이스에 표시되는 이름">
-          <div className="vl">{accountName}</div>
-        </SettingsRow>
+        <ProfileFields />
         <SettingsRow label="이메일" desc="로그인 계정 · 알림 수신 주소">
           <div className="vl">{accountEmail}</div>
         </SettingsRow>

@@ -51,6 +51,24 @@ export async function apiFetch(path, { method = 'GET', body } = {}) {
   return res.json();
 }
 
+// multipart/form-data 업로드 전용 — apiFetch와 달리 Content-Type을 직접 지정하지
+// 않는다(브라우저가 boundary를 포함한 값을 자동으로 채워야 하므로, 여기서 지정하면
+// boundary가 빠져 서버가 파싱하지 못한다).
+export async function apiFetchUpload(path, formData) {
+  const authHeaders = await getAuthHeaders();
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new ApiError(res.status, await parseErrorDetail(res));
+  }
+  return res.json();
+}
+
 export async function apiFetchBlob(path, { method = 'GET', body } = {}) {
   const authHeaders = await getAuthHeaders();
 
