@@ -8,14 +8,32 @@ from pydantic import ValidationError
 from supabase import Client
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
+from ..analysis.exceptions import (
+    InvalidJsonResponseError,
+    MissingApiKeyError,
+    OpenRouterApiError,
+    OpenRouterTimeoutError,
+)
 from ..report.candidate_provider import get_recently_analyzed_candidates
 from ..report.composer import compose_report_sections
 from ..report.grouper import group_report_candidates
 from ..report.models import EnrichedIssueGroup, ReportCandidate, ReportSectionDraft, WikiContext
 from ..report.selector import select_report_candidates
 from ..report.wiki_context import enrich_issue_groups
-from .generation_models import TopicPageCandidate, TopLevelTopicPage, WikiDraftGenerationResult, WikiPageIdentity, WikiTopicLLMResult
-from .generation_prompts import WIKI_TOPIC_SYSTEM_PROMPT, build_wiki_topic_user_prompt
+from .generation_models import (
+    IssuePageRewriteResult,
+    TopicPageCandidate,
+    TopLevelTopicPage,
+    WikiDraftGenerationResult,
+    WikiPageIdentity,
+    WikiTopicLLMResult,
+)
+from .generation_prompts import (
+    ISSUE_PAGE_REWRITE_SYSTEM_PROMPT,
+    WIKI_TOPIC_SYSTEM_PROMPT,
+    build_issue_page_rewrite_user_prompt,
+    build_wiki_topic_user_prompt,
+)
 from .generation_repository import (
     archive_wiki_page,
     filter_to_topic_page_ids,
@@ -149,6 +167,52 @@ def _build_issue_page_sources(
     ]
 
 
+def _rewrite_issue_page_content(
+    section: ReportSectionDraft,
+    evidence_texts: dict[str, str] | None = None,
+    *,
+    llm_client: WikiTopicLLMClient | None = None,
+) -> ReportSectionDraft:
+    """이슈 페이지 본문 4개 필드(현재상황/핵심사실/시사점/주시할지점)를 LLM으로 다듬는다.
+
+    실패(LLM 오류·잘못된 JSON·빈 필드)하면 원본 section을 그대로 반환한다 — 이슈 페이지는
+    지금까지 LLM 없이도 항상 생성에 성공했으므로, 이 재작성 단계가 그 신뢰성을 깨서는 안 된다.
+    "## 출처" 섹션(_build_issue_page_sources)은 여기서 건드리는 4개 필드와 무관해 영향받지 않는다.
+    """
+    settings = get_openrouter_settings()
+    user_prompt = build_issue_page_rewrite_user_prompt(section, evidence_texts)
+    try:
+        if llm_client is not None:
+            response_text = llm_client(ISSUE_PAGE_REWRITE_SYSTEM_PROMPT, user_prompt, settings.model)
+        else:
+            response_text = create_json_completion(
+                system_prompt=ISSUE_PAGE_REWRITE_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                model=settings.model,
+            )
+        payload = parse_json_response(response_text)
+        result = IssuePageRewriteResult.model_validate(payload)
+    except (
+        MissingApiKeyError,
+        OpenRouterApiError,
+        OpenRouterTimeoutError,
+        InvalidJsonResponseError,
+        ValidationError,
+    ) as exc:
+        logger.warning(
+            "issue_page_rewrite_llm_fallback",
+            extra={"issue_key": section.issue_key, "error": str(exc)},
+        )
+        return section
+
+    return section.model_copy(update={
+        "current_summary": result.current_summary,
+        "key_facts": result.key_facts,
+        "implications": result.implications,
+        "watch_points": result.watch_points,
+    })
+
+
 def _generate_issue_page(
     section: ReportSectionDraft,
     *,
@@ -158,6 +222,7 @@ def _generate_issue_page(
     evidence_texts: dict[str, str] | None = None,
     citation_attribution: dict[str, ReportCandidate] | None = None,
     supabase: Client | None = None,
+    llm_client: WikiTopicLLMClient | None = None,
 ) -> tuple[str, str]:
     matched = find_matching_issue_page(
         workspace_id,
@@ -186,13 +251,15 @@ def _generate_issue_page(
         draft_page_type = "issue"
         draft_parent_page_id = parent_page_id
 
+    rewritten_section = _rewrite_issue_page_content(section, evidence_texts, llm_client=llm_client)
+
     draft = WikiDraftInput(
         workspace_id=workspace_id,
         slug=draft_slug,
         title=draft_title,
         page_type=draft_page_type,
         parent_page_id=draft_parent_page_id,
-        markdown=_build_issue_page_markdown(section, evidence_texts, citation_attribution),
+        markdown=_build_issue_page_markdown(rewritten_section, evidence_texts, citation_attribution),
         sources=_build_issue_page_sources(section, evidence_texts),
         change_summary=(
             "리포트 파이프라인에서 기존 이슈 페이지 갱신" if matched is not None else "리포트 파이프라인에서 자동 생성"
@@ -434,6 +501,7 @@ def generate_wiki_drafts_for_sections(
                 evidence_texts=evidence_texts,
                 citation_attribution=citation_attribution,
                 supabase=supabase,
+                llm_client=llm_client,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("wiki_issue_page_generation_failed", extra={"issue_key": section.issue_key})

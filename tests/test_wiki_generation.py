@@ -52,6 +52,7 @@ def _patch_topic_candidates_filter(monkeypatch, allowed: set[str] | None = None)
 
 def test_generate_issue_page_creates_and_auto_publishes(monkeypatch):
     calls = []
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "{}")
 
     def fake_upsert_wiki_page(workspace_id, slug, title, page_type, parent_page_id=None, *, supabase=None):
         calls.append(("upsert", slug, page_type, parent_page_id))
@@ -94,6 +95,7 @@ def test_generate_issue_page_creates_and_auto_publishes(monkeypatch):
 
 def test_generate_issue_page_defaults_parent_to_none(monkeypatch):
     calls = []
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "{}")
     monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
     monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-1")
     monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: "version-1")
@@ -109,6 +111,7 @@ def test_generate_issue_page_defaults_parent_to_none(monkeypatch):
 
 def test_generate_issue_page_reuses_matched_page_identity(monkeypatch):
     calls = []
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "{}")
     matched = generation.WikiPageIdentity(
         page_id="page-existing", slug="issue-existing", title="기존 제목",
         page_type="issue", parent_page_id="page-parent-existing",
@@ -143,6 +146,7 @@ def test_generate_issue_page_adopts_new_parent_when_matched_page_has_none(monkey
     주제 페이지 생성 실패), 이번 회차가 parent_page_id를 성공적으로 계산했다면
     그 값을 채택해야 한다 — 영원히 고아 상태로 남으면 안 된다."""
     calls = []
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "{}")
     matched = generation.WikiPageIdentity(
         page_id="page-existing", slug="issue-existing", title="기존 제목",
         page_type="issue", parent_page_id=None,
@@ -167,6 +171,7 @@ def test_generate_issue_page_adopts_new_parent_when_matched_page_has_none(monkey
 
 def test_generate_issue_page_creates_new_when_no_match(monkeypatch):
     calls = []
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "{}")
     monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
     monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append(("upsert", a)) or "page-new")
     monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: calls.append(("create", draft.slug)) or "version-new")
@@ -189,6 +194,56 @@ def test_generate_issue_page_markdown_contains_all_sections():
     assert "SK하이닉스 협상력 강화" in markdown
     assert "경쟁사 증발 발표 여부" not in markdown  # 오탈자 없이 원문 그대로 들어가는지
     assert "경쟁사 증설 발표 여부" in markdown
+
+
+def test_rewrite_issue_page_content_uses_llm_result():
+    def fake_llm(system_prompt, user_prompt, model):
+        return json.dumps({
+            "current_summary": "다듬어진 요약",
+            "key_facts": ["다듬어진 사실"],
+            "implications": ["다듬어진 시사점"],
+            "watch_points": ["다듬어진 지점"],
+        })
+
+    rewritten = generation._rewrite_issue_page_content(_section(), llm_client=fake_llm)
+
+    assert rewritten.current_summary == "다듬어진 요약"
+    assert rewritten.key_facts == ["다듬어진 사실"]
+    assert rewritten.implications == ["다듬어진 시사점"]
+    assert rewritten.watch_points == ["다듬어진 지점"]
+    assert rewritten.title == _section().title  # 제목은 재작성 대상이 아니다
+
+
+def test_rewrite_issue_page_content_falls_back_on_invalid_json(monkeypatch):
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "not json")
+
+    rewritten = generation._rewrite_issue_page_content(_section())
+
+    assert rewritten == _section()
+
+
+def test_rewrite_issue_page_content_falls_back_on_empty_fields(monkeypatch):
+    monkeypatch.setattr(
+        generation, "create_json_completion",
+        lambda **kwargs: json.dumps(
+            {"current_summary": "", "key_facts": [], "implications": [], "watch_points": []}
+        ),
+    )
+
+    rewritten = generation._rewrite_issue_page_content(_section())
+
+    assert rewritten == _section()
+
+
+def test_rewrite_issue_page_content_falls_back_on_llm_exception(monkeypatch):
+    def exploding_completion(**kwargs):
+        raise generation.OpenRouterTimeoutError("타임아웃")
+
+    monkeypatch.setattr(generation, "create_json_completion", exploding_completion)
+
+    rewritten = generation._rewrite_issue_page_content(_section())
+
+    assert rewritten == _section()
 
 
 # ---------------------------------------------------------------------------
@@ -895,6 +950,7 @@ def test_generate_topic_page_threads_supabase_into_repository_and_writes(monkeyp
 def test_generate_issue_page_threads_supabase_into_writes(monkeypatch):
     seen: list[object] = []
     sentinel = object()
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "{}")
 
     monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, supabase=None, **k: None)
     monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, supabase=None, **k: seen.append(supabase) or "page-1")
@@ -911,6 +967,71 @@ def test_generate_issue_page_threads_supabase_into_writes(monkeypatch):
     assert all(item is sentinel for item in seen)
 
 
+def test_generate_issue_page_uses_rewritten_content_in_markdown(monkeypatch):
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-1")
+    captured = {}
+
+    def fake_create_wiki_version(draft, **k):
+        captured["markdown"] = draft.markdown
+        return "version-1"
+
+    monkeypatch.setattr(generation, "create_wiki_version", fake_create_wiki_version)
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    def fake_llm(system_prompt, user_prompt, model):
+        return json.dumps({
+            "current_summary": "다듬어진 요약 문단",
+            "key_facts": ["다듬어진 사실"],
+            "implications": ["다듬어진 시사점"],
+            "watch_points": ["다듬어진 지점"],
+        })
+
+    generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None, llm_client=fake_llm,
+    )
+
+    assert "다듬어진 요약 문단" in captured["markdown"]
+    assert "다듬어진 사실" in captured["markdown"]
+    # 원본 문장은 재작성 결과로 완전히 대체된다
+    assert "HBM4 공급이 예상보다 더 타이트해지고 있다." not in captured["markdown"]
+
+
+def test_generate_issue_page_sources_unaffected_by_rewrite(monkeypatch):
+    """LLM 재작성이 성공해도 '## 출처' 섹션과 sources는 원본 section 기준 그대로다."""
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-1")
+    captured = {}
+
+    def fake_create_wiki_version(draft, **k):
+        captured["markdown"] = draft.markdown
+        captured["sources"] = draft.sources
+        return "version-1"
+
+    monkeypatch.setattr(generation, "create_wiki_version", fake_create_wiki_version)
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    def fake_llm(system_prompt, user_prompt, model):
+        return json.dumps({
+            "current_summary": "다듬어진 요약",
+            "key_facts": ["다듬어진 사실"],
+            "implications": ["다듬어진 시사점"],
+            "watch_points": ["다듬어진 지점"],
+        })
+
+    generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None, llm_client=fake_llm,
+    )
+
+    assert "## 출처" in captured["markdown"]
+    assert [s.document_version_id for s in captured["sources"]] == ["doc-1"]
+    assert "document_version_id" not in captured["markdown"]
+
+
 def test_generate_wiki_drafts_for_sections_threads_injected_clients(monkeypatch):
     seen: dict[str, object] = {}
     supabase = object()
@@ -923,6 +1044,7 @@ def test_generate_wiki_drafts_for_sections_threads_injected_clients(monkeypatch)
 
     def fake_generate_issue_page(section, **kwargs):
         seen["issue_supabase"] = kwargs["supabase"]
+        seen["issue_llm_client"] = kwargs["llm_client"]
         return "page-1", "version-1"
 
     monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
@@ -940,6 +1062,7 @@ def test_generate_wiki_drafts_for_sections_threads_injected_clients(monkeypatch)
     assert seen["topic_supabase"] is supabase
     assert seen["topic_llm_client"] is llm_client
     assert seen["issue_supabase"] is supabase
+    assert seen["issue_llm_client"] is llm_client
 
 
 # ---------------------------------------------------------------------------
