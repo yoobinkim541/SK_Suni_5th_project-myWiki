@@ -706,3 +706,128 @@ def get_chat_session_for_admin(session_id: str, workspace_id: str) -> Optional[d
         .execute()
     )
     return res.data
+
+
+# ---------------------------------------------------------------------------
+# 팀 관리 — teams 테이블 + workspace_members.team_id.
+# role(owner/admin/editor)을 관리자/팀장/팀원으로 재해석해 재사용한다(새 역할
+# 컬럼 없음). 여기 함수들은 인가를 검증하지 않는 원시 동작만 한다 — 역할·팀
+# 범위 검증은 호출부(main.py)의 몫이다(기존 오너 전용 관리 함수들과 동일 패턴).
+# ---------------------------------------------------------------------------
+
+
+def get_workspace_member(workspace_id: str, user_id: str) -> Optional[dict]:
+    res = (
+        get_supabase()
+        .table("workspace_members")
+        .select("user_id, role, team_id")
+        .eq("workspace_id", workspace_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    return res.data
+
+
+def create_team(workspace_id: str, name: str) -> dict:
+    existing_res = (
+        get_supabase()
+        .table("teams")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .eq("name", name)
+        .execute()
+    )
+    if existing_res.data:
+        raise ValueError("이미 존재하는 팀 이름")
+
+    res = (
+        get_supabase()
+        .table("teams")
+        .insert({"workspace_id": workspace_id, "name": name})
+        .execute()
+    )
+    return res.data[0]
+
+
+def list_teams(workspace_id: str) -> list[dict]:
+    teams_res = (
+        get_supabase()
+        .table("teams")
+        .select("id, name")
+        .eq("workspace_id", workspace_id)
+        .order("name")
+        .execute()
+    )
+    members_res = (
+        get_supabase()
+        .table("workspace_members")
+        .select("team_id")
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+    counts: dict[str, int] = {}
+    for row in members_res.data:
+        team_id = row.get("team_id")
+        if team_id:
+            counts[team_id] = counts.get(team_id, 0) + 1
+
+    return [
+        {"id": t["id"], "name": t["name"], "member_count": counts.get(t["id"], 0)}
+        for t in teams_res.data
+    ]
+
+
+def delete_team(team_id: str) -> None:
+    members_res = (
+        get_supabase()
+        .table("workspace_members")
+        .select("user_id")
+        .eq("team_id", team_id)
+        .execute()
+    )
+    if members_res.data:
+        raise ValueError("팀에 소속된 인원이 있어 삭제할 수 없음")
+
+    get_supabase().table("teams").delete().eq("id", team_id).execute()
+
+
+def list_team_members(team_id: str) -> list[dict]:
+    res = (
+        get_supabase()
+        .table("workspace_members")
+        .select("user_id, role, profiles(display_name)")
+        .eq("team_id", team_id)
+        .execute()
+    )
+    return [_flatten_display_name(row) for row in res.data]
+
+
+def list_workspace_users_with_team(workspace_id: str) -> list[dict]:
+    members_res = (
+        get_supabase()
+        .table("workspace_members")
+        .select("user_id, role, team_id, profiles(display_name)")
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+    rows = [_flatten_display_name(row) for row in members_res.data]
+
+    teams_res = (
+        get_supabase()
+        .table("teams")
+        .select("id, name")
+        .eq("workspace_id", workspace_id)
+        .execute()
+    )
+    team_names = {t["id"]: t["name"] for t in teams_res.data}
+
+    for row in rows:
+        row["team_name"] = team_names.get(row.get("team_id"))
+    return rows
+
+
+def move_member_to_team(workspace_id: str, user_id: str, team_id: Optional[str]) -> None:
+    get_supabase().table("workspace_members").update({"team_id": team_id}).eq(
+        "workspace_id", workspace_id
+    ).eq("user_id", user_id).execute()

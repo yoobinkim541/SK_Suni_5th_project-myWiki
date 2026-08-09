@@ -13,6 +13,8 @@ erDiagram
     AUTH_USERS ||--|| APP_PROFILES : "1:1"
     APP_WORKSPACES ||--o{ APP_WORKSPACE_MEMBERS : has
     APP_PROFILES ||--o{ APP_WORKSPACE_MEMBERS : joins
+    APP_WORKSPACES ||--o{ APP_TEAMS : has
+    APP_TEAMS ||--o{ APP_WORKSPACE_MEMBERS : groups
 
     APP_PROFILES ||--o{ CONTENT_DOCUMENTS : uploads
     APP_PROFILES ||--o{ CONTENT_WIKI_PAGE_VERSIONS : creates
@@ -39,7 +41,8 @@ erDiagram
 |---|---|---|
 | `profiles` | `id`, `display_name`, `department`, `created_at`, `updated_at` | `auth.users.id`와 1:1 |
 | `workspaces` | `id`, `name`, `slug`, `created_at`, `updated_at` | `slug` UNIQUE |
-| `workspace_members` | `id`, `workspace_id`, `user_id`, `role`, `created_at` | role은 `owner/admin/editor/viewer`; (workspace_id, user_id) UNIQUE |
+| `workspace_members` | `id`, `workspace_id`, `user_id`, `role`, `team_id`, `created_at` | role은 `owner/admin/editor/viewer`; (workspace_id, user_id) UNIQUE |
+| `teams` | `id`, `workspace_id`, `name`, `created_at`, `updated_at` | `(workspace_id, name)` UNIQUE |
 
 ### `content`
 
@@ -75,6 +78,10 @@ erDiagram
 - `viewer`: 공개된 결과 조회
 
 신규 사용자는 `viewer`로 초대하며 `owner` 또는 `admin`이 역할을 변경한다.
+
+`admin`(팀장)·`editor`(팀원)는 `workspace_members.team_id`로 소속 팀이 정해지며, 팀장은
+자기 팀 범위 안에서만 팀원 초대/제외/영입할 수 있다. `owner`(관리자/인사팀)는 팀 범위와
+무관하게 전체 사용자·팀별 명단을 조회하고 임의로 팀 배치를 바꿀 수 있다.
 
 ## 4. 상태값
 

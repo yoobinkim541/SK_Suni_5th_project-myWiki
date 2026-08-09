@@ -430,3 +430,31 @@ class DailyReportGenerateResponse(BaseModel):
     artifact_type: str
     artifact_object_key: str
     artifacts: list[DailyReportArtifactOut]
+
+
+class TeamOut(BaseModel):
+    id: str
+    name: str
+    member_count: int = 0
+
+
+class TeamMemberOut(BaseModel):
+    user_id: str
+    display_name: Optional[str] = None
+    role: Optional[str] = None
+
+
+class AdminUserOut(BaseModel):
+    user_id: str
+    display_name: Optional[str] = None
+    role: Optional[str] = None
+    team_id: Optional[str] = None
+    team_name: Optional[str] = None
+
+
+class CreateTeamRequest(BaseModel):
+    name: str
+
+
+class AssignTeamRequest(BaseModel):
+    team_id: Optional[str] = None
