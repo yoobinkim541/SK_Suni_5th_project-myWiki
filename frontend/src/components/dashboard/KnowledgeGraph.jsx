@@ -24,11 +24,17 @@ import { INTEREST_KEYWORD_GROUPS } from '../../data/mockOnboarding';
 import myWikiLogoFull from '../../assets/mywiki-logo-full.png';
 
 const CX = 500;
-const CY = 390; // viewBox 높이(780)의 정확히 절반
+const CY = 340; // viewBox 높이(680)의 정확히 절반
 const HUB_R = 110;
-const CATEGORY_R = 218; // 중심에서 카테고리 노드까지 거리
+const CATEGORY_R = 218; // 중심에서 카테고리 노드까지 거리(가로 기준 — Y_SQUASH 적용 전)
 const CATEGORY_NODE_R = 44;
-const LEAF_R_BASE = 320; // 중심에서 리프(키워드 점)까지 기본 거리
+const LEAF_R_BASE = 320; // 중심에서 리프(키워드 점)까지 기본 거리(가로 기준 — Y_SQUASH 적용 전)
+// 타원형 배치 — 화면은 세로보다 가로가 훨씬 넓은데 예전엔 완전한 원형(가로=세로 반지름)으로
+// 배치해서, 가로는 여유가 남아도는데 세로는 위/아래 끝 리프가 viewBox 밖으로 살짝
+// 잘렸다. toXY의 Y좌표에만 이 배수를 곱해 세로 반지름을 줄인다 — 각 카테고리·리프의
+// 각도/개수/연결 관계 등 데이터는 전혀 안 건드리고, 화면에 투영되는 좌표만 눌러
+// 타원으로 만든다(노드 자체는 원의 r=CATEGORY_NODE_R을 그대로 쓰므로 동그란 모양은 유지된다).
+const Y_SQUASH = 0.72;
 // 카테고리 하나당 리프 13개 — 각도 퍼짐 + 반지름을 어긋나게 해서 가지 길이가 다양해 보이게
 // 함. 라벨 있는 가지(아래 LABELED_LEAF_INDEXES)는 텍스트가 잘리지 않도록 반지름을 크게
 // 안 건드리고, 라벨 없는 "빈 가지"는 반지름을 훨씬 크게 들쭉날쭉하게 벌려서 전체 윤곽이
@@ -37,16 +43,17 @@ const LEAF_R_BASE = 320; // 중심에서 리프(키워드 점)까지 기본 거�
 // 가지 수를 13개에서 11개로 줄여(-42/+62 양 끝단 제거) 더 정돈되어 보이게 함.
 const LEAF_ANGLES = [-32, -22, -12, -3, 6, 15, 25, 35, 45, -52, 53];
 // ⚠ 리프 각도는 카테고리 각도(0/60/120/180/240/300)에 그대로 더해지기 때문에, 어떤 카테고리는
-// 특정 리프의 최종 각도가 0°/180°(정확히 위/아래)에 가까워진다 — 그 방향은 viewBox 세로
-// 여백이 가장 좁아서(중심에서 위/아래 끝까지 390px), 지터를 너무 키우면 밖으로 잘린다.
-// 그래서 최대치를 370(기본 반지름+지터 합)선에서 묶었다.
+// 특정 리프의 최종 각도가 0°/180°(정확히 위/아래)에 가까워진다 — Y_SQUASH 덕분에 그 방향
+// 반지름이 실제로는 370*0.72≈266px까지만 나가므로(CY=340 기준 위/아래 모두 70px 이상 여유),
+// 예전 완전 원형일 때보다 여유가 넉넉해졌다. 그래도 최대치는 370(기본 반지름+지터 합)선에서
+// 그대로 묶어 둔다.
 const LEAF_JITTER = [22, 40, 30, 14, 48, 24, 34, 32, 44, 50, 18];
 // 라벨을 붙일 리프 인덱스 — 10개 중 5개(퍼짐 양 끝은 피해서 텍스트가 잘리지 않게 함).
 const LABELED_LEAF_INDEXES = new Set([1, 3, 4, 6, 8]);
 
 function toXY(angleDeg, radius) {
   const rad = (angleDeg * Math.PI) / 180;
-  return { x: CX + radius * Math.sin(rad), y: CY - radius * Math.cos(rad) };
+  return { x: CX + radius * Math.sin(rad), y: CY - radius * Math.cos(rad) * Y_SQUASH };
 }
 
 const CATEGORIES = INTEREST_KEYWORD_GROUPS.map((g, i) => {
@@ -80,8 +87,8 @@ export default function KnowledgeGraph() {
       }`}
     >
       <svg
-        className="kg-svg block h-auto w-full max-h-[420px] sm:max-h-[480px] lg:max-h-[560px]"
-        viewBox="0 0 1000 780"
+        className="kg-svg block h-auto w-full max-h-[300px] sm:max-h-[360px] lg:max-h-[420px]"
+        viewBox="0 0 1000 680"
         role="img"
         aria-label="myWiki 지식 축적 네트워크 — 6개 카테고리와 키워드"
       >
@@ -187,7 +194,7 @@ export default function KnowledgeGraph() {
         </g>
       </svg>
 
-      {/* 허브 로고 오버레이 — viewBox 정중앙(CX=500/1000, CY=390/780 → 50%/50%)에 항상 겹친다.
+      {/* 허브 로고 오버레이 — viewBox 정중앙(CX=500/1000, CY=340/680 → 50%/50%)에 항상 겹친다.
           로고는 SVG 안에 직접 넣는 것보다 <img>로 얹는 쪽이 다크모드 전환에 더 간단하다. */}
       <div className="kg-hub-overlay pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-1">
         <img

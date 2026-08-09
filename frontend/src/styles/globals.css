@@ -1742,7 +1742,7 @@ a.fn:hover{text-decoration:underline}
    그림자는 뺐다. 다만 중앙 허브(그라디언트 글로우 + 로고)는 남기고, 허브↔카테고리를 잇는
    선 6개만 뺐다(다 같은 중심에서 뻗어나가는 선이 있으면 지저분해 보인다는 피드백). */
 .kg-wrap{background:transparent}
-.kg-svg{display:block}
+.kg-svg{display:block;overflow:visible}
 
 .kg-line{stroke:var(--hair);stroke-width:1.5;opacity:0;
   transition:opacity .6s var(--ease)}
@@ -1776,7 +1776,13 @@ a.fn:hover{text-decoration:underline}
 .kg-leaf-label{fill:#17201E;font-size:12px;font-weight:600}
 :root[data-theme="dark"] .kg-leaf-label{fill:#D5DEDA}
 
-/* 중앙 허브 — 그라디언트 글로우 + my Wiki 로고 이미지(아이콘+텍스트 전체) */
+/* 중앙 허브 — 그라디언트 글로우 + my Wiki 로고 이미지(아이콘+텍스트 전체).
+   글로우 원의 확대폭을 줄이고(1.14→1.08), 로고 이미지 자체에도 아주 은은한 pulse를
+   더해 "허브가 커졌다 작아진다"는 게 실제 로고에서도 느껴지게 했다. 로고는 위치를
+   잡는 부모(.kg-hub-overlay)가 이미 translate(-50%,-50%)로 중앙 정렬을 담당하고,
+   pulse는 자식 <img> 하나에만 걸기 때문에 두 transform이 서로 덮어쓰지 않는다 —
+   translate와 scale이 같은 엘리먼트의 transform에 같이 있었다면 둘 중 하나가 다른
+   하나를 지워서 위치가 튀었을 것이다. */
 .kg-hub-glow{fill:#4C9A83;opacity:.09;animation:kg-pulse 2.6s var(--ease) infinite}
 .kg-hub-grad{fill:url(#kgHubGrad)}
 /* 허브 원(지름 = viewBox 폭의 14.4%) 안에 들어가도록 폭을 그보다 살짝 작게 %로 고정 —
@@ -1804,12 +1810,14 @@ a.fn:hover{text-decoration:underline}
   height:auto;
   object-fit:contain;
   display:block;
+  transform-origin:center;
+  animation:kg-node-pulse 5s ease-in-out infinite;
   filter:drop-shadow(0 8px 16px rgba(76,154,131,.18));
 }
 
 @keyframes kg-pulse{
   0%,100%{transform:scale(1);opacity:.07}
-  50%{transform:scale(1.14);opacity:.14}
+  50%{transform:scale(1.08);opacity:.14}
 }
 /* 카테고리 노드용 — 아주 미세하게 커졌다 작아짐(위치 이동 없음). */
 @keyframes kg-node-pulse{
