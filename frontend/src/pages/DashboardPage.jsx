@@ -18,6 +18,7 @@
 // 이슈는 관심사와 무관하게 모두에게 같은 항목을 공시·IR 등 공식 문서 출처로 보여줍니다.
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import KpiCard from '../components/dashboard/KpiCard';
 import TrendChart from '../components/dashboard/TrendChart';
 import IssueList from '../components/dashboard/IssueList';
@@ -28,9 +29,9 @@ import { filterNewsByInterests } from '../data/mockOnboarding';
 import { formatKoreanDate } from '../lib/formatDate';
 import useRevealOnScroll from '../hooks/useRevealOnScroll';
 
-// [목업] 파이프라인 단계 — 시안 ".pipe" 그대로. 시각이 고정값이라 실제 배치 시각이
-// 아니다. 배치 상태를 실데이터로 바꾸려면 스케줄러가 매 회차 완주해야 하는데
-// 아직 그렇지 않다(수집·정제·분석이 한 실행의 시간 예산을 나눠 쓴다).
+// [목업] 파이프라인 단계 — 아래 .hero-pipe(그래프 오른쪽 세로 패널)에 그린다. 시각이
+// 고정값이라 실제 배치 시각이 아니다. 배치 상태를 실데이터로 바꾸려면 스케줄러가 매 회차
+// 완주해야 하는데 아직 그렇지 않다(수집·정제·분석이 한 실행의 시간 예산을 나눠 쓴다).
 const PIPELINE_STEPS = [
   { name: '수집', time: '07:12' },
   { name: '정제·검증', time: '07:28' },
@@ -45,7 +46,8 @@ function kpiDesc(desc) {
   return desc;
 }
 
-export default function DashboardPage({ onNavigate, interests = [], onUpdateInterests }) {
+export default function DashboardPage({ interests = [], onUpdateInterests }) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState([]);
   const [issues, setIssues] = useState([]);
@@ -142,34 +144,39 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
   return (
     <section className="view on" id="v-dash">
       <div className="ph ph-tight">
-        <h2>메인 대시보드</h2>
-        <span className="dt">{formatKoreanDate()}</span>
+        {/* 밑줄(border-bottom)을 .ph 전체가 아니라 이 안쪽 래퍼(제목+날짜)에만 줘서,
+            줄 길이가 텍스트 폭만큼만 그려지게 한다 — 오른쪽 "반도체 도메인…" 배지 아래로는
+            선이 안 이어진다. */}
+        <div className="ph-title">
+          <h2>메인 대시보드</h2>
+          <span className="dt">{formatKoreanDate()}</span>
+        </div>
         {/* [목업] '일 배치 정상'은 실제와 반대다 — 배치가 매 회차 시간 예산에 걸려
             잘리고 있다. 카테고리 현황 헤더(CategoryDetail.jsx)와 같은 상태이고,
             배치 상태 실데이터화는 그게 풀린 뒤 두 화면을 함께 다룬다. */}
         <span className="st">반도체 도메인 · 일 배치 <b>정상</b></span>
       </div>
 
-      <div className="pipe pipe-tight">
-        {PIPELINE_STEPS.map((step, i) => (
-          <span key={step.name} style={{ display: 'contents' }}>
-            <span className="st"><span className="n">{step.name}</span><span className="tm">{step.time}</span></span>
-            {i < PIPELINE_STEPS.length - 1 && <span className="ar">→</span>}
-          </span>
-        ))}
-        <span className="nx">다음 실행 08:00 · 무인 자동</span>
+      {/* 1) 지식 축적화 네트워크 + 파이프라인 상태 — 파이프라인 상태를 가로 바 대신 그래프
+          오른쪽 세로 패널(.hero-pipe)로 옮겼다. 가로 바 한 줄이 없어진 만큼 그래프가 헤더
+          바로 아래에서 시작하고, 그 여유 세로 공간을 .kg-svg의 max-height(globals.css,
+          calc(100vh - …))가 활용해서 원형 그래프 전체가 스크롤 없이 한 화면에 들어온다.
+          섹션 타이틀("지식 축적화" / 설명 문구)도 생략한다 — 그래프 자체가 아래
+          kg-hub-overlay 로고로 무엇인지 이미 드러난다. */}
+      <div className="hero">
+        <section className="hero-graph">
+          <KnowledgeGraph />
+        </section>
+        <aside className="hero-pipe">
+          {PIPELINE_STEPS.map((step) => (
+            <div className="st" key={step.name}>
+              <span className="n">{step.name}</span>
+              <span className="tm">{step.time}</span>
+            </div>
+          ))}
+          <div className="nx">다음 실행 08:00 · 무인 자동</div>
+        </aside>
       </div>
-
-      {/* 1) 지식 축적화 네트워크 — 파이프라인 바로 아래, 최근 현황보다도 먼저 바로 보이도록
-          최상단에 배치(장식용 그래프). 헤더·파이프라인 바의 위아래 여백을 좁혀서(ph-tight/
-          pipe-tight) 화면에 들어오자마자 이 그래프가 더 잘 보이게 했다. */}
-      <section className="sec">
-        <div className="sh">
-          <span className="t">지식 축적화</span>
-          <span className="s">myWiki가 자동으로 분류·연결하는 카테고리와 키워드</span>
-        </div>
-        <KnowledgeGraph />
-      </section>
 
       {/* 2) 최근 현황 — 카테고리 현황 페이지의 "오늘의 분류 요약"과 같은 .kpi/KpiCard를 쓰지만,
           여기서는 .kpi-compact로 카드 크기만 살짝 줄인다(다른 페이지의 .kpi는 그대로 둠). */}
@@ -292,9 +299,9 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
           <span className="badge-official">공식 근거 기반</span>
           <span className="c">{issues.length}건</span>
           <span className="s">신뢰도 → 제목 → 출처 순</span>
-          <span className="r"><a onClick={() => onNavigate?.('report')}>일일 리포트 →</a></span>
+          <span className="r"><a onClick={() => navigate('/report')}>일일 리포트 →</a></span>
         </div>
-        <IssueList items={issues} onSelectWiki={(wikiId) => onNavigate?.('wiki', wikiId)} />
+        <IssueList items={issues} onSelectWiki={(wikiId) => navigate(`/wiki/${wikiId}`)} />
       </section>
     </section>
   );
