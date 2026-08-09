@@ -66,6 +66,9 @@ import SettingsPage from './pages/SettingsPage';
 import PrivacyPage from './pages/PrivacyPage';
 
 const INTERESTS_KEY = 'mywiki-interests';
+// 로그아웃 직후 표시(sessionStorage) — "방금 이 탭에서 로그아웃했다가 다시 로그인했다"를
+// 판별하는 용도. 자세한 이유는 App() 안 determineEntryStep 주석 참고.
+const JUST_LOGGED_OUT_KEY = 'mywiki-just-logged-out';
 
 function getInitial(key, fallback) {
   try {
@@ -269,18 +272,22 @@ export default function App() {
   // determineEntryStep은 매 세션 변화(최초 로드·OAuth 콜백 복귀·로그아웃)마다 다시 계산한다 —
   // "로그인 진행 중이었다" 같은 중간 상태를 따로 안 들고 있어도 항상 같은 결론에 도달한다.
   useEffect(() => {
-    function determineEntryStep(session, event) {
+    function determineEntryStep(session) {
       if (!session) {
         setEntryStep('landing');
         return;
       }
-      // 방금 실제로 로그인 동작이 일어난 시점(SIGNED_IN)이면 저장된 선호도와 무관하게
-      // 무조건 선호조사부터 보여준다 — "로그아웃 후 같은 계정으로 다시 로그인해도 선호조사가
-      // 안 뜬다"는 피드백 때문이다. userId 매칭만으로는 이 경우를 못 잡는다: 같은 계정이면
-      // 매칭돼서 그냥 대시보드로 넘어가 버린다. 반면 페이지 새로고침처럼 "이미 로그인돼
-      // 있던 세션을 이어받는" 경우(event가 SIGNED_IN이 아님)까지 매번 다시 물어보면 그건
-      // 그것대로 성가시므로, 그 경우엔 기존처럼 저장된 선호도로 판단한다.
-      if (event === 'SIGNED_IN') {
+      // ⚠ 여기서 supabase auth 이벤트(SIGNED_IN 등)로 "방금 로그인했는지"를 구분하려던
+      //   적이 있었는데, 틀렸다 — OAuth는 리다이렉트 방식이라 로그인 완료 후 돌아오는 것도
+      //   결국 새 페이지 로드이고, supabase-js가 세션을 localStorage에서 복원할 때도 그
+      //   첫 콜백이 SIGNED_IN으로 오는 경우가 있어서, "로그아웃 후 재로그인"과 "그냥 브라우저
+      //   껐다 켜서 기존 세션 이어받기"를 이벤트 타입만으로 구별할 수 없었다(그래서 브라우저를
+      //   껐다 켤 때마다도 선호조사가 떠버리는 회귀가 생겼다). 대신 handleLogout()에서
+      //   sessionStorage에 명시적으로 표시를 남긴다 — sessionStorage는 리다이렉트를 낀
+      //   같은 탭 왕복에는 살아남고, 탭/브라우저를 완전히 닫으면 사라지므로 "방금 이 탭에서
+      //   로그아웃했다가 다시 로그인한 경우"만 정확히 잡아낸다.
+      if (sessionStorage.getItem(JUST_LOGGED_OUT_KEY)) {
+        sessionStorage.removeItem(JUST_LOGGED_OUT_KEY);
         setEntryStep('survey');
         return;
       }
@@ -295,7 +302,7 @@ export default function App() {
       }
       setEntryStep('survey');
     }
-    function applySession(session, event) {
+    function applySession(session) {
       // 구글 로그인 등 OAuth 콜백은 access_token/refresh_token을 URL 해시에 실어 돌아온다.
       // supabase-js(detectSessionInUrl)가 그 해시를 읽어 세션으로 파싱하긴 하지만, 파싱이
       // 끝난 이 시점까지도 주소창엔 토큰이 그대로 남아 있을 수 있다 — 여기서 확실히 지운다.
@@ -305,23 +312,21 @@ export default function App() {
       }
       setAuthed(!!session);
       setProfile(session?.user ?? null);
-      determineEntryStep(session, event);
+      determineEntryStep(session);
     }
     getCurrentSession()
       .then((session) => {
-        // 페이지를 새로 열어서 기존 세션을 이어받는 경로다 — 로그인 "동작"이 방금 일어난 게
-        // 아니므로 SIGNED_IN으로 취급하지 않는다(그러면 매번 새로고침마다 선호조사가 뜬다).
-        applySession(session, 'INITIAL_SESSION');
+        applySession(session);
       })
       .catch(() => {
         // 세션 조회 실패(네트워크 등) — 세션 없음으로 간주하고 랜딩부터 보여준다.
-        applySession(null, 'INITIAL_SESSION');
+        applySession(null);
       })
       .finally(() => {
         setAuthChecked(true);
       });
-    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
-      applySession(session, event);
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
     });
     return () => subscription?.subscription?.unsubscribe();
   }, []);
@@ -455,6 +460,8 @@ export default function App() {
   function handleLogout() {
     setProfileOpen(false);
     setGuestMode(false);
+    // 다음 로그인 때 선호도 조사를 다시 보여주기 위한 표시. determineEntryStep 참고.
+    sessionStorage.setItem(JUST_LOGGED_OUT_KEY, '1');
     signOut();
   }
 
