@@ -69,6 +69,13 @@ const INTERESTS_KEY = 'mywiki-interests';
 // 로그아웃 직후 표시(sessionStorage) — "방금 이 탭에서 로그아웃했다가 다시 로그인했다"를
 // 판별하는 용도. 자세한 이유는 App() 안 determineEntryStep 주석 참고.
 const JUST_LOGGED_OUT_KEY = 'mywiki-just-logged-out';
+// "이번 로그인 세션에서 선호도 조사를 이미 봤는지"만 담는 별도 플래그(localStorage).
+// ⚠ INTERESTS_KEY(선호도 데이터 자체)와는 완전히 분리한다 — DB/localStorage에 예전
+//   선호도가 남아있어도 그건 "이번 로그인에서 조사를 또 보여줄지"와 무관한 문제다.
+//   새로고침·페이지 이동에는 살아남아야 해서 sessionStorage가 아니라 localStorage를
+//   쓰고, 대신 "로그아웃 후 재로그인" 시점(JUST_LOGGED_OUT_KEY 감지)에 여기서 직접
+//   지워서 다음 로그인에서 다시 뜨게 만든다.
+const SURVEY_SEEN_KEY = 'mywiki-survey-seen-this-login';
 
 function getInitial(key, fallback) {
   try {
@@ -277,30 +284,40 @@ export default function App() {
         setEntryStep('landing');
         return;
       }
-      // ⚠ 여기서 supabase auth 이벤트(SIGNED_IN 등)로 "방금 로그인했는지"를 구분하려던
-      //   적이 있었는데, 틀렸다 — OAuth는 리다이렉트 방식이라 로그인 완료 후 돌아오는 것도
-      //   결국 새 페이지 로드이고, supabase-js가 세션을 localStorage에서 복원할 때도 그
-      //   첫 콜백이 SIGNED_IN으로 오는 경우가 있어서, "로그아웃 후 재로그인"과 "그냥 브라우저
-      //   껐다 켜서 기존 세션 이어받기"를 이벤트 타입만으로 구별할 수 없었다(그래서 브라우저를
-      //   껐다 켤 때마다도 선호조사가 떠버리는 회귀가 생겼다). 대신 handleLogout()에서
-      //   sessionStorage에 명시적으로 표시를 남긴다 — sessionStorage는 리다이렉트를 낀
-      //   같은 탭 왕복에는 살아남고, 탭/브라우저를 완전히 닫으면 사라지므로 "방금 이 탭에서
-      //   로그아웃했다가 다시 로그인한 경우"만 정확히 잡아낸다.
+      // ⚠ 선호도 조사를 다시 보여줄지는 "DB/localStorage에 예전 선호도 데이터가 있는가"가
+      //   아니라 "이번 로그인 세션에서 이미 봤는가"만으로 정한다. 그 둘은 별개 문제다 —
+      //   예전 선호도가 있어도 새로 로그인했으면 다시 보여줘야 하고, 반대로 이번 세션에서
+      //   이미 봤으면(완료했든 건너뛰기로 닫았든) 새로고침·페이지 이동에도 또 뜨면 안 된다.
+      //   그래서 SURVEY_SEEN_KEY 하나만 본다 — 선호도 데이터(INTERESTS_KEY)는 여기서
+      //   전혀 안 건드린다(읽지도, 지우지도 않는다).
+      //
+      // "방금 로그아웃했다가 다시 로그인했다"는 supabase auth 이벤트로는 못 잡는다(OAuth가
+      //   리다이렉트 방식이라 로그인 완료 후 돌아오는 것도 결국 새 페이지 로드이고, 세션을
+      //   localStorage에서 복원할 때도 첫 콜백이 SIGNED_IN으로 오는 경우가 있어서 "재로그인"과
+      //   "그냥 브라우저 껐다 켜서 기존 세션 이어받기"를 구별할 수 없다). 그래서
+      //   handleLogout()이 로그아웃하는 그 순간 sessionStorage에 명시적으로 표시를 남긴다
+      //   (sessionStorage는 리다이렉트를 낀 같은 탭 왕복엔 살아남고, 탭/브라우저를 완전히
+      //   닫으면 사라진다). 그 표시가 있으면 "새로운 로그인 세션이 시작됐다"는 뜻이니
+      //   SURVEY_SEEN_KEY를 지워서 이번 세션엔 아직 안 본 상태로 되돌린다.
       if (sessionStorage.getItem(JUST_LOGGED_OUT_KEY)) {
         sessionStorage.removeItem(JUST_LOGGED_OUT_KEY);
-        setEntryStep('survey');
-        return;
+        try {
+          localStorage.removeItem(SURVEY_SEEN_KEY);
+        } catch {
+          // 무시 — 못 지워도 아래 판단은 그대로 진행된다.
+        }
       }
-      // 저장된 선호도가 "지금 로그인한 이 계정" 것일 때만 완료된 걸로 인정한다(계정 기준,
-      // isNewAccount는 안 쓴다 — 신규/기존을 따지지 않고 "이 계정이 이 브라우저에서
-      // 선호조사를 끝낸 적이 있는가"만 본다).
+      // 기존 선호도는 화면 초기값 등으로 계속 쓰이므로 세션 판단과 무관하게 로드해둔다.
       const existingPrefs = readPrefs();
-      if (existingPrefs !== null && existingPrefs.userId === session.user.id) {
-        setPrefs(existingPrefs);
-        setEntryStep(null);
-        return;
+      if (existingPrefs) setPrefs(existingPrefs);
+
+      let alreadySeen = false;
+      try {
+        alreadySeen = localStorage.getItem(SURVEY_SEEN_KEY) === '1';
+      } catch {
+        alreadySeen = false;
       }
-      setEntryStep('survey');
+      setEntryStep(alreadySeen ? null : 'survey');
     }
     function applySession(session) {
       // 구글 로그인 등 OAuth 콜백은 access_token/refresh_token을 URL 해시에 실어 돌아온다.
@@ -382,6 +399,10 @@ export default function App() {
     setPrefs(value);
     try {
       localStorage.setItem(INTERESTS_KEY, JSON.stringify(value));
+      // 이번 로그인 세션에서 선호도 조사를 봤다는 표시. "완료"든 "건너뛰기"든 이 한
+      // 함수로 들어오므로(OnboardingPage 쪽에서 스킵도 빈 값으로 여기를 호출) 여기
+      // 한 곳에만 표시해두면 된다 — 다음 로그아웃→재로그인 전까지는 다시 안 뜬다.
+      localStorage.setItem(SURVEY_SEEN_KEY, '1');
     } catch {
       // 저장 실패해도 이번 세션 동안은 상태로 유지됩니다.
     }
