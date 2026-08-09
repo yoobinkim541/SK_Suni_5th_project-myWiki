@@ -11,7 +11,13 @@ from ..analysis.repository import get_supabase
 from .artifact_service import resolve_report_artifact_bucket
 from .interface import ReportArtifactConfig, ReportGenerationConfig, generate_daily_report
 from .models import ArtifactType, ReportGenerationRequest, ReportStatus, ReportType
-from .repository import SavedReportArtifact, get_report_artifact
+from .repository import (
+    SavedReportArtifact,
+    get_report_artifact,
+    list_completed_daily_report_rows,
+    list_report_artifacts_for_reports,
+    list_report_sections_for_reports,
+)
 
 
 class ReportDownloadError(RuntimeError):
@@ -52,6 +58,71 @@ ARTIFACT_EXTENSIONS = {
     ArtifactType.PPTX: "pptx",
     ArtifactType.DOCX: "docx",
 }
+
+
+def get_daily_report_history(
+    workspace_id: str,
+    *,
+    limit: int = 30,
+    supabase: Client | None = None,
+) -> list[dict[str, Any]]:
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100.")
+
+    db = supabase or get_supabase()
+    report_rows = list_completed_daily_report_rows(workspace_id=workspace_id, supabase=db)
+
+    latest_by_date: dict[date, dict[str, Any]] = {}
+    for row in report_rows:
+        report_date = _extract_daily_history_report_date(row)
+        if report_date is None:
+            continue
+        existing = latest_by_date.get(report_date)
+        if existing is None or _report_history_sort_key(row) > _report_history_sort_key(existing):
+            latest_by_date[report_date] = row
+
+    latest_reports = sorted(latest_by_date.items(), key=lambda item: item[0], reverse=True)[:limit]
+    if not latest_reports:
+        return []
+
+    selected_report_rows = [row for _, row in latest_reports]
+    report_ids = [str(row["id"]) for row in selected_report_rows]
+
+    section_rows = list_report_sections_for_reports(report_ids=report_ids, supabase=db)
+    issue_count_by_report: dict[str, int] = {report_id: 0 for report_id in report_ids}
+    for section in section_rows:
+        report_id = str(section.get("report_id"))
+        if section.get("issue_key") is not None:
+            issue_count_by_report[report_id] = issue_count_by_report.get(report_id, 0) + 1
+
+    artifact_rows = list_report_artifacts_for_reports(report_ids=report_ids, supabase=db)
+    artifact_types_by_report: dict[str, set[str]] = {report_id: set() for report_id in report_ids}
+    for artifact in artifact_rows:
+        report_id = str(artifact.get("report_id"))
+        artifact_type = artifact.get("artifact_type")
+        if artifact_type is not None:
+            artifact_types_by_report.setdefault(report_id, set()).add(str(artifact_type))
+
+    history: list[dict[str, Any]] = []
+    date_by_report_id = {str(row["id"]): report_date for report_date, row in latest_reports}
+    for row in selected_report_rows:
+        report_id = str(row["id"])
+        artifact_types = artifact_types_by_report.get(report_id, set())
+        history.append(
+            {
+                "report_id": report_id,
+                "date": date_by_report_id[report_id].isoformat(),
+                "title": str(row.get("title") or ""),
+                "version": int(row["version"]),
+                "status": str(row["status"]),
+                "completed_at": row.get("completed_at"),
+                "issue_count": issue_count_by_report.get(report_id, 0),
+                "has_pdf": ArtifactType.PDF.value in artifact_types,
+                "has_docx": ArtifactType.DOCX.value in artifact_types,
+                "has_pptx": ArtifactType.PPTX.value in artifact_types,
+            }
+        )
+    return history
 
 
 def get_daily_report(
@@ -358,6 +429,41 @@ def _serialize_artifact(artifact: SavedReportArtifact) -> dict[str, Any]:
         "file_size": artifact.file_size,
         "created_at": artifact.created_at.isoformat() if artifact.created_at is not None else None,
     }
+
+
+def _extract_daily_history_report_date(row: dict[str, Any]) -> date | None:
+    request_config = row.get("request_config")
+    if isinstance(request_config, str):
+        try:
+            request_config = json.loads(request_config)
+        except json.JSONDecodeError:
+            request_config = None
+    if isinstance(request_config, dict):
+        parsed = _parse_history_date(request_config.get("report_date"))
+        if parsed is not None:
+            return parsed
+
+    report_key = str(row.get("report_key") or "")
+    if report_key.startswith(f"{ReportType.DAILY.value}:"):
+        return _parse_history_date(report_key.rsplit(":", 1)[-1])
+    return None
+
+
+def _parse_history_date(value: object) -> date | None:
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _report_history_sort_key(row: dict[str, Any]) -> tuple[int, str, str]:
+    return (
+        int(row.get("version") or 0),
+        str(row.get("completed_at") or ""),
+        str(row.get("created_at") or ""),
+    )
 
 
 def _get_latest_completed_daily_report_row(

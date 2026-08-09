@@ -36,6 +36,57 @@ class SavedReportArtifact(BaseModel):
     storage_bucket: str | None = None
 
 
+def list_completed_daily_report_rows(
+    *,
+    workspace_id: str,
+    supabase: Client | None = None,
+) -> list[dict[str, object]]:
+    db = supabase or get_supabase()
+    return (
+        db.table("reports")
+        .select("id, workspace_id, report_key, version, title, report_type, status, request_config, created_at, completed_at")
+        .eq("workspace_id", workspace_id)
+        .eq("report_type", ReportType.DAILY.value)
+        .eq("status", ReportStatus.COMPLETED.value)
+        .execute()
+        .data
+    )
+
+
+def list_report_sections_for_reports(
+    *,
+    report_ids: Sequence[str],
+    supabase: Client | None = None,
+) -> list[dict[str, object]]:
+    if not report_ids:
+        return []
+    db = supabase or get_supabase()
+    return (
+        db.table("report_sections")
+        .select("id, report_id, issue_key")
+        .in_("report_id", list(report_ids))
+        .execute()
+        .data
+    )
+
+
+def list_report_artifacts_for_reports(
+    *,
+    report_ids: Sequence[str],
+    supabase: Client | None = None,
+) -> list[dict[str, object]]:
+    if not report_ids:
+        return []
+    db = supabase or get_supabase()
+    return (
+        db.table("artifacts")
+        .select("id, report_id, artifact_type, version")
+        .in_("report_id", list(report_ids))
+        .execute()
+        .data
+    )
+
+
 def create_report_version(
     *,
     workspace_id: str,

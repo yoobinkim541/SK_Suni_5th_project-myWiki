@@ -400,6 +400,19 @@ class DailyReportOut(BaseModel):
     sections: list[DailyReportSectionOut] = []
 
 
+class DailyReportHistoryItemOut(BaseModel):
+    report_id: str
+    date: str
+    title: str
+    version: int
+    status: str
+    completed_at: Optional[str] = None
+    issue_count: int
+    has_pdf: bool
+    has_docx: bool
+    has_pptx: bool
+
+
 class DailyReportGenerateRequest(BaseModel):
     date: dt_date
     max_sections: int = Field(default=15, ge=1)

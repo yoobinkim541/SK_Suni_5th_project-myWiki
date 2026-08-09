@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from . import db
 from .auth import get_current_user
-from .schemas import DailyReportGenerateRequest, DailyReportGenerateResponse, DailyReportOut
+from .schemas import DailyReportGenerateRequest, DailyReportGenerateResponse, DailyReportHistoryItemOut, DailyReportOut
 from ..report import service as report_service
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -18,6 +18,15 @@ def _require_workspace(profile: dict) -> str:
     if not workspace_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="workspace not found")
     return workspace_id
+
+
+@router.get("/daily/history", response_model=list[DailyReportHistoryItemOut])
+def get_daily_report_history(
+    limit: int = Query(default=30, ge=1, le=100),
+    profile: dict = Depends(get_current_user),
+):
+    workspace_id = _require_workspace(profile)
+    return report_service.get_daily_report_history(workspace_id, limit=limit)
 
 
 @router.get("/daily", response_model=DailyReportOut)

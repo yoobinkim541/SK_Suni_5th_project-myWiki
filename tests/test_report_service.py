@@ -57,8 +57,10 @@ class FakeTable:
 class FakeSupabase:
     def __init__(self, tables: dict[str, list[dict[str, object]]]):
         self.tables = tables
+        self.table_calls: list[str] = []
 
     def table(self, name: str) -> FakeTable:
+        self.table_calls.append(name)
         return FakeTable(self, name)
 
 
@@ -207,3 +209,122 @@ def test_get_daily_report_keeps_citation_when_document_metadata_is_missing() -> 
     assert citation["source_url"] is None
     assert citation["source_name"] is None
     assert citation["published_at"] is None
+
+
+def _history_report(
+    report_id: str,
+    *,
+    workspace_id: str = "ws-1",
+    report_date: str = "2026-08-05",
+    version: int = 1,
+    status: str = "completed",
+    request_config: object | None = None,
+):
+    return {
+        "id": report_id,
+        "workspace_id": workspace_id,
+        "report_key": f"daily:{workspace_id}:{report_date}",
+        "version": version,
+        "title": f"Daily {report_date} v{version}",
+        "report_type": "daily",
+        "status": status,
+        "request_config": request_config if request_config is not None else {"report_date": report_date},
+        "created_at": f"{report_date}T09:00:00+09:00",
+        "completed_at": f"{report_date}T09:05:00+09:00",
+    }
+
+
+def test_get_daily_report_history_returns_latest_completed_by_date_with_batch_counts() -> None:
+    supabase = FakeSupabase(
+        {
+            "reports": [
+                _history_report("r-0808-v1", report_date="2026-08-08", version=1),
+                _history_report("r-0808-v2", report_date="2026-08-08", version=2),
+                _history_report("r-0807-v3", report_date="2026-08-07", version=3),
+                _history_report("r-0809-v1", report_date="2026-08-09", version=1),
+            ],
+            "report_sections": [
+                {"id": "s1", "report_id": "r-0808-v2", "issue_key": "issue-1"},
+                {"id": "s2", "report_id": "r-0808-v2", "issue_key": "issue-2"},
+                {"id": "s3", "report_id": "r-0808-v2", "issue_key": None},
+                {"id": "s4", "report_id": "r-0807-v3", "issue_key": "issue-3"},
+                {"id": "s5", "report_id": "r-0809-v1", "issue_key": "issue-4"},
+            ],
+            "artifacts": [
+                {"id": "a1", "report_id": "r-0808-v2", "artifact_type": "pdf", "version": 2},
+                {"id": "a2", "report_id": "r-0808-v2", "artifact_type": "docx", "version": 2},
+                {"id": "a3", "report_id": "r-0809-v1", "artifact_type": "pptx", "version": 1},
+            ],
+        }
+    )
+
+    history = service.get_daily_report_history("ws-1", supabase=supabase)
+
+    assert [item["date"] for item in history] == ["2026-08-09", "2026-08-08", "2026-08-07"]
+    assert [item["report_id"] for item in history] == ["r-0809-v1", "r-0808-v2", "r-0807-v3"]
+    assert history[1]["issue_count"] == 2
+    assert history[1]["has_pdf"] is True
+    assert history[1]["has_docx"] is True
+    assert history[1]["has_pptx"] is False
+    assert supabase.table_calls == ["reports", "report_sections", "artifacts"]
+
+
+def test_get_daily_report_history_ignores_failed_newer_version() -> None:
+    supabase = FakeSupabase(
+        {
+            "reports": [
+                _history_report("completed-v3", report_date="2026-08-08", version=3),
+                _history_report("failed-v4", report_date="2026-08-08", version=4, status="failed"),
+            ],
+            "report_sections": [],
+            "artifacts": [],
+        }
+    )
+
+    history = service.get_daily_report_history("ws-1", supabase=supabase)
+
+    assert len(history) == 1
+    assert history[0]["report_id"] == "completed-v3"
+    assert history[0]["version"] == 3
+
+
+def test_get_daily_report_history_filters_workspace_and_applies_limit_after_grouping() -> None:
+    supabase = FakeSupabase(
+        {
+            "reports": [
+                _history_report("ws1-0808-v1", workspace_id="ws-1", report_date="2026-08-08", version=1),
+                _history_report("ws1-0808-v2", workspace_id="ws-1", report_date="2026-08-08", version=2),
+                _history_report("ws1-0807-v1", workspace_id="ws-1", report_date="2026-08-07", version=1),
+                _history_report("ws1-0806-v1", workspace_id="ws-1", report_date="2026-08-06", version=1),
+                _history_report("ws2-0809-v1", workspace_id="ws-2", report_date="2026-08-09", version=1),
+            ],
+            "report_sections": [],
+            "artifacts": [],
+        }
+    )
+
+    history = service.get_daily_report_history("ws-1", limit=2, supabase=supabase)
+
+    assert [(item["date"], item["report_id"]) for item in history] == [
+        ("2026-08-08", "ws1-0808-v2"),
+        ("2026-08-07", "ws1-0807-v1"),
+    ]
+
+
+def test_get_daily_report_history_skips_malformed_report_date_without_failing() -> None:
+    malformed = _history_report("malformed", report_date="2026-08-10", version=1, request_config={"report_date": "not-a-date"})
+    malformed["report_key"] = "daily:ws-1:not-a-date"
+    missing_config = _history_report("fallback", report_date="2026-08-09", version=1, request_config={})
+    supabase = FakeSupabase(
+        {
+            "reports": [malformed, missing_config],
+            "report_sections": [],
+            "artifacts": [],
+        }
+    )
+
+    history = service.get_daily_report_history("ws-1", supabase=supabase)
+
+    assert len(history) == 1
+    assert history[0]["report_id"] == "fallback"
+    assert history[0]["date"] == "2026-08-09"

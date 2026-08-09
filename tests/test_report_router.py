@@ -64,6 +64,40 @@ def test_get_daily_report_returns_404_when_missing(client, monkeypatch):
     assert res.status_code == 404
 
 
+def test_get_daily_report_history_returns_service_result(client, monkeypatch):
+    def fake_history(workspace_id: str, *, limit: int, **kwargs):
+        assert workspace_id == WORKSPACE_ID
+        assert limit == 7
+        return [
+            {
+                "report_id": "report-1",
+                "date": "2026-08-09",
+                "title": "?? ?? ?? ???",
+                "version": 6,
+                "status": "completed",
+                "completed_at": "2026-08-08T23:00:37+00:00",
+                "issue_count": 3,
+                "has_pdf": True,
+                "has_docx": True,
+                "has_pptx": True,
+            }
+        ]
+
+    monkeypatch.setattr(report_service, "get_daily_report_history", fake_history)
+
+    res = client.get("/reports/daily/history?limit=7")
+
+    assert res.status_code == 200
+    assert res.json()[0]["report_id"] == "report-1"
+    assert res.json()[0]["issue_count"] == 3
+
+
+def test_get_daily_report_history_validates_limit(client):
+    res = client.get("/reports/daily/history?limit=0")
+
+    assert res.status_code == 422
+
+
 def test_generate_daily_report_returns_generation_result(client, monkeypatch):
     def fake_generate(**kwargs):
         assert kwargs["workspace_id"] == WORKSPACE_ID
