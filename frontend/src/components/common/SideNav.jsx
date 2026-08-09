@@ -21,6 +21,8 @@
 //   - 아이콘은 MobileNav.jsx의 하단 탭바(BOTTOM_TABS)와 같은 선 굵기·스타일을 씁니다.
 //   - "설정" 아이콘은 원래 쓰던 원+스포크 SVG로(TopBar.jsx .gear 버튼과 동일한 path).
 
+import { NavLink } from 'react-router-dom';
+import { NAV_PATHS } from '../../constants/navPaths';
 import SuniLogo from '../../assets/suni-logo.png';
 import SuniMark from '../../assets/suni-mark.png';
 
@@ -82,7 +84,7 @@ function ToggleButton({ collapsed, onToggleCollapsed }) {
   );
 }
 
-export default function SideNav({ activeKey, onNavigate, onLogoClick, collapsed = false, onToggleCollapsed }) {
+export default function SideNav({ onLogoClick, collapsed = false, onToggleCollapsed }) {
   return (
     <aside className={`side${collapsed ? ' collapsed' : ''}`}>
       <div className="brand brand-btn" role="button" tabIndex={0}
@@ -113,15 +115,16 @@ export default function SideNav({ activeKey, onNavigate, onLogoClick, collapsed 
         <nav key={section.group}>
           {!collapsed && <div className="lb">{section.group}</div>}
           {section.items.map((item) => (
-            <a
+            <NavLink
               key={item.key}
-              className={activeKey === item.key ? 'on' : ''}
+              to={NAV_PATHS[item.key]}
+              end={item.key === 'dash'}
+              className={({ isActive }) => (isActive ? 'on' : '')}
               title={collapsed ? item.label : undefined}
-              onClick={() => onNavigate(item.key)}
             >
               <span className="side-ic">{ICONS[item.key]}</span>
               <span className="side-label">{item.label}</span>
-            </a>
+            </NavLink>
           ))}
         </nav>
       ))}

@@ -18,6 +18,7 @@
 // 이슈는 관심사와 무관하게 모두에게 같은 항목을 공시·IR 등 공식 문서 출처로 보여줍니다.
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import KpiCard from '../components/dashboard/KpiCard';
 import TrendChart from '../components/dashboard/TrendChart';
 import IssueList from '../components/dashboard/IssueList';
@@ -45,7 +46,8 @@ function kpiDesc(desc) {
   return desc;
 }
 
-export default function DashboardPage({ onNavigate, interests = [], onUpdateInterests }) {
+export default function DashboardPage({ interests = [], onUpdateInterests }) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState([]);
   const [issues, setIssues] = useState([]);
@@ -297,9 +299,9 @@ export default function DashboardPage({ onNavigate, interests = [], onUpdateInte
           <span className="badge-official">공식 근거 기반</span>
           <span className="c">{issues.length}건</span>
           <span className="s">신뢰도 → 제목 → 출처 순</span>
-          <span className="r"><a onClick={() => onNavigate?.('report')}>일일 리포트 →</a></span>
+          <span className="r"><a onClick={() => navigate('/report')}>일일 리포트 →</a></span>
         </div>
-        <IssueList items={issues} onSelectWiki={(wikiId) => onNavigate?.('wiki', wikiId)} />
+        <IssueList items={issues} onSelectWiki={(wikiId) => navigate(`/wiki/${wikiId}`)} />
       </section>
     </section>
   );

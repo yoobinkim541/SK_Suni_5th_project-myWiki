@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/globals.css';
 // ⚠ CSS 안의 다크모드 규칙이 `:root[data-theme="dark"]{...}` 형태라서(문서 <html> 기준),
@@ -27,11 +28,13 @@ if (import.meta.env.DEV && devPreview === 'onboarding') {
   );
 } else if (import.meta.env.DEV && devPreview === 'dashboard') {
   const { default: DashboardPage } = await import('./pages/DashboardPage');
-  DevEntry = () => <DashboardPage interests={[]} onNavigate={() => {}} />;
+  DevEntry = () => <DashboardPage interests={[]} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <DevEntry />
+    <BrowserRouter>
+      <DevEntry />
+    </BrowserRouter>
   </React.StrictMode>
 );

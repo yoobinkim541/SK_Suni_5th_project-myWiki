@@ -2,16 +2,22 @@
 // 법무 검토를 거친 실제 약관이 아니라 자리만 잡아둔 플레이스홀더입니다. 실제 문구가
 // 나오면 이 파일의 본문만 교체하면 됩니다.
 
-export default function PrivacyPage({ onBack }) {
+import { useNavigate } from 'react-router-dom';
+
+export default function PrivacyPage() {
+  const navigate = useNavigate();
   return (
     <section className="view on">
       <div className="ph">
         <h2>개인정보 처리방침</h2>
-        {onBack && (
-          <button type="button" className="ob-linklike" onClick={onBack} style={{ marginLeft: 'auto' }}>
-            ← 돌아가기
-          </button>
-        )}
+        <button
+          type="button"
+          className="ob-linklike"
+          onClick={() => navigate('/')}
+          style={{ marginLeft: 'auto' }}
+        >
+          ← 돌아가기
+        </button>
       </div>
       <div className="sec">
         <p style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--ink-2)', maxWidth: 640 }}>
