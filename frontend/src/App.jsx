@@ -647,6 +647,7 @@ export default function App() {
         avatarUrl={myAvatarUrl}
         workspaceName={workspaceName}
         myRole={myRole}
+        jobTitle={prefs?.role}
         onLogin={handleLogin}
         onLogout={handleLogout}
         onDeleteAccount={handleOpenDeleteAccount}

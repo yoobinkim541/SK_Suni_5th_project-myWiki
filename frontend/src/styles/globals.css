@@ -9,6 +9,7 @@
 :root{
   --ink:#15171a; --ink-2:#4c5257; --muted:#8c9296; --faint:#b4b9ba;
   --hair:#e2e3e0; --hair-2:#ebece9; --hair-3:#f3f4f1;
+  --bg:#ffffff;
   --panel:#ffffff; --rail:#e9ebe3; --tint:#f5f6f4;
   --green:#175243; --green-tint:#eef3f1; --amber:#9a5b00; --track:#e9eae6;
   /* 신뢰도 3구간 — 뚜렷한 신호등 색 */
@@ -25,24 +26,58 @@
   --shadow-card: 0 1px 2px rgba(21,23,26,.04), 0 2px 8px rgba(21,23,26,.06);
 }
 :root[data-theme="dark"]{
-  --ink:#eef0f2; --ink-2:#c7ccd1; --muted:#8f979d; --faint:#5c6469;
-  --hair:#2a2e33; --hair-2:#23272b; --hair-3:#1d2024;
-  --panel:#15171a; --rail:#1a1d21; --tint:#1a1d21;
-  --green:#5cbf9a; --green-tint:#1a2620; --amber:#d69a4a; --track:#2a2e33;
-  /* 신뢰도 3구간 — 다크 대비용 */
-  --conf-high:#5fb69b; --conf-high-tint:#16261f;
-  --conf-mid:#e5a23c;  --conf-mid-tint:#2b2114;
-  --conf-low:#e2685c;  --conf-low-tint:#2d1512;
-  --conf-label:#8a938f;
+  /* 순검정 대신 단계별 차콜로 — 배경(가장 어두움) < 사이드바 < 카드 < 카테고리/태그 <
+     border(가장 밝음) 순으로 명도를 올려서 라이트모드를 단순 반전한 게 아니라
+     영역마다 실제로 구분되게 만든다. body 자체 배경은 --panel이 아니라 아래 별도
+     규칙(:root[data-theme="dark"] body)에서 --bg로 지정한다 — --panel은 카드/모달처럼
+     "표면"에 쓰이는 색이라 페이지 배경과 같은 값이면 카드가 배경에 파묻혀 버린다. */
+  --bg:#111615;
+  --ink:#F1F5F3; --ink-2:#D5DEDA; --muted:#9BA9A4; --faint:#6F7D78;
+  --hair:#303B38; --hair-2:#26302D; --hair-3:#1F2926;
+  --panel:#1B2422; --rail:#151D1B; --tint:#252F2D;
+  --green:#4C9A83; --green-tint:#16261F; --amber:#d69a4a; --track:#202A28;
+  /* 신뢰도 3구간 — 라이트와 동일한 색상 체계 유지(명도만 배경에 맞춰 자연스럽게 보임) */
+  --conf-high:#4C9A83; --conf-high-tint:#16261f;
+  --conf-mid:#E5A23C;  --conf-mid-tint:#2b2114;
+  --conf-low:#D95757;  --conf-low-tint:#2d1512;
+  --conf-label:#9BA9A4;
 
   /* 다크는 패널 배경 자체가 거의 검정이라 라이트와 같은 옅은 그림자는 안 보인다 —
      불투명도를 올려서 카드 경계가 살짝이라도 뜨게 한다. */
   --shadow-card: 0 1px 2px rgba(0,0,0,.24), 0 2px 10px rgba(0,0,0,.32);
 }
+/* 라이트모드 스펙으로 하드코딩된 색(리서치 카드류)은 다크 테마 변수로 바꿔친다 —
+   var()를 안 쓰고 실제 hex를 박아둔 자리라 :root 변수만 바꿔서는 안 바뀐다. */
+:root[data-theme="dark"] .row .ct,
+:root[data-theme="dark"] .row .meta .s,
+:root[data-theme="dark"] .badge-official,
+:root[data-theme="dark"] .src-btn,
+:root[data-theme="dark"] .pt-role.admin,
+:root[data-theme="dark"] .pt-role.leader{color:var(--green)}
+:root[data-theme="dark"] .pt-role.admin{background:var(--green)}
+:root[data-theme="dark"] .pt-role.leader{border-color:var(--green)}
+:root[data-theme="dark"] .row h3,
+:root[data-theme="dark"] .sec-issues .sh .t,
+:root[data-theme="dark"] .sec-issues .sh .c,
+:root[data-theme="dark"] .kg-leaf-label{color:var(--ink)}
+:root[data-theme="dark"] .kg-leaf-label{fill:var(--ink)}
+:root[data-theme="dark"] .row p,
+:root[data-theme="dark"] .sec-issues .sh .s,
+:root[data-theme="dark"] .sec-issues .legend,
+:root[data-theme="dark"] .tag,
+:root[data-theme="dark"] .quote{color:var(--muted)}
+:root[data-theme="dark"] .news-card,
+:root[data-theme="dark"] .cat-card-grid .cd{background:var(--panel);border-color:var(--hair)}
+:root[data-theme="dark"] .sec-issues{background:var(--tint);border-color:var(--hair)}
+:root[data-theme="dark"] .sec-issues .rows,
+:root[data-theme="dark"] .sec-issues .row,
+:root[data-theme="dark"] .sec-issues .legend,
+:root[data-theme="dark"] .cat-card-grid .cd .cat-foot{border-color:var(--hair)}
+:root[data-theme="dark"] .ob-stage-landing{background:var(--rail)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{
   font-family:'S-Core Dream',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',Roboto,'Noto Sans KR',sans-serif;
-  font-weight:400;background:var(--panel);color:var(--ink);
+  font-weight:400;background:var(--bg);color:var(--ink);
   line-height:1.6;letter-spacing:-.005em;-webkit-font-smoothing:antialiased;
 }
 a{color:inherit;text-decoration:none}
@@ -1426,7 +1461,17 @@ a.fn:hover{text-decoration:underline}
 .pie-hd .t{font-size:12.5px;font-weight:900;letter-spacing:-.01em;color:var(--ink)}
 .pie-hd .s{font-size:10.5px;font-weight:300;color:var(--muted)}
 .pie{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
-.pie svg{width:168px;height:auto;flex:none}
+/* 원그래프에 아주 은은한 3D 입체감 + 느린 무빙을 준다 — 대시보드 지식 축적화 그래프의
+   "데이터가 살아있는" 느낌을 카테고리 현황에도 맞춰준 것. perspective는 부모(.pie)에
+   걸어야 자식(svg)의 rotateX/Y가 실제로 입체로 보인다. 빠른 회전·bounce·glow 없이
+   각도 변화 폭을 3도 안팎으로 아주 작게, 주기도 5초로 느리게 잡았다. */
+.pie{perspective:900px}
+.pie svg{width:168px;height:auto;flex:none;transform:rotateX(6deg);
+  animation:pie-sway 5.4s ease-in-out infinite}
+@keyframes pie-sway{
+  0%,100%{transform:rotateX(6deg) rotateY(-2deg)}
+  50%{transform:rotateX(8deg) rotateY(2deg)}
+}
 .pie .sl{transition:opacity var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease);
   transform-origin:84px 84px}
 .pie .sl.clickable{cursor:pointer}
@@ -1706,23 +1751,30 @@ a.fn:hover{text-decoration:underline}
 .kg-line-leaf{stroke:var(--green);stroke-opacity:.85;stroke-dasharray:2 4}
 .kg-wrap.in .kg-line{opacity:1}
 
-/* 카테고리 원 — 그라디언트·그림자 없이 매트한 단색 채움 */
-.kg-cat{opacity:0;transform:scale(.55);transform-origin:center;transform-box:fill-box;
+/* 카테고리 원 — 그라디언트·그림자 없이 매트한 단색 채움.
+   transform-origin은 JS(KnowledgeGraph.jsx)가 각 노드의 실제 원 좌표로 인라인 지정한다 —
+   transform-box:fill-box(그룹 안 원+텍스트를 합친 바운딩박스 중심)를 쓰면 라벨이 위/아래로
+   치우친 만큼 중심이 원의 실제 중심에서 벗어나, scale 애니메이션 때 노드가 제자리에서
+   미끄러지듯 움직이는 것처럼 보인다. */
+.kg-cat{opacity:0;transform:scale(.55);
   transition:opacity .5s var(--ease),transform .5s cubic-bezier(.2,1.4,.4,1)}
-.kg-wrap.in .kg-cat{opacity:1;transform:scale(1)}
+.kg-wrap.in .kg-cat{opacity:1;transform:scale(1);animation:kg-node-pulse 4.6s ease-in-out infinite}
 .kg-cat:hover{transform:scale(1.06)}
 .kg-cat-circle{fill:var(--green)}
 .kg-cat-label{fill:#fff;font-size:16.5px;font-weight:800;letter-spacing:-.01em}
 :root[data-theme="dark"] .kg-cat-label{fill:#0d1512}
 
-/* 리프(키워드) 점 — 스케일인 후 각자 다른 딜레이로 계속 위아래로 둥둥 떠다닌다 */
-.kg-leaf{opacity:0;transform:scale(.3);transform-origin:center;transform-box:fill-box;
+/* 리프(키워드) 점 — 스케일인 후 각자 다른 딜레이로 아주 미세하게 계속 pulse한다.
+   예전엔 translateY로 위아래로 둥둥 떠다니게 했는데, 노드가 제 위치에서 이탈해
+   보인다는 피드백으로 위치 이동 없는 scale-only pulse로 바꿨다. */
+.kg-leaf{opacity:0;transform:scale(.3);
   transition:opacity .45s var(--ease),transform .45s cubic-bezier(.2,1.4,.4,1)}
-.kg-wrap.in .kg-leaf{opacity:1;animation:kg-float 3.6s var(--ease) infinite;
+.kg-wrap.in .kg-leaf{opacity:1;animation:kg-float 4.2s ease-in-out infinite;
   animation-delay:var(--kg-float-delay,0s)}
 .kg-wrap.in .kg-leaf{transform:scale(1)}
 .kg-leaf-dot{fill:var(--green);opacity:.65}
-.kg-leaf-label{fill:var(--muted);font-size:12px;font-weight:600}
+.kg-leaf-label{fill:#17201E;font-size:12px;font-weight:600}
+:root[data-theme="dark"] .kg-leaf-label{fill:#D5DEDA}
 
 /* 중앙 허브 — 그라디언트 글로우 + my Wiki 로고 이미지(아이콘+텍스트 전체) */
 .kg-hub-glow{fill:#4C9A83;opacity:.09;animation:kg-pulse 2.6s var(--ease) infinite}
@@ -1759,9 +1811,16 @@ a.fn:hover{text-decoration:underline}
   0%,100%{transform:scale(1);opacity:.07}
   50%{transform:scale(1.14);opacity:.14}
 }
+/* 카테고리 노드용 — 아주 미세하게 커졌다 작아짐(위치 이동 없음). */
+@keyframes kg-node-pulse{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.07)}
+}
+/* 리프(키워드) 점용 — kg-node-pulse보다도 더 미세하게. 예전엔 translateY로 떠다녔지만
+   위치가 고정돼 보여야 한다는 피드백으로 scale-only로 바꿨다. */
 @keyframes kg-float{
-  0%,100%{transform:scale(1) translateY(0)}
-  50%{transform:scale(1) translateY(-5px)}
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.05)}
 }
 
 @media (prefers-reduced-motion: reduce){
@@ -2076,6 +2135,10 @@ a.fn:hover{text-decoration:underline}
   font-size: 13px;
   font-weight: 600;
 }
+.pp-job {
+  font-weight: 400;
+  color: var(--muted, #8a8f8d);
+}
 
 /* 회원 탈퇴 모달 */
 .da-warn {
@@ -2145,6 +2208,10 @@ a.fn:hover{text-decoration:underline}
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
+}
+.pp-job {
+  font-weight: 400;
+  color: var(--muted, #8a8f8d);
 }
 
 /* 회원 탈퇴 모달 */

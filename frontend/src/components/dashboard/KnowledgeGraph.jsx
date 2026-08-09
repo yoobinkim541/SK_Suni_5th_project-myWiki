@@ -75,7 +75,7 @@ export default function KnowledgeGraph() {
 
   return (
     <div
-      className={`kg-wrap relative mx-auto w-full max-w-full overflow-hidden rounded-2xl px-1 pt-1 pb-2 sm:px-4 sm:pt-2 md:px-6${
+      className={`kg-wrap relative mx-auto w-full max-w-full rounded-2xl px-1 pt-1 pb-2 sm:px-4 sm:pt-2 md:px-6${
         inView ? ' in' : ''
       }`}
     >
@@ -125,6 +125,10 @@ export default function KnowledgeGraph() {
               className="kg-leaf"
               style={{
                 transitionDelay: `${480 + li * 35}ms`,
+                // 노드가 리프(점)+라벨을 함께 담고 있어서 transform-box:fill-box 기본값을 쓰면
+                // 텍스트 라벨 쪽으로 무게중심이 쏠려 scale/pulse 때 점이 제자리에서 벗어나
+                // "좌우로 움직이는" 것처럼 보인다. 점의 실제 좌표로 원점을 못박아 고정한다.
+                transformOrigin: `${leaf.x}px ${leaf.y}px`,
                 '--kg-float-delay': `${leaf.floatDelay * 0.35}s`,
               }}
             >
@@ -144,7 +148,20 @@ export default function KnowledgeGraph() {
         )}
         {/* 카테고리 노드 — 원, 단색 매트 채움(그라디언트·그림자 없음) */}
         {CATEGORIES.map((c, i) => (
-          <g key={c.name} className="kg-cat" style={{ transitionDelay: `${180 + i * 70}ms` }}>
+          <g
+            key={c.name}
+            className="kg-cat"
+            style={{
+              transitionDelay: `${180 + i * 70}ms`,
+              // 원 + 텍스트를 함께 담은 그룹이라 fill-box 기본 중심은 원의 실제 중심과 다르다
+              // (라벨이 위/아래로 치우쳐 있어서). 펄스가 위치를 흔드는 것처럼 보이지 않도록
+              // 원의 진짜 좌표를 transform-origin으로 못박는다.
+              transformOrigin: `${c.x}px ${c.y}px`,
+              // 진입 스케일-인 트랜지션(.5s)이 다 끝난 뒤에야 펄스가 시작되게 딜레이를 겹치지
+              // 않게 잡는다 — 그래야 애니메이션이 진입 효과를 도중에 가로채 뚝 끊기지 않는다.
+              animationDelay: `${700 + i * 220}ms`,
+            }}
+          >
             <circle cx={c.x} cy={c.y} r={CATEGORY_NODE_R} className="kg-cat-circle" />
             {c.nameLines.length > 1 ? (
               <>
