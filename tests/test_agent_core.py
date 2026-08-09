@@ -1098,6 +1098,25 @@ def test_llm_fallback_answer_calls_model_without_tools(agent, wiki_tools, monkey
     assert fallback_call.kwargs.get("use_tools") is False
 
 
+def test_llm_fallback_answer_strips_fake_citation_markers(agent, wiki_tools, monkeypatch):
+    """LLM_FALLBACK_SYSTEM_PROMPT로 각주 표기를 쓰지 말라고 지시해도, 실사용에서
+    모델이 그래도 [1] 같은 표기를 흉내 낼 수 있다 — citations=[]인 폴백 답변에
+    남아있으면 클릭해도 갈 곳 없는 가짜 각주라 안전장치로 걸러야 한다."""
+    responses = [
+        tool_call_response(("call-1", "submit_no_answer", {"reason": "위키에 관련 문서 없음"})),
+        tool_call_response(("call-2", "submit_no_answer", {"reason": "원문에도 관련 문서 없음"})),
+        tool_call_response(("call-3", "submit_no_answer", {"reason": "웹 검색에도 근거 없음"})),
+        plain_text_response("HBM4는 아직 양산 시점이 불확실합니다[1]. 세부 사양도 미정입니다[2]."),
+    ]
+    monkeypatch.setattr(agent, "_call_model", MagicMock(side_effect=responses))
+
+    result = agent.answer("아무 질문", allow_web_search=True)
+
+    assert result.is_llm_fallback is True
+    assert "[1]" not in result.answer
+    assert "[2]" not in result.answer
+
+
 def test_answer_keeps_no_answer_when_llm_fallback_raises(agent, wiki_tools, monkeypatch):
     """폴백 호출 자체가 실패하면(예외) 폴백 실패를 감추지 않고 원래의 근거 없음
     결과를 그대로 낸다 — 거짓 답을 주면 안 된다.

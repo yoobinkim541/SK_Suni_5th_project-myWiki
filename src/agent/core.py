@@ -82,6 +82,10 @@ SYSTEM_PROMPT = """\
 LLM_FALLBACK_SYSTEM_PROMPT = """\
 너는 반도체/AI 산업 일반 지식으로 간결하게 답하는 보조 도우미다. 위키 근거 없이
 네 일반 지식으로만 답하고, 확실하지 않으면 그렇다고 말해라.
+
+이 답변에는 실제 출처(citations)가 전혀 붙지 않는다 — 답변 본문에 [1], [2] 같은
+대괄호 각주 표기를 절대 쓰지 마라. 위키 근거로 답한 것처럼 보이면 사용자가
+오해한다.
 """
 
 # 위키에는 없지만 수집된 원문(뉴스+DART)에는 있을 수 있는 경우에 쓰는 시스템 프롬프트.
@@ -445,6 +449,10 @@ class WikiAgent:
             return None
         if not text:
             return None
+        # 프롬프트로 각주 표기를 쓰지 말라고 지시해도(위) 모델이 그래도 [N]을 흉내 낼
+        # 수 있다 — citations가 항상 빈 배열이라 citation_count=0을 넘기면 모든 [N]이
+        # 범위 밖으로 걸러진다(submit_answer/submit_no_answer 경로와 같은 안전장치).
+        text = strip_orphaned_citation_markers(text, citation_count=0)
         return AgentResult(
             has_answer=True, answer=text, citations=[], is_llm_fallback=True, model_name=MODEL_NAME,
         )
