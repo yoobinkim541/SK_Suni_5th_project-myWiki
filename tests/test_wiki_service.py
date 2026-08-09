@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.wiki.interface import upsert_wiki_page, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version, publish_wiki_version, request_wiki_index
+from src.wiki.interface import upsert_wiki_page, update_wiki_page_title, create_wiki_version, WikiDraftInput, WikiSourceInput, record_wiki_validation, review_wiki_version, publish_wiki_version, request_wiki_index
 from src.wiki.query import get_published_wiki_page
 from src.wiki.query import _get_client
 from src.wiki.service import _build_source_rows
@@ -80,6 +80,18 @@ def test_upsert_wiki_page_returns_same_id_for_duplicate_slug(workspace_id):
     row = db.table("wiki_pages").select("title").eq("id", id1).single().execute()
     assert row.data["title"] == "제목1"
     db.table("wiki_pages").delete().eq("id", id1).execute()
+
+
+def test_update_wiki_page_title_overwrites_existing_title(workspace_id):
+    """upsert_wiki_page()는 위 테스트처럼 기존 title을 절대 안 바꾼다 — update_wiki_page_title()은
+    그와 달리 명시적으로 덮어써야 한다(챗봇 재저장 시 사이드바 제목을 최신 LLM 제목으로 맞추는 용도)."""
+    slug = f"test-title-{uuid.uuid4().hex[:8]}"
+    page_id = upsert_wiki_page(workspace_id, slug, "원래 제목", "term")
+    update_wiki_page_title(page_id, "새 제목")
+    db = _get_client()
+    row = db.table("wiki_pages").select("title").eq("id", page_id).single().execute()
+    assert row.data["title"] == "새 제목"
+    db.table("wiki_pages").delete().eq("id", page_id).execute()
 
 
 def test_create_wiki_version_basic(workspace_id):

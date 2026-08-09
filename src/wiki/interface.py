@@ -148,6 +148,14 @@ def upsert_wiki_page(
     return _impl(workspace_id, slug, title, page_type, parent_page_id, supabase=supabase)
 
 
+def update_wiki_page_title(page_id: str, title: str, *, supabase: Client | None = None) -> None:
+    """Overwrite an existing page's title (upsert_wiki_page never does, by design)."""
+
+    from .service import update_wiki_page_title as _impl
+
+    return _impl(page_id, title, supabase=supabase)
+
+
 def create_wiki_version(draft: WikiDraftInput, *, supabase: Client | None = None) -> str:
     """
     Create a new wiki version draft.

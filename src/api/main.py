@@ -68,6 +68,7 @@ from ..wiki.interface import (
     publish_wiki_version,
     record_wiki_validation,
     review_wiki_version,
+    update_wiki_page_title,
     upsert_wiki_page,
 )
 
@@ -360,6 +361,10 @@ def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depen
     slug = f"chat-{message_id[:8]}"
 
     page_id = upsert_wiki_page(workspace_id, slug, title, "issue")
+    # upsert_wiki_page()는 ignore_duplicates=True라 이미 있는 페이지의 title을 절대 안
+    # 바꾼다 — 같은 메시지를 재저장하면 사이드바 제목이 최초 저장 시점 값에 영구히
+    # 고정돼 이번에 새로 만든 LLM 제목과 어긋난다. 명시적으로 맞춰준다.
+    update_wiki_page_title(page_id, title)
     draft = WikiDraftInput(
         workspace_id=workspace_id,
         slug=slug,

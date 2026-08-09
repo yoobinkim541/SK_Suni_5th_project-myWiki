@@ -57,6 +57,20 @@ def upsert_wiki_page(
     return existing.data["id"]
 
 
+def update_wiki_page_title(page_id: str, title: str, *, supabase: Client | None = None) -> None:
+    """이미 있는 페이지의 title을 덮어쓴다.
+
+    upsert_wiki_page()는 ignore_duplicates=True라 기존 페이지의 title을 절대 안
+    바꾼다(리포트 파이프라인의 이슈/토픽 페이지는 회차마다 같은 slug로 계속 갱신되므로
+    의도된 동작). 하지만 챗봇 "위키에 저장"은 매번 새 LLM 제목을 만드는데, 같은
+    메시지를 재저장하거나 소급 정리 배치가 본문만 다시 쓰면 사이드바에 보이는
+    페이지 제목이 최초 저장 시점 값에 영구히 고정돼버린다 — 그래서 챗봇 저장 경로는
+    upsert_wiki_page 뒤에 이 함수로 title을 명시적으로 맞춰준다.
+    """
+    db = supabase or _get_client()
+    db.table("wiki_pages").update({"title": title}).eq("id", page_id).execute()
+
+
 def create_wiki_version(draft: WikiDraftInput, *, supabase: Client | None = None) -> str:
     db = supabase or _get_client()
 

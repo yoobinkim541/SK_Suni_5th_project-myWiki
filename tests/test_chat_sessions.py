@@ -934,11 +934,15 @@ def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypat
         captured["upsert_args"] = (workspace_id, slug, title, page_type)
         return "page-1"
 
+    def fake_update_wiki_page_title(page_id, title):
+        captured["update_title_args"] = (page_id, title)
+
     def fake_create_wiki_version(draft):
         captured["draft"] = draft
         return "version-1"
 
     monkeypatch.setattr(main_module, "upsert_wiki_page", fake_upsert_wiki_page)
+    monkeypatch.setattr(main_module, "update_wiki_page_title", fake_update_wiki_page_title)
     monkeypatch.setattr(main_module, "create_wiki_version", fake_create_wiki_version)
     monkeypatch.setattr(main_module, "record_wiki_validation", lambda *a, **kw: None)
     monkeypatch.setattr(main_module, "review_wiki_version", lambda *a, **kw: None)
@@ -955,6 +959,9 @@ def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypat
     assert compose_calls == [(USER_QUESTION["content"], ASSISTANT_MESSAGE["content"], [SAMPLE_CITATION])]
 
     assert captured["upsert_args"] == (WORKSPACE_ID, expected_slug, "HBM4 개요", "issue")
+    # upsert_wiki_page()는 ignore_duplicates=True라 기존 페이지의 title을 절대 안 바꾸므로,
+    # 재저장 시 사이드바 제목이 갱신되려면 이 명시적 호출이 반드시 있어야 한다.
+    assert captured["update_title_args"] == ("page-1", "HBM4 개요")
 
     draft = captured["draft"]
     assert draft.workspace_id == WORKSPACE_ID
@@ -983,6 +990,7 @@ def test_save_to_wiki_auto_publishes_version(make_client, monkeypatch):
         lambda question, answer, citations: chat_wiki.ChatWikiDraft(title="t", markdown="m"),
     )
     monkeypatch.setattr(main_module, "upsert_wiki_page", lambda workspace_id, slug, title, page_type: "page-1")
+    monkeypatch.setattr(main_module, "update_wiki_page_title", lambda page_id, title: None)
     monkeypatch.setattr(main_module, "create_wiki_version", lambda draft: "version-1")
 
     calls: list[tuple[str, tuple]] = []
@@ -1029,6 +1037,7 @@ def test_save_to_wiki_uses_real_compose_chat_wiki_draft_fallback(make_client, mo
     monkeypatch.setattr(chat_wiki, "create_json_completion", fake_create_json_completion)
 
     monkeypatch.setattr(main_module, "upsert_wiki_page", lambda workspace_id, slug, title, page_type: "page-1")
+    monkeypatch.setattr(main_module, "update_wiki_page_title", lambda page_id, title: None)
 
     captured = {}
 
