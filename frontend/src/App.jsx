@@ -85,14 +85,15 @@ function EntryGate({ entryStep, guestMode, onSurveyComplete, onGuestSkip }) {
   return <Outlet />;
 }
 
-// 게스트 게이트 — 게스트 모드는 대시보드(/)만 허용한다. 주소창에 직접 다른 경로를 치고
-// 들어오거나 뒤로/앞으로가기로 넘어와도 여기서 걸러서 대시보드로 돌려보내고, 프로필
-// 드롭다운(로그인 유도)을 연다.
+// 게스트 게이트 — 게스트 모드는 설정(/settings)만 빼고 나머지 페이지(대시보드/일일
+// 리포트/카테고리 현황/위키/에이전트)는 전부 둘러볼 수 있다(전부 목업 데이터 기준).
+// 설정으로 들어오려고 하면(주소창 직접 입력, 뒤로/앞으로가기 포함) 여기서 걸러서
+// 대시보드로 돌려보내고, 프로필 드롭다운(로그인 유도)을 연다 — 기존과 동일한 안내 방식.
 function GuestGate({ guestMode, onBlocked }) {
   const location = useLocation();
   const navigate = useNavigate();
   useEffect(() => {
-    if (guestMode && location.pathname !== '/') {
+    if (guestMode && location.pathname.startsWith('/settings')) {
       onBlocked();
       navigate('/', { replace: true });
     }

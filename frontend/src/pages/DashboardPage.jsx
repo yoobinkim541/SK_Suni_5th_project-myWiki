@@ -276,7 +276,6 @@ export default function DashboardPage({ interests = [], onUpdateInterests }) {
       <section className="sec sr-4">
         <div className="sh">
           <span className="t">오늘의 키워드</span>
-          <span className="s">누르면 뉴스가 좁혀집니다</span>
           <span className="r">언급 순</span>
         </div>
         <div className="kwchips">
