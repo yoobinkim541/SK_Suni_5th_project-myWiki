@@ -101,11 +101,6 @@ export default function ReportSection({ archive, today, summary, historyError, o
     return Number.isFinite(count) ? count : 0;
   }
 
-  function renderWikiCount(value) {
-    const count = Number(value);
-    return Number.isFinite(count) ? <> ? ?? ?? {count}</> : null;
-  }
-
   async function handleDownload(date, format, label) {
     const res = await downloadReport(date, format);
     setNotice(
@@ -152,10 +147,10 @@ export default function ReportSection({ archive, today, summary, historyError, o
               {todayCard.summary && <p className="rsum">{todayCard.summary}</p>}
               {summary?.statusLabel !== '\uC0DD\uC131 \uB300\uAE30' && (
                 <div className="rmeta">
-                  ?? {formatIssueCount(todayCard.issues)}?{renderWikiCount(todayCard.wiki)}
+                  생성 완료 · 이슈 {formatIssueCount(todayCard.issues)}건 · 다운로드 가능
                   {todayCard.level && (
                     <span className={`cf ${LEVEL_CLASS[todayCard.level]}`.trim()}>
-                      <i></i>??? : {LEVEL_LABEL[todayCard.level]}
+                      <i></i>중요도: {LEVEL_LABEL[todayCard.level]}
                     </span>
                   )}
                 </div>
