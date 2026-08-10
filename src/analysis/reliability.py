@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from pydantic import ValidationError
@@ -265,6 +266,24 @@ def _is_official_source(source_type: str | None) -> bool:
     return any(token in normalized for token in ["official", "government", "regulator", "filing", "press", "research", "conference", "disclosure"])
 
 
+_CORRECTION_KEYWORDS = ("정정", "철회", "반박", "취소")
+_NEGATED_CORRECTION_TERMS = (
+    "없",
+    "않",
+    "아니",
+    "미확인",
+    "불가",
+    "부재",
+    "미제공",
+    "미상",
+    "확인되지",
+    "확인할 수 없",
+    "발견되지",
+    "파악되지",
+)
+_UNCERTAIN_CORRECTION_TERMS = ("여부", "가능성", "필요", "검토", "주의", "여지")
+
+
 def _detect_official_correction(llm_result: ReliabilityLLMResult) -> bool:
     text = " ".join(
         llm_result.current_validity.warnings
@@ -272,7 +291,24 @@ def _detect_official_correction(llm_result: ReliabilityLLMResult) -> bool:
         + llm_result.missing_information
         + [llm_result.current_validity.reason]
     )
-    return any(keyword in text for keyword in ["정정", "철회", "반박", "취소"])
+    for clause in _correction_clauses(text):
+        if not any(keyword in clause for keyword in _CORRECTION_KEYWORDS):
+            continue
+        if _is_negated_or_uncertain_correction_context(clause):
+            continue
+        return True
+    return False
+
+
+def _correction_clauses(text: str) -> list[str]:
+    return [clause.strip() for clause in re.split(r"[\n\r.;!?]|[\u3002\uff01\uff1f]", text) if clause.strip()]
+
+
+def _is_negated_or_uncertain_correction_context(clause: str) -> bool:
+    normalized = " ".join(clause.split())
+    if any(term in normalized for term in _NEGATED_CORRECTION_TERMS):
+        return True
+    return any(term in normalized for term in _UNCERTAIN_CORRECTION_TERMS)
 
 
 def _normalize_text(value: str) -> str:

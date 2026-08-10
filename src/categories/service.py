@@ -58,6 +58,33 @@ MAX_RECENT_DOCUMENTS = 10
 
 # 조회 상한. 워크스페이스 하나에 7일치라 현재는 수백 건 규모지만, 무한정 긁지 않는다.
 _FETCH_LIMIT = 5000
+_PAGE_SIZE = 1000
+
+
+def _fetch_analysis_rows(db: Client, workspace_id: str, window_start: str) -> list[dict]:
+    """Fetch every recent analysis row instead of trusting PostgREST's 1,000 row cap."""
+    rows: list[dict] = []
+    offset = 0
+    while offset < _FETCH_LIMIT:
+        page = (
+            db.table("document_analysis_results")
+            .select(
+                "primary_category, reliability_status, reliability_score, importance_score, "
+                "document_version_id, created_at, reliability_evaluated_at, core_summary, "
+                "summary_evidence_refs"
+            )
+            .eq("workspace_id", workspace_id)
+            .gte("created_at", window_start)
+            .order("id")
+            .range(offset, min(offset + _PAGE_SIZE - 1, _FETCH_LIMIT - 1))
+            .execute()
+            .data
+        )
+        rows.extend(page)
+        if len(page) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+    return rows
 
 
 def _level(avg_score: float | None) -> CategoryLevel:
@@ -114,6 +141,34 @@ def _recent_documents(unique: dict[str, dict]) -> list[CategoryDocument]:
     ]
 
 
+def _latest_reliability_scores_by_document(
+    group: list[dict],
+    documents: dict[str, dict],
+) -> list[int | float]:
+    """Return one latest completed reliability score per visible source document."""
+    latest: dict[str, dict] = {}
+    for row in group:
+        if row.get("reliability_status") != "completed":
+            continue
+        if row.get("reliability_score") is None:
+            continue
+        document = documents.get(str(row.get("document_version_id")))
+        if document is None:
+            continue
+        document_id = str(document["id"])
+        current = latest.get(document_id)
+        if current is None or _reliability_sort_key(row) > _reliability_sort_key(current):
+            latest[document_id] = row
+    return [row["reliability_score"] for row in latest.values()]
+
+
+def _reliability_sort_key(row: dict) -> tuple[str, str]:
+    return (
+        str(row.get("reliability_evaluated_at") or ""),
+        str(row.get("created_at") or ""),
+    )
+
+
 def get_category_stats(
     workspace_id: str,
     *,
@@ -138,18 +193,7 @@ def get_category_stats(
     now = now or datetime.now(timezone.utc)
     window_start = (now - timedelta(days=WINDOW_DAYS)).isoformat()
 
-    rows = (
-        db.table("document_analysis_results")
-        .select(
-            "primary_category, reliability_score, importance_score, document_version_id, "
-            "created_at, core_summary, summary_evidence_refs"
-        )
-        .eq("workspace_id", workspace_id)
-        .gte("created_at", window_start)
-        .limit(_FETCH_LIMIT)
-        .execute()
-        .data
-    )
+    rows = _fetch_analysis_rows(db, workspace_id, window_start)
 
     grouped: dict[str, list[dict]] = collections.defaultdict(list)
     for row in rows:
@@ -176,7 +220,7 @@ def get_category_stats(
         unique = unique_documents(group, documents)
         total += len(unique)
 
-        scores = [r["reliability_score"] for r in group if r.get("reliability_score") is not None]
+        scores = _latest_reliability_scores_by_document(group, documents)
         avg = sum(scores) / len(scores) if scores else None
 
         group_titles = [
