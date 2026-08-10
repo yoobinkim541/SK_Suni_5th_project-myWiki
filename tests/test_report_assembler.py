@@ -101,7 +101,7 @@ def test_assemble_generated_report_builds_expected_structure() -> None:
 
     report = assemble_generated_report(request=make_request(), sections=sections, generated_at=generated_at)
 
-    assert report.title == "SK하이닉스 산업 동향 일일 보고서"
+    assert report.title == "일일 산업 동향 보고서"
     assert report.report_date == date(2026, 8, 2)
     assert report.generated_at == generated_at
     assert report.created_at == generated_at

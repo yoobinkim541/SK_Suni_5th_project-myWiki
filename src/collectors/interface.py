@@ -124,8 +124,12 @@ def _build_refetch_policy(workspace_id: UUID):
 
     def should_fetch(url: str) -> bool:
         # 수집기가 주는 주소와 documents.canonical_url은 같은 정규화를 거쳐야 맞는다.
+        # cutoff와 정확히 같은 시각도 대상에 포함한다(<=) — REFETCH_INTERVAL_HOURS=0이면
+        # cutoff가 "지금"이 되는데, datetime.now() 해상도가 낮은 환경(예: Windows)에서는
+        # 수집 시각과 이 시각이 같은 tick에 찍혀 완전히 동일한 값이 될 수 있다. 엄격한
+        # "<"만 쓰면 그런 경우 "0시간 지나면 즉시 재수집 대상"이라는 의도가 깨진다.
         fetched_at = fetched_at_by_url.get((normalize_url(url) or "").strip())
-        return fetched_at is None or fetched_at < cutoff
+        return fetched_at is None or fetched_at <= cutoff
 
     return should_fetch
 

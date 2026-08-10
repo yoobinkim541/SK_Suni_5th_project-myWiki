@@ -35,8 +35,8 @@ def test_report_generation_config_has_component_configs() -> None:
     config = ReportGenerationConfig()
 
     assert config.selection.max_candidates is None
-    assert config.selection.min_reliability_score == 40
-    assert config.selection.min_importance_score == 40
+    assert config.selection.min_reliability_score == 20
+    assert config.selection.min_importance_score == 20
     assert config.wiki.limit_per_group >= 0
     assert config.composer.prompt_version
 
@@ -139,6 +139,11 @@ def _patch_pipeline_stages(monkeypatch: pytest.MonkeyPatch, sections: list[Repor
     )
     monkeypatch.setattr("src.report.interface.save_report_sections", lambda **kwargs: [object()])
     monkeypatch.setattr("src.report.interface.create_and_save_markdown_artifact", lambda **kwargs: _make_artifact())
+    # ReportArtifactConfig.formats 기본값이 [PDF, DOCX, PPTX](마크다운 제외)라, 마크다운만
+    # mock해서는 기본 요청 경로가 실제 Supabase를 호출한다 — 4종 전부 막아야 한다.
+    monkeypatch.setattr("src.report.interface.create_and_save_pdf_artifact", lambda **kwargs: _make_artifact())
+    monkeypatch.setattr("src.report.interface.create_and_save_docx_artifact", lambda **kwargs: _make_artifact())
+    monkeypatch.setattr("src.report.interface.create_and_save_pptx_artifact", lambda **kwargs: _make_artifact())
     monkeypatch.setattr("src.report.interface.mark_report_completed", lambda **kwargs: None)
 
 

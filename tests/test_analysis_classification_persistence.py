@@ -304,7 +304,13 @@ def test_failure_message_redacts_secrets(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_missing_api_key_returns_failure_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    # delenv가 아니라 setenv("")를 쓴다 — get_openrouter_settings()가 매번 load_dotenv()를
+    # 호출하는데, 기본 override=False라 "아예 없는" 값만 .env로 채워 넣고 "빈 문자열로
+    # 이미 설정된" 값은 안 건드린다. delenv로 지우면 이 worktree 상위 경로의 실제 .env
+    # (레포 루트)에서 진짜 키가 다시 채워져, classify_document()가 실제 OpenRouter를
+    # 호출하고 성공한 뒤 save_classification_result()의 실제 DB 검증까지 타면서
+    # "ver-1"이 UUID가 아니라는 전혀 다른 에러로 실패한다.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
     monkeypatch.setattr("src.analysis.interface.validate_document_workspace", lambda **_: {"document_id": "doc-1"})
     monkeypatch.setattr("src.analysis.interface.get_classification_result", lambda **_: None)
     monkeypatch.setattr("src.analysis.interface.get_document_refs", lambda **_: [type("Ref", (), {"title": "title", "source_name": "source", "published_at": "2026-08-02"})()])
