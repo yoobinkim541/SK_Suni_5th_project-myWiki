@@ -26,36 +26,60 @@
 
 ## 아키텍처
 
-### 판정 기준 — 페이지 단위 4개 항목 (각 0-25점, 합 0-100)
+### 판정 기준 — 페이지 단위 4개 항목, 가장 중요한 항목에 배점 가중 (합 0-100)
 
-원문 문서 단위 5개 기준(`src/analysis/reliability_prompts.py`)을 그대로 재사용하지 않고, "이미 만들어진 페이지"를 평가하는 데 필요한 것만 4개로 재구성한다:
+원문 문서 단위 5개 기준(`src/analysis/reliability_prompts.py`)을 그대로 재사용하지 않고, "이미 만들어진 페이지"를 평가하는 데 필요한 것만 4개로 재구성한다. 4개를 균등 배분(각 25점)하지 않고, 가장 핵심적인 `grounding_fidelity`에 다른 항목의 2배를 배정한다:
 
 | 항목 | 배점 | 판단 내용 |
 |---|---|---|
-| `grounding_fidelity` (근거 반영 충실도) | 0-25 | 본문의 각 주장이 실제로 제공된 근거 문서 범위 안에 있는가, 근거 밖 내용을 추론·과장해서 쓰지 않았는가. 원문 문서 자체의 신뢰도와 무관하게, "LLM이 근거를 벗어나 없는 말을 지어냈는가"를 직접 잡아내는 유일한 항목 — 가장 중요하게 취급한다. |
-| `source_reliability` (근거 문서의 신뢰도) | 0-25 | 이 페이지가 인용한 원문들 자체가 얼마나 신뢰할 만한가. `ReportSectionDraft.reliability_score`(`src/report/models.py:248`, 대표 후보의 `document_analysis_results.reliability_score`를 이미 담고 있음)를 프롬프트에 참고 신호로 그대로 넘겨 LLM이 무시하지 않고 반영하게 한다. |
-| `evidence_diversity` (근거의 다양성) | 0-25 | 단일 출처 하나에만 기대는지, 여러 독립된 출처가 같은 내용을 뒷받침하는지. |
-| `currency` (정보의 최신성) | 0-25 | 인용한 근거가 최근 것인지, 이미 정정·철회된 정보가 섞여있지 않은지. |
+| `grounding_fidelity` (근거 반영 충실도) | **0-40** | 본문의 각 주장이 실제로 제공된 근거 문서 범위 안에 있는가, 근거 밖 내용을 추론·과장해서 쓰지 않았는가. 원문 문서 자체의 신뢰도와 무관하게, "LLM이 근거를 벗어나 없는 말을 지어냈는가"를 직접 잡아내는 유일한 항목 — 가장 중요하게 취급하며, 다른 세 항목보다 배점을 2배 크게 둔다. |
+| `source_reliability` (근거 문서의 신뢰도) | 0-20 | 이 페이지가 인용한 원문들 자체가 얼마나 신뢰할 만한가. `ReportSectionDraft.reliability_score`(`src/report/models.py:248`, 대표 후보의 `document_analysis_results.reliability_score`를 이미 담고 있음)를 프롬프트에 참고 신호로 그대로 넘겨 LLM이 무시하지 않고 반영하게 한다. |
+| `evidence_diversity` (근거의 다양성) | 0-20 | 단일 출처 하나에만 기대는지, 여러 독립된 출처가 같은 내용을 뒷받침하는지. |
+| `currency` (정보의 최신성) | 0-20 | 인용한 근거가 최근 것인지, 이미 정정·철회된 정보가 섞여있지 않은지. |
 
-`reliability_score = 4개 항목 합산`. `reliability_level`은 기존 `src/analysis/reliability_models.py:16-20`의 `RELIABILITY_LEVELS`/`ReliabilityLevel` Enum(값이 "낮음"/"보통"/"높음" 한글 문자열)을 그대로 import해서 재사용한다 — 새 타입을 만들지 않고 앱 전체에서 같은 3단계 잣대를 쓴다(낮음 0-39/보통 40-69/높음 70-100).
+`reliability_score = 4개 항목 합산(최대 40+20+20+20=100)`. `reliability_level`은 기존 `src/analysis/reliability_models.py:16-20`의 `RELIABILITY_LEVELS`/`ReliabilityLevel` Enum(값이 "낮음"/"보통"/"높음" 한글 문자열)을 그대로 import해서 재사용한다 — 새 타입을 만들지 않고 앱 전체에서 같은 3단계 잣대를 쓴다(낮음 0-39/보통 40-69/높음 70-100). 배점이 가장 큰 `grounding_fidelity`가 낮으면 총점도 그만큼 크게 깎여 "낮음" 구간(39점 이하)에 떨어지기 쉬워지므로, 배점 가중이 곧 "근거를 벗어난 페이지는 다른 항목이 아무리 좋아도 통과하기 어렵게" 만드는 실질적 효과로 이어진다.
 
 각 항목에 짧은 `reason`(판정 이유)도 같이 받는다 — "왜 이 등급인지"를 나중에 그대로 보여줄 수 있게.
 
 ### 데이터 모델 변경
 
-**`src/wiki/generation_models.py`**
-- `WikiTopicLLMResult`(32행)에 필드 추가:
-  ```python
-  reliability_score: int = Field(ge=0, le=100)
-  reliability_level: ReliabilityLevel
-  reliability_criteria: dict[str, ReliabilityCriterionScore]  # 4개 키: grounding_fidelity/source_reliability/evidence_diversity/currency
-  ```
-  (`ReliabilityLevel`은 `src/analysis/reliability_models.py`에서 import. `ReliabilityCriterionScore`는 이 파일에 새로 정의하는 작은 모델 — `score: int(0-25)`, `reason: str`.)
-- `IssuePageRewriteResult`(63행)에 같은 3개 필드를 **Optional**로 추가(`reliability_score: int | None = None` 등) — 목표 4에 따라 LLM 호출이 실패해 폴백될 때는 이 필드들이 채워지지 않는다.
+**`src/wiki/generation_models.py`** — 항목별 배점이 서로 달라서(40/20/20/20) 하나의 공용 스케일을 쓰는 dict 형태 대신, `document_analysis_results`용 `ReliabilityScoreBreakdown`(`src/analysis/reliability_models.py:157-176`)과 같은 방식으로 이름 붙은 필드 + 합계 검증을 쓰는 새 모델을 정의한다:
+
+```python
+from ..analysis.reliability_models import ReliabilityLevel, RELIABILITY_LEVELS
+
+class PageReliabilityJudgment(BaseModel):
+    grounding_fidelity_score: int = Field(ge=0, le=40)
+    grounding_fidelity_reason: str
+    source_reliability_score: int = Field(ge=0, le=20)
+    source_reliability_reason: str
+    evidence_diversity_score: int = Field(ge=0, le=20)
+    evidence_diversity_reason: str
+    currency_score: int = Field(ge=0, le=20)
+    currency_reason: str
+    reliability_score: int = Field(ge=0, le=100)
+    reliability_level: ReliabilityLevel
+
+    @model_validator(mode="after")
+    def validate_total_and_level(self) -> "PageReliabilityJudgment":
+        computed = (
+            self.grounding_fidelity_score + self.source_reliability_score
+            + self.evidence_diversity_score + self.currency_score
+        )
+        if computed != self.reliability_score:
+            raise ValueError("총점이 항목별 점수 합과 일치하지 않습니다.")
+        low, high = RELIABILITY_LEVELS[self.reliability_level.value]
+        if not (low <= self.reliability_score <= high):
+            raise ValueError("reliability_level이 reliability_score 구간과 일치하지 않습니다.")
+        return self
+```
+
+- `WikiTopicLLMResult`(32행)에 `reliability: PageReliabilityJudgment` 필드를 추가(필수).
+- `IssuePageRewriteResult`(63행)에 `reliability: PageReliabilityJudgment | None = None` 필드를 추가(Optional) — 목표 4에 따라 LLM 호출이 실패해 폴백될 때는 이 필드가 채워지지 않는다.
 
 ### 프롬프트 변경
 
-**토픽 페이지** (`WIKI_TOPIC_SYSTEM_PROMPT`, `src/wiki/generation_prompts.py:8`): "절대 규칙"에 4개 항목 판정 지시를 추가하고, JSON 출력 형식에 `reliability_score`/`reliability_level`/`reliability_criteria`를 추가한다. `build_wiki_topic_user_prompt()`(70행)의 `[이슈 정보]` 블록에 `f"근거 신뢰도(원문 문서 기준): {section.reliability_score}"` 줄을 추가해서 항목 2(source_reliability) 판단 재료를 넘긴다.
+**토픽 페이지** (`WIKI_TOPIC_SYSTEM_PROMPT`, `src/wiki/generation_prompts.py:8`): "절대 규칙"에 4개 항목 판정 지시(배점 40/20/20/20 명시)를 추가하고, JSON 출력 형식에 `reliability` 객체(`grounding_fidelity_score`/`grounding_fidelity_reason`/`source_reliability_score`/`source_reliability_reason`/`evidence_diversity_score`/`evidence_diversity_reason`/`currency_score`/`currency_reason`/`reliability_score`/`reliability_level`, `PageReliabilityJudgment`와 1:1 대응)를 추가한다. `build_wiki_topic_user_prompt()`(70행)의 `[이슈 정보]` 블록에 `f"근거 신뢰도(원문 문서 기준): {section.reliability_score}"` 줄을 추가해서 항목 2(source_reliability) 판단 재료를 넘긴다.
 
 **이슈 페이지** (`ISSUE_PAGE_REWRITE_SYSTEM_PROMPT`, `generation_prompts.py:133`): 동일하게 4개 항목 판정 지시 + JSON 출력 필드 추가. `build_issue_page_rewrite_user_prompt()`(156행)에도 같은 근거 신뢰도 줄을 추가한다.
 
@@ -65,10 +89,10 @@
 
 **토픽 페이지** (`_generate_topic_page`, `generation.py:296`): LLM 결과(`result`)를 파싱한 직후, 기존 skip 체크들(352-356행, `action=="skip"` 또는 빈 markdown)과 같은 자리에 판정 체크를 추가한다:
 ```python
-if result.reliability_level == ReliabilityLevel.LOW:
+if result.reliability.reliability_level == ReliabilityLevel.LOW:
     logger.info(
         "wiki_topic_page_skipped_low_reliability",
-        extra={"issue_key": section.issue_key, "reliability_score": result.reliability_score},
+        extra={"issue_key": section.issue_key, "reliability_score": result.reliability.reliability_score},
     )
     return "skip", None, None
 ```
@@ -83,7 +107,7 @@ if result.reliability_level == ReliabilityLevel.LOW:
 
 이슈 페이지가 "낮음"으로 스킵되면 `topic_page_id`가 있어도(토픽은 부모 페이지로 먼저 만들어짐) 이슈 페이지만 없는 상태가 될 수 있다 — 이건 정상이다(토픽 페이지와 이슈 페이지는 원래도 서로 독립적으로 성공/실패한다, 447행 docstring 참고).
 
-`_rewrite_issue_page_content()` 자체의 반환 타입(`ReportSectionDraft`)에는 신뢰도 필드가 없다. `_rewrite_issue_page_content()`는 내부적으로 이미 `IssuePageRewriteResult`를 파싱했다가 4개 텍스트 필드만 뽑아 쓰고 버리는 구조이므로(196-201행), 이 파싱된 원본 결과 객체를 버리지 않고 그대로 같이 돌려주도록 리턴 타입을 `tuple[ReportSectionDraft, IssuePageRewriteResult | None]`로 바꾼다 — 재작성된 section과, 판정 3필드가 든 원본 LLM 결과(폴백 시 `None`)를 함께 반환한다. `_generate_issue_page`는 이 튜플을 받아 `rewritten_section`은 지금처럼 쓰고, `IssuePageRewriteResult`가 `None`이 아니면 그 안의 `reliability_level`을 게이트 판단에 쓴다(`None`이면 목표 4에 따라 "보통"으로 간주).
+`_rewrite_issue_page_content()` 자체의 반환 타입(`ReportSectionDraft`)에는 신뢰도 필드가 없다. `_rewrite_issue_page_content()`는 내부적으로 이미 `IssuePageRewriteResult`를 파싱했다가 4개 텍스트 필드만 뽑아 쓰고 버리는 구조이므로(196-201행), 그 안의 `reliability`(`PageReliabilityJudgment | None`)를 버리지 않고 같이 돌려주도록 리턴 타입을 `tuple[ReportSectionDraft, PageReliabilityJudgment | None]`로 바꾼다 — 재작성된 section과, 판정 결과(폴백 시 `None`)를 함께 반환한다. `_generate_issue_page`는 이 튜플을 받아 `rewritten_section`은 지금처럼 쓰고, 판정값이 `None`이 아니면 그 `reliability_level`을 게이트 판단에 쓴다(`None`이면 목표 4에 따라 "보통"으로 간주).
 
 ### DB 스키마 변경 (`wiki_page_versions`)
 
@@ -127,8 +151,8 @@ page_reliability_detail: Optional[dict] = None
 
 ## 테스트
 
-- `WikiTopicLLMResult`/`IssuePageRewriteResult`: 신뢰도 필드 포함 페이로드가 정상 파싱되는지, 이슈 쪽은 필드 없이도(Optional) 파싱되는지.
-- `_generate_topic_page`: `reliability_level="낮음"`인 LLM 응답을 주입했을 때 `create_wiki_version`이 호출되지 않고 `("skip", None, None)`을 반환하는지(기존 skip 테스트 패턴 확장). "보통"/"높음"일 때는 지금처럼 발행되고 `page_reliability_score`/`page_reliability_level`이 버전 row에 저장되는지.
+- `PageReliabilityJudgment`: 항목별 점수 합이 `reliability_score`와 다르거나 `reliability_level`이 점수 구간과 안 맞으면 `ValidationError`가 나는지(model_validator 검증). `WikiTopicLLMResult`/`IssuePageRewriteResult`: `reliability` 필드 포함 페이로드가 정상 파싱되는지, 이슈 쪽은 `reliability` 없이도(Optional) 파싱되는지.
+- `_generate_topic_page`: `reliability.reliability_level="낮음"`인 LLM 응답을 주입했을 때 `create_wiki_version`이 호출되지 않고 `("skip", None, None)`을 반환하는지(기존 skip 테스트 패턴 확장). "보통"/"높음"일 때는 지금처럼 발행되고 `page_reliability_score`/`page_reliability_level`이 버전 row에 저장되는지.
 - `_generate_issue_page`: 판정 "낮음" 주입 시 `(None, None)`을 반환하고 `create_wiki_version`이 호출되지 않는지. LLM 호출 실패(폴백) 주입 시에도 지금처럼 정상 발행되는지(회귀 확인 — 목표 4).
 - `generate_wiki_drafts_for_sections`: 이슈 페이지가 스킵된 섹션에 대해 `WikiDraftGenerationResult(issue_page_id="", issue_version_id="", error_message=None)`이 만들어지고, `published_count` 집계에서 제외되는지.
 - 통합: 낮은 신뢰도로 판정되는 섹션을 넣었을 때 `wiki_pages`/`wiki_page_versions`에 해당 페이지의 어떤 행도 생기지 않는지(진짜로 "남기지 않음"인지 DB 레벨에서 확인).
@@ -138,7 +162,7 @@ page_reliability_detail: Optional[dict] = None
 | 파일 | 변경 |
 |---|---|
 | `src/analysis/reliability_models.py` | 변경 없음(`ReliabilityLevel`/`RELIABILITY_LEVELS`를 그대로 import해서 재사용) |
-| `src/wiki/generation_models.py` | `WikiTopicLLMResult`/`IssuePageRewriteResult`에 신뢰도 판정 필드 추가, `ReliabilityCriterionScore` 신규 모델 |
+| `src/wiki/generation_models.py` | `PageReliabilityJudgment` 신규 모델(배점 40/20/20/20 + 합계·구간 검증), `WikiTopicLLMResult`/`IssuePageRewriteResult`에 `reliability` 필드 추가 |
 | `src/wiki/generation_prompts.py` | 두 시스템 프롬프트에 4개 항목 판정 지시 + JSON 출력 필드 추가, 두 user 프롬프트 빌더에 근거 신뢰도 줄 추가 |
 | `src/wiki/generation.py` | `_generate_topic_page`(skip 체크 추가), `_generate_issue_page`(리턴 타입 변경 + skip 체크), `_rewrite_issue_page_content`(판정 필드도 함께 리턴하도록 확장), `generate_wiki_drafts_for_sections`(이슈 페이지 skip 처리) |
 | `src/wiki/interface.py` | `WikiDraftInput`에 신뢰도 필드 3개 추가 |
