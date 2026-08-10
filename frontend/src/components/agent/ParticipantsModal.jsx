@@ -7,6 +7,12 @@
 // 현재 참여자는 아바타+이름 칩에 x 아이콘(.pt-chip), 추가 후보는 아바타+이름 행에
 // + 아이콘(.pt-row)으로 표시한다 — .au/.avs와 같은 초록 원 이니셜 아바타 패턴을 재사용.
 //
+// 추가 후보(workspaceMembers)는 GET /workspace/members가 has_avatar를 내려줘서 실제
+// 사진(MemberAvatar, TeamPanel.jsx와 같은 컴포넌트)을 보여줄 수 있다. 반면 현재 참여자
+// (participants → GET /chat/sessions/{id}/participants, ParticipantOut)는 has_avatar가
+// 없어 이니셜만 가능하다 — 세션 참여자 조회에 사진까지 얹는 건 이번 변경 범위 밖이라
+// 이니셜(initialOf)을 그대로 둔다.
+//
 // ⚠ 2026-08-05 변경: 역할별로 버튼을 숨긴다.
 //   이전에는 버튼을 다 보여주고 백엔드가 거부하면 에러로 안내하는 방식이었으나,
 //   팀 요구사항이 권한 구조를 화면에 드러내는 쪽으로 정해져 역할 기반 제어로 바꿨다.
@@ -26,6 +32,7 @@ import {
   canInviteToSession,
   canRemoveFromSession,
 } from '../../constants/roles';
+import MemberAvatar from '../common/MemberAvatar';
 
 function initialOf(nameOrId) {
   return (nameOrId || '?').charAt(0).toUpperCase();
@@ -135,7 +142,7 @@ export default function ParticipantsModal({
                     const name = m.display_name || m.user_id;
                     return (
                       <div className="pt-row" key={m.user_id}>
-                        <i className="av">{initialOf(name)}</i>
+                        <MemberAvatar userId={m.user_id} hasAvatar={m.has_avatar} name={name} size={24} />
                         <span className="nm">
                           {name}
                           {m.email && <span className="d"> ({m.email})</span>}

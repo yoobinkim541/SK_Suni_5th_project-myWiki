@@ -712,7 +712,7 @@ export default function App() {
             <Route path="category" element={<CategoryPage />} />
             <Route path="wiki" element={<WikiPage />} />
             <Route path="wiki/:docId" element={<WikiPage />} />
-            <Route path="agent" element={<AgentPage profile={profile} />} />
+            <Route path="agent" element={<AgentPage profile={profile} myProfile={myProfile} />} />
             <Route
               path="settings"
               element={

@@ -37,6 +37,8 @@ import ChatMessage from '../components/agent/ChatMessage';
 import ChatComposer from '../components/agent/ChatComposer';
 import ShareToTeamModal from '../components/agent/ShareToTeamModal';
 import ParticipantsModal from '../components/agent/ParticipantsModal';
+import TeamMembersModal from '../components/agent/TeamMembersModal';
+import MemberAvatar from '../components/common/MemberAvatar';
 import mascotImg from '../assets/mascot.png';
 import { fetchKpiSummary } from '../services/dashboardApi';
 
@@ -54,7 +56,7 @@ function MascotFloat() {
   );
 }
 
-export default function AgentPage({ profile }) {
+export default function AgentPage({ profile, myProfile }) {
   const [panes, setPanes] = useState(null);
   const [activePane, setActivePane] = useState('team');
   const [currentIds, setCurrentIds] = useState({ team: null, mine: null });
@@ -81,6 +83,25 @@ export default function AgentPage({ profile }) {
   // 화면에서 "—"로 표시한다(mockWiki.js의 "위키 124문서"는 대화 목록이 그렇듯 하드코딩
   // 목업이라 대시보드처럼 실 API로 대체한다).
   const [wikiDocCount, setWikiDocCount] = useState(null);
+  // "팀 공유 에이전트" 배너를 누르면 여는, 워크스페이스 전체 구성원 명단 모달.
+  const [teamMembersOpen, setTeamMembersOpen] = useState(false);
+  const [workspaceMembersLoading, setWorkspaceMembersLoading] = useState(true);
+  const [workspaceMembersError, setWorkspaceMembersError] = useState(null);
+
+  // 팀 배너(구성원 수·아바타)와 팀 구성원 모달에 쓸 워크스페이스 멤버 전체 목록 —
+  // 참여자 관리 모달을 열기 전에도 배너에 실 데이터를 보여줘야 하므로 진입 시 한 번
+  // 불러온다. 예전엔 참여자 관리 모달을 열 때만 workspaceMembers를 채웠는데, 그
+  // 전까지는 배너가 계속 MOCK_AGENT_PANES의 가짜 "4명/J,S,H"만 보여주고 있었다
+  // (myRole 계산도 이 state에 기대므로, 일찍 채워지면 그것도 같이 정확해진다).
+  useEffect(() => {
+    let alive = true;
+    setWorkspaceMembersLoading(true);
+    listWorkspaceMembers()
+      .then((m) => alive && setWorkspaceMembers(m))
+      .catch((e) => alive && setWorkspaceMembersError(e.message || '구성원 정보를 불러오지 못했습니다.'))
+      .finally(() => alive && setWorkspaceMembersLoading(false));
+    return () => { alive = false; };
+  }, []);
 
   // 참여자 모달을 열면 참여자 목록 + 워크스페이스 멤버 전체 목록을 같이 불러옵니다.
   useEffect(() => {
@@ -111,7 +132,11 @@ export default function AgentPage({ profile }) {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [openMenuId]);
 
-  const authorName = profile?.user_metadata?.full_name || profile?.email || '나';
+  // myProfile.display_name(GET /profile, Settings에서 편집한 실제 이름)을 최우선으로
+  // 쓴다 — 예전엔 OAuth 로그인 당시 메타데이터(profile.user_metadata.full_name)만 써서,
+  // 이름을 바꿔도 에이전트 페이지의 "나" 메시지 작성자 표시는 그대로였다(TopBar/
+  // ProfilePanel/TeamPanel은 #226에서 이미 이렇게 고쳐졌는데 이 페이지만 빠져 있었다).
+  const authorName = myProfile?.display_name || profile?.user_metadata?.full_name || profile?.email || '나';
   const authorInitial = authorName.charAt(0).toUpperCase();
 
   const myRole =
@@ -381,12 +406,17 @@ export default function AgentPage({ profile }) {
   function handleOpenParticipants(conversationId) {
     setOpenMenuId(null);
     setParticipants(null);
-    setWorkspaceMembers(null);
+    // workspaceMembers는 안 비운다 — 진입 시 이미 불러온 값(팀 배너용)이 있으면 그걸
+    // 먼저 보여주고, 아래 참여자 모달 useEffect가 다시 불러와 조용히 최신화한다.
     setParticipantsSessionId(conversationId);
   }
 
   function closeParticipantsModal() {
     setParticipantsSessionId(null);
+  }
+
+  function closeTeamMembersModal() {
+    setTeamMembersOpen(false);
   }
 
   async function handleAddParticipant(userId) {
@@ -607,17 +637,51 @@ export default function AgentPage({ profile }) {
           {/* 컨텍스트 배너 — 팀은 참여 멤버, 개인은 "비공개" 배지.
               "내 에이전트" 제목은 MOCK_AGENT_PANES.mine.ctx.title(하드코딩된 이름)
               대신 로그인한 실제 사용자 이름(authorName)을 쓴다 — fetchAgentPanes()가
-              conversations만 실데이터로 바꾸고 ctx는 목업을 그대로 넘겨서 생긴 문제였다. */}
-          <div className={`ag-ctx ${pane.key}`}>
+              conversations만 실데이터로 바꾸고 ctx는 목업을 그대로 넘겨서 생긴 문제였다.
+              team 배너의 인원수·아바타도 같은 이유로 실 데이터(workspaceMembers)로
+              바꾸고, 눌러서 전체 구성원 명단(TeamMembersModal)을 볼 수 있게 한다 —
+              pane.ctx.desc/avatars(하드코딩 "4명"/["J","S","H"])는 아직 못 불러왔을
+              때(workspaceMembersLoading)의 자리표시자로만 남겨둔다. */}
+          <div
+            className={`ag-ctx ${pane.key}`}
+            {...(pane.key === 'team' ? {
+              role: 'button',
+              tabIndex: 0,
+              'aria-label': '팀 구성원 보기',
+              onClick: () => setTeamMembersOpen(true),
+              onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTeamMembersOpen(true); } },
+            } : {})}
+          >
             <span className="ic">{pane.ctx.badge}</span>
             <div className="tx">
               <b>{pane.key === 'mine' ? `${authorName} · 개인 에이전트` : pane.ctx.title}</b>
-              <span>{pane.ctx.desc}</span>
+              <span>
+                {pane.key === 'team' && !workspaceMembersLoading && workspaceMembers
+                  ? `워크스페이스 멤버 ${workspaceMembers.length}명이 같은 대화와 근거를 함께 봅니다`
+                  : pane.ctx.desc}
+              </span>
             </div>
             {pane.ctx.avatars ? (
-              <span className="avs" aria-label="참여 멤버">
-                {pane.ctx.avatars.map((a) => <i key={a}>{a}</i>)}
-                {pane.ctx.more && <i className="more">{pane.ctx.more}</i>}
+              <span className="avs" aria-label="참여 멤버 — 눌러서 전체 명단 보기">
+                {pane.key === 'team' && !workspaceMembersLoading && workspaceMembers ? (
+                  <>
+                    {workspaceMembers.slice(0, 3).map((m) => (
+                      <MemberAvatar
+                        key={m.user_id}
+                        userId={m.user_id}
+                        hasAvatar={m.has_avatar}
+                        name={m.display_name}
+                        size={24}
+                      />
+                    ))}
+                    {workspaceMembers.length > 3 && <i className="more">+{workspaceMembers.length - 3}</i>}
+                  </>
+                ) : (
+                  <>
+                    {pane.ctx.avatars.map((a) => <i key={a}>{a}</i>)}
+                    {pane.ctx.more && <i className="more">{pane.ctx.more}</i>}
+                  </>
+                )}
               </span>
             ) : (
               <span className="priv">{pane.ctx.priv}</span>
@@ -813,6 +877,14 @@ export default function AgentPage({ profile }) {
         onAdd={handleAddParticipant}
         onRemove={handleRemoveParticipant}
         onClose={closeParticipantsModal}
+      />
+
+      <TeamMembersModal
+        open={teamMembersOpen}
+        members={workspaceMembers}
+        loading={workspaceMembersLoading}
+        error={workspaceMembersError}
+        onClose={closeTeamMembersModal}
       />
     </section>
   );

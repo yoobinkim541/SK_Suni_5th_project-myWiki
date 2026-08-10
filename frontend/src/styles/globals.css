@@ -897,6 +897,14 @@ a.cite:hover .ex{color:var(--green)}
 .ag-ctx .avs i.more{background:var(--panel);color:var(--muted);border:1px solid var(--hair)}
 :root[data-theme="dark"] .ag-ctx .avs i{color:#0d1512}
 :root[data-theme="dark"] .ag-ctx .avs i.more{color:var(--muted)}
+/* MemberAvatar가 실제 사진(<img>)을 렌더링할 때도 이니셜 원과 같은 겹침 스택으로 보이게 */
+.ag-ctx .avs img{width:24px;height:24px;border-radius:50%;flex:none;object-fit:cover;
+  border:2px solid var(--panel);margin-left:-8px}
+.ag-ctx .avs img:first-child{margin-left:0}
+/* 팀 배너 전체를 눌러 팀 구성원 명단을 볼 수 있음을 알림 */
+.ag-ctx.team{cursor:pointer}
+.ag-ctx.team:hover{filter:brightness(0.97)}
+:root[data-theme="dark"] .ag-ctx.team:hover{filter:brightness(1.08)}
 .ag-ctx .priv{margin-left:auto;flex:none;font-size:10.5px;font-weight:700;color:var(--muted);
   background:var(--panel);border:1px solid var(--hair);border-radius:20px;padding:4px 11px}
 .turn.me .au{display:flex;align-items:center;gap:6px;margin-bottom:7px;
@@ -1345,6 +1353,7 @@ a.fn:hover{text-decoration:underline}
     padding:14px 16px;margin:0 0 14px;border-bottom:0}
   .ag-ctx{margin:0 0 14px;border-radius:16px;padding:14px 16px}
   .ag-ctx .avs i{width:22px;height:22px}
+  .ag-ctx .avs img{width:22px;height:22px}
   .rlist{grid-template-columns:1fr}
   .mw-modal{padding:20px 18px 18px}
 }
