@@ -3,6 +3,7 @@
 import sys
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 from uuid import UUID
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -11,13 +12,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from scripts.run_analysis_pipeline import get_adaptive_analysis_limit, run_analysis_pipeline
+from scripts.run_analysis_pipeline import get_adaptive_analysis_limit, get_analysis_backlog_count, run_analysis_pipeline
 from scripts.run_pipeline import run_collect, run_preprocess
 
 from src.pipeline_common.db import get_client
 from src.settings.service import get_workspace_settings, mark_data_refreshed
 
 GRACE_MINUTES = 15
+
+SELF_BUDGET_MINUTES = 50
+"""job timeout(scheduled-data-refresh.yml, 55분) 대비 5분 여유를 둔 자체 시간 예산.
+refresh_wiki_scheduled.py/run_nightly_analysis.py와 같은 self-budget 패턴 — collect()가
+이미 20-24분을 쓰므로(워크플로 주석 참고), 분석 단계가 나머지 시간을 데드라인까지
+반복 소비하다가 하드 타임아웃으로 배치 중간에 잘리는 대신 스스로 멈춘다.
+
+now 파라미터(게이트 판정용, 고정된 과거 날짜로 테스트하는 경우가 많음)와는 별개로,
+데드라인 계산·체크는 항상 run_scheduled_refresh()의 clock 파라미터(기본값: 실제 벽시계)만
+쓴다 — 두 "시각" 개념이 섞이면 게이트 테스트용 고정 날짜가 데드라인을 항상 "이미 지남"으로
+오판하게 만든다."""
 
 KST = timezone(timedelta(hours=9))
 NIGHTLY_ANALYSIS_WINDOW_KST = (time(0, 0), time(7, 15))
@@ -52,9 +64,11 @@ def get_workspace_id() -> str:
     return str(rows[0]["id"])
 
 
-def run_scheduled_refresh(*, now: datetime | None = None) -> bool:
+def run_scheduled_refresh(*, now: datetime | None = None, clock: Callable[[], datetime] | None = None) -> bool:
     workspace_id = get_workspace_id()
     settings = get_workspace_settings(workspace_id)
+
+    get_current_time = clock or (lambda: datetime.now(timezone.utc))
 
     current_time = now or datetime.now(timezone.utc)
     if not is_refresh_due(settings.last_data_refresh_at, settings.data_refresh_cycle_minutes, now=current_time):
@@ -75,10 +89,11 @@ def run_scheduled_refresh(*, now: datetime | None = None) -> bool:
     if is_within_nightly_analysis_window(current_time):
         log("analysis skipped during nightly analysis window (00:00-07:15 KST)")
     else:
-        analysis_limit = get_adaptive_analysis_limit(workspace_id)
-        log(f"analysis pipeline started (limit={analysis_limit})")
-        if run_analysis_pipeline(workspace_id, limit=analysis_limit) is None:
-            log("analysis did not complete; daily report will wait for its 08:00 schedule")
+        deadline = get_current_time() + timedelta(minutes=SELF_BUDGET_MINUTES)
+        while get_analysis_backlog_count(workspace_id) > 0 and get_current_time() < deadline:
+            analysis_limit = get_adaptive_analysis_limit(workspace_id)
+            log(f"analysis pipeline started (limit={analysis_limit})")
+            run_analysis_pipeline(workspace_id, limit=analysis_limit)
 
     mark_data_refreshed(workspace_id, at=gate_now)
     log("refresh complete (daily report is generated separately at 08:00 KST)")

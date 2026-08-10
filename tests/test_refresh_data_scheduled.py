@@ -156,6 +156,11 @@ def test_run_scheduled_refresh_leaves_daily_report_for_08_kst_schedule(monkeypat
         "scripts.refresh_data_scheduled.get_adaptive_analysis_limit",
         lambda workspace_id: 20,
     )
+    backlog_counts = iter([5, 0])  # 1회차 시작 전엔 백로그 있음, 1회 처리 후엔 소진
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.get_analysis_backlog_count",
+        lambda workspace_id: next(backlog_counts),
+    )
     monkeypatch.setattr(
         "scripts.refresh_data_scheduled.run_analysis_pipeline",
         lambda workspace_id, limit: steps.append(("analysis", (str(workspace_id), limit))) or ["doc-1"],
@@ -243,6 +248,68 @@ def test_run_scheduled_refresh_skips_analysis_during_catchup_window(monkeypatch)
         ("preprocess", WORKSPACE_ID),
         ("mark", now.isoformat()),
     ]
+
+
+def test_run_scheduled_refresh_loops_analysis_until_backlog_drained(monkeypatch):
+    """백로그가 여러 회차에 걸쳐 있으면, 소진될 때까지 run_analysis_pipeline을 반복 호출한다."""
+    steps: list[tuple[str, object]] = []
+    now = datetime(2026, 8, 6, 0, 30, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("scripts.refresh_data_scheduled.get_workspace_id", lambda: WORKSPACE_ID)
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.get_workspace_settings",
+        lambda workspace_id: SimpleNamespace(last_data_refresh_at=None, data_refresh_cycle_minutes=120),
+    )
+    monkeypatch.setattr("scripts.refresh_data_scheduled.run_collect", lambda workspace_id, limit, source_id: {"collected": 1})
+    monkeypatch.setattr("scripts.refresh_data_scheduled.run_preprocess", lambda workspace_id: {"processed": 1})
+    monkeypatch.setattr("scripts.refresh_data_scheduled.get_adaptive_analysis_limit", lambda workspace_id: 20)
+    # 3회차 시작 전 백로그: 40 -> 20 -> 0(소진, 루프 종료)
+    backlog_counts = iter([40, 20, 0])
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.get_analysis_backlog_count",
+        lambda workspace_id: next(backlog_counts),
+    )
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.run_analysis_pipeline",
+        lambda workspace_id, limit: steps.append("analysis") or ["doc-1"],
+    )
+    monkeypatch.setattr("scripts.refresh_data_scheduled.mark_data_refreshed", lambda workspace_id, at: None)
+
+    assert run_scheduled_refresh(now=now) is True
+    assert steps == ["analysis", "analysis"]  # 백로그가 40->20일 때 2번 호출, 0이 되자 3번째는 안 함
+
+
+def test_run_scheduled_refresh_stops_at_deadline_even_with_backlog_remaining(monkeypatch):
+    """clock을 주입해서, 데드라인 계산 직후 첫 루프 조건 체크 시점에 이미 데드라인을
+    넘긴 상태를 강제로 재현한다 — 실제 벽시계나 now 파라미터에 기대지 않는 결정적 테스트.
+    백로그가 남아있어도(999건) run_analysis_pipeline을 한 번도 호출하지 않고 멈춰야 한다."""
+    steps: list[tuple[str, object]] = []
+    now = datetime(2026, 8, 6, 0, 30, tzinfo=timezone.utc)
+    # 1번째 호출: deadline 계산에 쓰임(2026-01-01 00:00 + 50분 = 00:50).
+    # 2번째 호출: while 조건의 실시간 체크(2026-01-01 01:00) — 이미 00:50을 넘겼다.
+    clock_calls = iter([
+        datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 1, 0, tzinfo=timezone.utc),
+    ])
+    fake_clock = lambda: next(clock_calls)
+
+    monkeypatch.setattr("scripts.refresh_data_scheduled.get_workspace_id", lambda: WORKSPACE_ID)
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.get_workspace_settings",
+        lambda workspace_id: SimpleNamespace(last_data_refresh_at=None, data_refresh_cycle_minutes=120),
+    )
+    monkeypatch.setattr("scripts.refresh_data_scheduled.run_collect", lambda workspace_id, limit, source_id: {"collected": 1})
+    monkeypatch.setattr("scripts.refresh_data_scheduled.run_preprocess", lambda workspace_id: {"processed": 1})
+    monkeypatch.setattr("scripts.refresh_data_scheduled.get_adaptive_analysis_limit", lambda workspace_id: 20)
+    monkeypatch.setattr("scripts.refresh_data_scheduled.get_analysis_backlog_count", lambda workspace_id: 999)  # 백로그가 남아있어도
+    monkeypatch.setattr(
+        "scripts.refresh_data_scheduled.run_analysis_pipeline",
+        lambda workspace_id, limit: steps.append("analysis") or ["doc-1"],
+    )
+    monkeypatch.setattr("scripts.refresh_data_scheduled.mark_data_refreshed", lambda workspace_id, at: None)
+
+    assert run_scheduled_refresh(now=now, clock=fake_clock) is True
+    assert steps == []  # 데드라인이 이미 지났으므로 analysis가 한 번도 호출되지 않는다
 
 
 def test_run_analysis_pipeline_returns_none_when_a_stage_fails(monkeypatch):
