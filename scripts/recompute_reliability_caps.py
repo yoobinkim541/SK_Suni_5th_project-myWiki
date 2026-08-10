@@ -309,7 +309,10 @@ def recompute_row(
         "row_created_at": row.get("created_at"),
         "action": "skip",
         "skip_reason": None,
-        "old": _stored_scores(row),
+        "old": {
+            **_stored_scores(row),
+            "reliability_summary_reason": row.get("reliability_summary_reason"),
+        },
     }
 
     detail = row.get("reliability_detail") or {}
@@ -707,6 +710,7 @@ def rollback(db, workspace_id: str, report_path: Path, *, dry_run: bool) -> dict
             payload = {
                 "reliability_score": record["old"]["reliability_score"],
                 "reliability_level": record["old"]["reliability_level"],
+                "reliability_summary_reason": record["old"]["reliability_summary_reason"],
                 **{column: record["old"][column] for column in SCORE_COLUMNS},
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }

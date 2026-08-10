@@ -457,15 +457,19 @@ def test_리포트로_원복된다():
     detail = _detail(current_validity=18, current_validity_reason="정정 정황은 없다")
     db = _db([_row(detail)])
     report = Path("/tmp/r8.jsonl")
+    original_reason = db.tables["document_analysis_results"][0]["reliability_summary_reason"]
 
     _run(db, Path("/tmp"), report_path=report)
     changed = db.tables["document_analysis_results"][0]["reliability_score"]
+    changed_reason = db.tables["document_analysis_results"][0]["reliability_summary_reason"]
+    assert changed_reason != original_reason
 
     batch.rollback(db, WORKSPACE_ID, report, dry_run=False)
 
     restored = db.tables["document_analysis_results"][0]
     assert restored["reliability_score"] != changed
     assert restored["current_validity_score"] == 5  # 옛 값
+    assert restored["reliability_summary_reason"] == original_reason
 
 
 # ------------------------------------------------------------
