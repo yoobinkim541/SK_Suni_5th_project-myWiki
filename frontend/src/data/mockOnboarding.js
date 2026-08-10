@@ -91,6 +91,9 @@ export const INTEREST_KEYWORDS = INTEREST_KEYWORD_GROUPS.flatMap((g) => g.keywor
 export const ROLE_OPTIONS = [
   '전략·기획', '마케팅', '개발·엔지니어링',
   '영업·구매', '경영지원', '학생·취준',
+  // 반도체 산업을 대표하는 직무 하나만 — 세부 직무를 여러 개 늘어놓으면 오히려
+  // 고르기 번거롭다는 피드백으로 '반도체 엔지니어' 하나로 정리했다.
+  '반도체 엔지니어',
 ];
 
 // 화면에 찍히는 키워드 이름과 실제 기사 본문의 표기가 달라서(예: DRAM ↔ D램)

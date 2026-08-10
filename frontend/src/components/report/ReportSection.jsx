@@ -19,9 +19,9 @@ import ReportSummary from './ReportSummary';
 import { downloadReport, fetchReportDetail } from '../../services/reportApi';
 
 const FORMATS = [
-  { key: 'word', label: 'Word', ext: '.docx' },
-  { key: 'pdf', label: 'PDF', ext: '.pdf' },
-  { key: 'ppt', label: 'PPT', ext: '.pptx' },
+  { key: 'word', label: 'Word', ext: '.docx', availabilityKey: 'hasDocx' },
+  { key: 'pdf', label: 'PDF', ext: '.pdf', availabilityKey: 'hasPdf' },
+  { key: 'ppt', label: 'PPT', ext: '.pptx', availabilityKey: 'hasPptx' },
 ];
 
 const LEVEL_LABEL = { high: '높음', mid: '보통', low: '낮음' };
@@ -41,7 +41,7 @@ export function DownloadBadge({ formatKey }) {
   );
 }
 
-export default function ReportSection({ archive, today, summary, onSelectWiki }) {
+export default function ReportSection({ archive, today, summary, historyError, onSelectWiki }) {
   const [notice, setNotice] = useState('');
   const [page, setPage] = useState(1);
 
@@ -52,14 +52,19 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
   const [detail, setDetail] = useState(undefined);
 
   // 오늘 리포트는 히스토리에서 빼고 위쪽 큰 카드로만 보여줍니다(중복 방지).
+  const safeArchive = useMemo(
+    () => (Array.isArray(archive) ? archive : []),
+    [archive]
+  );
+
   const history = useMemo(
-    () => archive.filter((r) => r.date !== today?.date),
-    [archive, today]
+    () => safeArchive.filter((r) => r.date !== today?.date),
+    [safeArchive, today]
   );
 
   const todayCard = useMemo(
-    () => archive.find((r) => r.date === today?.date) ?? null,
-    [archive, today]
+    () => safeArchive.find((r) => r.date === today?.date) ?? today?.archiveItem ?? null,
+    [safeArchive, today]
   );
 
   const totalPages = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
@@ -85,6 +90,22 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
   }
 
   // 다운로드 API가 없던 시절의 목업 버튼에서 실제 백엔드 다운로드 호출로 전환했습니다.
+  function canDownload(report, format) {
+    if (!report || !format.availabilityKey) return true;
+    if (!Object.prototype.hasOwnProperty.call(report, format.availabilityKey)) return true;
+    return Boolean(report[format.availabilityKey]);
+  }
+
+  function formatIssueCount(value) {
+    const count = Number(value ?? 0);
+    return Number.isFinite(count) ? count : 0;
+  }
+
+  function renderWikiCount(value) {
+    const count = Number(value);
+    return Number.isFinite(count) ? <> ? ?? ?? {count}</> : null;
+  }
+
   async function handleDownload(date, format, label) {
     const res = await downloadReport(date, format);
     setNotice(
@@ -99,7 +120,7 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
   return (
     <>
       {/* ── 오늘 리포트 (큰 카드) ── */}
-      <section className="sec">
+      <section className="sec sr-2">
         <div className="sh big">
           <span className="t">오늘 리포트</span>
           <span className="s">카드를 누르면 전체 리포트와 출처를 볼 수 있습니다</span>
@@ -128,34 +149,45 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
           {todayCard && (
             <>
               <h4 className="rt">{todayCard.title}</h4>
-              <p className="rsum">{todayCard.summary}</p>
-              <div className="rmeta">
-                이슈 {todayCard.issues}건 · 위키 갱신 {todayCard.wiki}
-                <span className={`cf ${LEVEL_CLASS[todayCard.level]}`.trim()}>
-                  <i></i>신뢰도 : {LEVEL_LABEL[todayCard.level]}
-                </span>
-              </div>
+              {todayCard.summary && <p className="rsum">{todayCard.summary}</p>}
+              {summary?.statusLabel !== '\uC0DD\uC131 \uB300\uAE30' && (
+                <div className="rmeta">
+                  ?? {formatIssueCount(todayCard.issues)}?{renderWikiCount(todayCard.wiki)}
+                  {todayCard.level && (
+                    <span className={`cf ${LEVEL_CLASS[todayCard.level]}`.trim()}>
+                      <i></i>??? : {LEVEL_LABEL[todayCard.level]}
+                    </span>
+                  )}
+                </div>
+              )}
             </>
           )}
 
           {/* 카드 클릭(모달 열기)과 분리 — 버튼을 눌러도 모달이 뜨지 않습니다. */}
           <div className="rdl wide" onClick={(e) => e.stopPropagation()}>
-            {FORMATS.map((f) => (
-              <button
-                className="dlbtn"
-                key={f.key}
-                onClick={() => handleDownload(today.date, f.key, `전체 ${f.label}${f.ext}`)}
-              >
-                <DownloadBadge formatKey={f.key} />
-                {f.label} <span className="ext">{f.ext}</span>
-              </button>
-            ))}
+            {FORMATS.map((f) => {
+              const disabled = !canDownload(todayCard, f);
+              return (
+                <button
+                  className="dlbtn"
+                  key={f.key}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) handleDownload(today.date, f.key, `${f.label}${f.ext}`);
+                  }}
+                  title={disabled ? '\uC0DD\uC131\uB41C \uD30C\uC77C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.' : undefined}
+                >
+                  <DownloadBadge formatKey={f.key} />
+                  {f.label} <span className="ext">{f.ext}</span>
+                </button>
+              );
+            })}
           </div>
         </article>
       </section>
 
       {/* ── 리포트 히스토리 (2열 · 페이지 넘김) ── */}
-      <section className="sec">
+      <section className="sec sr-3">
         <div className="sh big">
           <span className="t">리포트 히스토리</span>
           <span className="c">{history.length}건</span>
@@ -183,31 +215,34 @@ export default function ReportSection({ archive, today, summary, onSelectWiki })
                   <span className="rk">{r.day}</span>
                 </div>
                 <h4 className="rt">{r.title}</h4>
-                <p className="rsum">{r.summary}</p>
-                <div className="rmeta">
-                  이슈 {r.issues}건 · 위키 갱신 {r.wiki}
-                  <span className={`cf ${LEVEL_CLASS[r.level]}`.trim()}>
-                    <i></i>신뢰도 : {LEVEL_LABEL[r.level]}
-                  </span>
-                </div>
+                {r.summary && <p className="rsum">{r.summary}</p>}
                 <div className="rdl" onClick={(e) => e.stopPropagation()}>
-                  {FORMATS.map((f) => (
-                    <button
-                      className="dlbtn"
-                      key={f.key}
-                      onClick={() => handleDownload(r.date, f.key, `${r.label} ${f.label}${f.ext}`)}
-                    >
-                      <DownloadBadge formatKey={f.key} />
-                      {f.label}
-                    </button>
-                  ))}
+                  {FORMATS.map((f) => {
+                    const disabled = !canDownload(r, f);
+                    return (
+                      <button
+                        className="dlbtn"
+                        key={f.key}
+                        disabled={disabled}
+                        onClick={() => {
+                          if (!disabled) handleDownload(r.date, f.key, `${r.label} ${f.label}${f.ext}`);
+                        }}
+                        title={disabled ? '\uC0DD\uC131\uB41C \uD30C\uC77C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.' : undefined}
+                      >
+                        <DownloadBadge formatKey={f.key} />
+                        {f.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </article>
             ))}
           </div>
 
           {history.length === 0 && (
-            <div className="rlist-empty">이전 리포트가 아직 없습니다.</div>
+            <div className="rlist-empty">
+              {historyError || '?? ???? ?? ????.'}
+            </div>
           )}
 
           {totalPages > 1 && (

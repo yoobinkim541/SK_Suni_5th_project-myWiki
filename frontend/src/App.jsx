@@ -1,5 +1,5 @@
 // 부품들을 실제로 조립하는 파일. PC/모바일에 따라 다른 내비게이션을 보여주고,
-// 어떤 화면(view)을 보여줄지 상태로 관리합니다.
+// react-router-dom의 <Routes>로 어떤 화면을 보여줄지 URL 경로 기준으로 관리합니다.
 //
 // ── 이번 수정사항 중 여기서 처리하는 것 ─────────────────────────────────
 // 1) 첫 진입 시 선호 조사 화면(OnboardingPage — 관심 키워드/직무/연령대)을 대시보드 대신 띄웁니다.
@@ -37,6 +37,7 @@
 // 다크모드 :root 처리 / localStorage 저장은 기존 그대로입니다.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Routes, Route, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import useIsMobile from './hooks/useIsMobile';
 
 import TopBar from './components/common/TopBar';
@@ -65,7 +66,61 @@ import AgentPage from './pages/AgentPage';
 import SettingsPage from './pages/SettingsPage';
 import PrivacyPage from './pages/PrivacyPage';
 
+// entryStep 게이트 — 세션이 없으면(랜딩) 또는 이번 로그인에서 선호조사를 아직 안 봤으면(설문)
+// 아래 실제 앱 라우트(Outlet)로 들어가지 못하게 막고 EntryFlow를 대신 그린다.
+// 라우트 트리 맨 바깥(레이아웃 라우트)에 둬서, 어떤 경로로 진입해도 항상 먼저 걸리게 한다.
+function EntryGate({ entryStep, guestMode, onSurveyComplete, onGuestSkip }) {
+  if (entryStep === 'survey') {
+    return <EntryFlow initialStep="survey" onSurveyComplete={onSurveyComplete} />;
+  }
+  if (entryStep === 'landing' && !guestMode) {
+    return (
+      <EntryFlow
+        initialStep="landing"
+        onSurveyComplete={onSurveyComplete}
+        onGuestSkip={onGuestSkip}
+      />
+    );
+  }
+  return <Outlet />;
+}
+
+// 게스트 게이트 — 게스트 모드는 대시보드(/)만 허용한다. 주소창에 직접 다른 경로를 치고
+// 들어오거나 뒤로/앞으로가기로 넘어와도 여기서 걸러서 대시보드로 돌려보내고, 프로필
+// 드롭다운(로그인 유도)을 연다.
+function GuestGate({ guestMode, onBlocked }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (guestMode && location.pathname !== '/') {
+      onBlocked();
+      navigate('/', { replace: true });
+    }
+  }, [guestMode, location.pathname, navigate, onBlocked]);
+  return <Outlet />;
+}
+
 const INTERESTS_KEY = 'mywiki-interests';
+// 로그아웃 직후 표시(sessionStorage) — "방금 이 탭에서 로그아웃했다가 다시 로그인했다"를
+// 판별하는 용도. 자세한 이유는 App() 안 determineEntryStep 주석 참고.
+const JUST_LOGGED_OUT_KEY = 'mywiki-just-logged-out';
+// "이번 로그인 세션에서 선호도 조사를 이미 봤는지"만 담는 별도 플래그(localStorage).
+// ⚠ INTERESTS_KEY(선호도 데이터 자체)와는 완전히 분리한다 — DB/localStorage에 예전
+//   선호도가 남아있어도 그건 "이번 로그인에서 조사를 또 보여줄지"와 무관한 문제다.
+//   새로고침·페이지 이동에는 살아남아야 해서 sessionStorage가 아니라 localStorage를
+//   쓰고, 대신 "로그아웃 후 재로그인" 시점(JUST_LOGGED_OUT_KEY 감지)에 여기서 직접
+//   지워서 다음 로그인에서 다시 뜨게 만든다.
+const SURVEY_SEEN_KEY = 'mywiki-survey-seen-this-login';
+
+// [시연용 하드코딩] 소속 팀 — 실제 워크스페이스 이름 API(getWorkspace)는 그대로 호출하고
+// 구조도 안 건드린다. 다만 지금 단계에서는 화면에 보여줄 "소속 팀" 표시값을 계정과
+// 무관하게 전부 "5팀" 하나로 고정한다(시연용). 실제 팀 데이터가 준비되면
+// getDemoTeamName 호출부만 ws?.name으로 되돌리면 된다(아래 useEffect 주석 참고) —
+// 이 함수 자체를 지우거나 API 호출을 없애지는 않았다, 반환값만 고정.
+const DEMO_TEAM_NAME = '5팀';
+function getDemoTeamName(_userId) {
+  return DEMO_TEAM_NAME;
+}
 
 function getInitial(key, fallback) {
   try {
@@ -101,8 +156,8 @@ function readPrefs() {
 
 export default function App() {
   const isMobile = useIsMobile();
-  const [view, setView] = useState('dash');
-  const [wikiDocId, setWikiDocId] = useState(null);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -206,17 +261,16 @@ export default function App() {
     };
   }, []);
 
-  // 페이지 전환 시 스크롤 최상단 초기화.
-  // ⚠ 이 앱은 react-router가 아니라 view 상태(navigateTo → setView)로 화면을 바꾸는
-  //   구조라 URL이 안 바뀌고, 그래서 브라우저가 스크롤을 알아서 복원/초기화해주지 않는다
-  //   (react-router라면 history 변화에 맞춰 자동으로 처리됐을 부분).
+  // 경로 전환 시 스크롤 최상단 초기화.
+  // ⚠ createBrowserRouter의 <ScrollRestoration>이 아니라 plain <BrowserRouter>를 쓰고
+  //   있어서 스크롤 복원이 자동으로 되지 않는다 — 직접 처리한다.
   //   실제로 스크롤되는 대상은 .main이 아니라 window다 — .side(사이드바)만 자체
   //   overflow-y:auto를 갖고 있고 .main은 그냥 문서 흐름을 따라 늘어나며 body가 스크롤된다
   //   (globals.css .app/.side/.main 참고). 그래서 컨테이너의 scrollTop이 아니라
   //   window.scrollTo로 초기화한다.
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [view]);
+  }, [location.pathname]);
 
   // notiWiki 토글의 실제 상태 — 지금까지는 하드코딩된 true였는데, 실제 구독이
   // 없으면(권한 거부됐거나 애초에 켠 적 없으면) 거짓말을 하고 있었던 셈이라 실제로 확인한다.
@@ -260,8 +314,11 @@ export default function App() {
     }
     let alive = true;
     getWorkspace()
-      .then((ws) => alive && setWorkspaceName(ws?.name ?? null))
-      .catch(() => alive && setWorkspaceName(null));
+      // [시연용 하드코딩] 실제로는 ws?.name을 써야 한다 — DEMO_TEAM_NAME 설명 참고.
+      // 실백엔드 워크스페이스명이 준비되면 아래 두 줄을 `ws?.name ?? null` /
+      // `null`로 되돌리기만 하면 된다.
+      .then((_ws) => alive && setWorkspaceName(getDemoTeamName(profile?.id)))
+      .catch(() => alive && setWorkspaceName(getDemoTeamName(profile?.id)));
     return () => { alive = false; };
   }, [authed, profile?.id]);
 
@@ -274,26 +331,46 @@ export default function App() {
         setEntryStep('landing');
         return;
       }
-      // 저장된 선호도가 "지금 로그인한 이 계정" 것일 때만 완료된 걸로 인정한다(계정 기준,
-      // isNewAccount는 안 쓴다 — 신규/기존을 따지지 않고 "이 계정이 이 브라우저에서
-      // 선호조사를 끝낸 적이 있는가"만 본다).
-      const existingPrefs = readPrefs();
-      if (existingPrefs !== null && existingPrefs.userId === session.user.id) {
-        setPrefs(existingPrefs);
-        setEntryStep(null);
-        return;
+      // ⚠ 선호도 조사를 다시 보여줄지는 "DB/localStorage에 예전 선호도 데이터가 있는가"가
+      //   아니라 "이번 로그인 세션에서 이미 봤는가"만으로 정한다. 그 둘은 별개 문제다 —
+      //   예전 선호도가 있어도 새로 로그인했으면 다시 보여줘야 하고, 반대로 이번 세션에서
+      //   이미 봤으면(완료했든 건너뛰기로 닫았든) 새로고침·페이지 이동에도 또 뜨면 안 된다.
+      //   그래서 SURVEY_SEEN_KEY 하나만 본다 — 선호도 데이터(INTERESTS_KEY)는 여기서
+      //   전혀 안 건드린다(읽지도, 지우지도 않는다).
+      //
+      // "방금 로그아웃했다가 다시 로그인했다"는 supabase auth 이벤트로는 못 잡는다(OAuth가
+      //   리다이렉트 방식이라 로그인 완료 후 돌아오는 것도 결국 새 페이지 로드이고, 세션을
+      //   localStorage에서 복원할 때도 첫 콜백이 SIGNED_IN으로 오는 경우가 있어서 "재로그인"과
+      //   "그냥 브라우저 껐다 켜서 기존 세션 이어받기"를 구별할 수 없다). 그래서
+      //   handleLogout()이 로그아웃하는 그 순간 sessionStorage에 명시적으로 표시를 남긴다
+      //   (sessionStorage는 리다이렉트를 낀 같은 탭 왕복엔 살아남고, 탭/브라우저를 완전히
+      //   닫으면 사라진다). 그 표시가 있으면 "새로운 로그인 세션이 시작됐다"는 뜻이니
+      //   SURVEY_SEEN_KEY를 지워서 이번 세션엔 아직 안 본 상태로 되돌린다.
+      if (sessionStorage.getItem(JUST_LOGGED_OUT_KEY)) {
+        sessionStorage.removeItem(JUST_LOGGED_OUT_KEY);
+        try {
+          localStorage.removeItem(SURVEY_SEEN_KEY);
+        } catch {
+          // 무시 — 못 지워도 아래 판단은 그대로 진행된다.
+        }
       }
-      // 이 계정으로 이 브라우저에서 선호조사를 끝낸 기록이 없다 — 로그아웃 후 같은 계정으로
-      // 다시 들어왔든, 처음 보는 계정이든, 다른 계정 흔적만 남아있든 전부 선호조사부터
-      // 다시 보여준다. (예전엔 "기존 계정이면 그냥 대시보드로" 예외를 뒀는데, 그 예외 때문에
-      // 로그아웃 후 재로그인해도 선호조사가 다시 안 뜨는 문제가 있었다.)
-      setEntryStep('survey');
+      // 기존 선호도는 화면 초기값 등으로 계속 쓰이므로 세션 판단과 무관하게 로드해둔다.
+      const existingPrefs = readPrefs();
+      if (existingPrefs) setPrefs(existingPrefs);
+
+      let alreadySeen = false;
+      try {
+        alreadySeen = localStorage.getItem(SURVEY_SEEN_KEY) === '1';
+      } catch {
+        alreadySeen = false;
+      }
+      setEntryStep(alreadySeen ? null : 'survey');
     }
     function applySession(session) {
       // 구글 로그인 등 OAuth 콜백은 access_token/refresh_token을 URL 해시에 실어 돌아온다.
       // supabase-js(detectSessionInUrl)가 그 해시를 읽어 세션으로 파싱하긴 하지만, 파싱이
       // 끝난 이 시점까지도 주소창엔 토큰이 그대로 남아 있을 수 있다 — 여기서 확실히 지운다.
-      // 앱은 라우팅에 URL 해시를 쓰지 않으므로(view는 React state) 안전하게 지울 수 있다.
+      // 앱은 라우팅에 URL 해시를 쓰지 않으므로(BrowserRouter는 pathname 기준) 안전하게 지울 수 있다.
       if (window.location.hash) {
         window.history.replaceState(null, '', window.location.pathname);
       }
@@ -369,10 +446,14 @@ export default function App() {
     setPrefs(value);
     try {
       localStorage.setItem(INTERESTS_KEY, JSON.stringify(value));
+      // 이번 로그인 세션에서 선호도 조사를 봤다는 표시. "완료"든 "건너뛰기"든 이 한
+      // 함수로 들어오므로(OnboardingPage 쪽에서 스킵도 빈 값으로 여기를 호출) 여기
+      // 한 곳에만 표시해두면 된다 — 다음 로그아웃→재로그인 전까지는 다시 안 뜬다.
+      localStorage.setItem(SURVEY_SEEN_KEY, '1');
     } catch {
       // 저장 실패해도 이번 세션 동안은 상태로 유지됩니다.
     }
-    setView('dash');
+    navigate('/');
     setEntryStep(null);
   }
 
@@ -402,25 +483,9 @@ export default function App() {
     });
   }
 
-  // 두 번째 인자(payload)는 위키 문서 지정용입니다.
-  // 대시보드·리포트의 "관련 위키" 링크에서 navigateTo('wiki', 'hbm4') 처럼 넘기면
-  // 위키 페이지가 해당 문서를 열고 시작합니다.
-  function navigateTo(key, payload) {
-    if (guestMode && key !== 'dash') {
-      // 게스트는 대시보드 외 메뉴를 못 본다 — 화면 전환 대신 로그인 유도(프로필 드롭다운 오픈).
-      setProfileOpen(true);
-      return;
-    }
-    setView(key);
-    if (key === 'wiki' && payload) setWikiDocId(payload);
-    setDrawerOpen(false);
-    setSheetOpen(false);
-  }
-
   // 수정사항 2) 로고 클릭 = 화면 새로고침
   function handleLogoClick() {
-    setView('dash');
-    setWikiDocId(null);
+    navigate('/');
     setDrawerOpen(false);
     setSheetOpen(false);
     setSettingsOpen(false);
@@ -438,6 +503,38 @@ export default function App() {
     setSettingsOpen(false);
     setProfileOpen((o) => !o);
   }
+
+  // 설정/프로필 드롭다운 바깥 클릭 시 닫기 (+ ESC).
+  // ⚠ 'click'이 아니라 'mousedown'을 듣는다 — 톱니바퀴/프로필 아이콘을 다시 눌러서 닫는
+  //   기존 토글도 그대로 살려둬야 하는데, 'click'으로 들으면 그 클릭 자체가 이 리스너에도
+  //   먼저 잡혀 setOpen(false)를 부르고, 그 다음 TopBar의 onClick이 handleSettingsClick을
+  //   불러 다시 setOpen(true)로 되돌리는 식으로 앞뒤가 꼬인다. mousedown은 click보다 먼저
+  //   일어나므로, 여기서는 아이콘 자체를 누른 경우(.gear/.avatar)는 애초에 안 닫히게
+  //   걸러내고, 그 뒤에 이어지는 click이 TopBar의 토글을 정상적으로 처리하게 둔다.
+  useEffect(() => {
+    if (!settingsOpen && !profileOpen) return;
+    function handleOutside(e) {
+      const target = e.target;
+      if (settingsOpen && !target.closest('.settings-panel') && !target.closest('.gear')) {
+        setSettingsOpen(false);
+      }
+      if (profileOpen && !target.closest('.profile-panel') && !target.closest('.avatar')) {
+        setProfileOpen(false);
+      }
+    }
+    function handleEscape(e) {
+      if (e.key === 'Escape') {
+        setSettingsOpen(false);
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [settingsOpen, profileOpen]);
   // provider: 'google' | 'github' | 'custom:naver' — 브라우저가 OAuth 제공자로 리다이렉트된다.
   // 돌아온 뒤의 상태 반영은 위 onAuthStateChange가 처리한다.
   function handleLogin(provider) {
@@ -447,6 +544,8 @@ export default function App() {
   function handleLogout() {
     setProfileOpen(false);
     setGuestMode(false);
+    // 다음 로그인 때 선호도 조사를 다시 보여주기 위한 표시. determineEntryStep 참고.
+    sessionStorage.setItem(JUST_LOGGED_OUT_KEY, '1');
     signOut();
   }
 
@@ -499,151 +598,148 @@ export default function App() {
     return null;
   }
 
-  // 신규 계정 로그인 직후 — 사람확인/로그인 없이 곧장 선호조사.
-  if (entryStep === 'survey') {
-    return <EntryFlow initialStep="survey" onSurveyComplete={handleOnboardingComplete} />;
-  }
-
-  // 첫 방문(세션 없음, 게스트도 아님) — 랜딩부터. 로그인/회원가입 화면의 "건너뛰기"를 누르면
-  // guestMode로 전환되어 실데이터가 붙은 진짜 메인 대시보드로 곧장 들어간다.
-  if (entryStep === 'landing' && !guestMode) {
-    return (
-      <EntryFlow
-        initialStep="landing"
-        onSurveyComplete={handleOnboardingComplete}
-        onGuestSkip={() => {
-          setGuestMode(true);
-          setEntryStep(null);
-        }}
-      />
-    );
-  }
-
   return (
-    <div className={`app${!isMobile && sideCollapsed ? ' side-collapsed' : ''}`}>
-      <TopBar
-        variant={isMobile ? 'mobile' : 'pc'}
-        onMenuClick={() => setDrawerOpen(true)}
-        onMoreClick={() => setSheetOpen(true)}
-        onSettingsClick={handleSettingsClick}
-        settingsOpen={settingsOpen}
-        onProfileClick={handleProfileClick}
-        profileOpen={profileOpen}
-        authed={authed}
-        avatarInitial={(myProfile?.display_name || profile?.user_metadata?.full_name || profile?.email || '?').charAt(0).toUpperCase()}
-        avatarUrl={myAvatarUrl}
-        onLogoClick={handleLogoClick}
-      />
-
-      {isMobile ? (
-        <Drawer
-          isOpen={drawerOpen}
-          activeKey={view}
-          onNavigate={navigateTo}
-          onClose={() => setDrawerOpen(false)}
-          onLogoClick={handleLogoClick}
-        />
-      ) : (
-        <SideNav
-          activeKey={view}
-          onNavigate={navigateTo}
-          onLogoClick={handleLogoClick}
-          collapsed={sideCollapsed}
-          onToggleCollapsed={() => setSideCollapsed((c) => !c)}
-        />
-      )}
-
-      {/* key를 view까지 포함시켜서 페이지를 바꿀 때마다 .main이 다시 마운트되고,
-          globals.css의 .page-enter 애니메이션(위→아래로 서서히 밝아지며 드러나는 효과)이
-          매번 새로 재생되게 한다 — 토스 앱의 페이지 전환과 비슷한 "화면이 움직이는" 느낌. */}
-      <main className="main page-enter" key={`${view}-${refreshKey}`}>
-        {view === 'dash' && (
-          <DashboardPage
-            onNavigate={navigateTo}
-            interests={prefs?.keywords ?? []}
-            onUpdateInterests={updateInterests}
+    <Routes>
+      {/* entryStep 게이트 — 세션 없음/선호조사 미완료면 EntryFlow가 아래 라우트 대신 그려진다. */}
+      <Route
+        element={
+          <EntryGate
+            entryStep={entryStep}
+            guestMode={guestMode}
+            onSurveyComplete={handleOnboardingComplete}
+            onGuestSkip={() => {
+              setGuestMode(true);
+              setEntryStep(null);
+            }}
           />
-        )}
-        {view === 'report' && <ReportPage onNavigate={navigateTo} />}
-        {view === 'cat' && <CategoryPage />}
-        {view === 'wiki' && <WikiPage docId={wikiDocId} />}
-        {view === 'agent' && <AgentPage profile={profile} myProfile={myProfile} />}
-        {view === 'settings' && (
-          <SettingsPage
-            dark={dark}
-            onToggleDark={setDark}
-            notiReport={notiReport}
-            onToggleNotiReport={setNotiReport}
-            notiWiki={notiWiki}
-            onToggleNotiWiki={handleToggleNotiWiki}
-            profile={profile}
-            myProfile={myProfile}
-            myAvatarUrl={myAvatarUrl}
-            onProfileChange={loadMyProfile}
-            workspaceName={workspaceName}
-            myRole={myRole}
-            onLogout={handleLogout}
-            onDeleteAccount={handleOpenDeleteAccount}
-            onResetInterests={resetOnboarding}
-          />
-        )}
-        {view === 'privacy' && <PrivacyPage onBack={() => navigateTo('dash')} />}
-      </main>
+        }
+      >
+        {/* 레이아웃 라우트 — TopBar/SideNav/Footer 등 앱 셸을 그리고, 실제 화면은 Outlet에 채워진다. */}
+        <Route
+          element={
+            <div className={`app${!isMobile && sideCollapsed ? ' side-collapsed' : ''}`}>
+              <TopBar
+                variant={isMobile ? 'mobile' : 'pc'}
+                onMenuClick={() => setDrawerOpen(true)}
+                onMoreClick={() => setSheetOpen(true)}
+                onSettingsClick={handleSettingsClick}
+                settingsOpen={settingsOpen}
+                onProfileClick={handleProfileClick}
+                profileOpen={profileOpen}
+                authed={authed}
+                avatarInitial={(myProfile?.display_name || profile?.user_metadata?.full_name || profile?.email || '?').charAt(0).toUpperCase()}
+                avatarUrl={myAvatarUrl}
+                onLogoClick={handleLogoClick}
+              />
 
-      <Footer
-        onNavigate={navigateTo}
-        onPwaInstallClick={handlePwaInstallClick}
-        pwaStateLabel={pwaStateLabel}
-      />
+              {isMobile ? (
+                <Drawer
+                  isOpen={drawerOpen}
+                  onClose={() => setDrawerOpen(false)}
+                  onLogoClick={handleLogoClick}
+                />
+              ) : (
+                <SideNav
+                  onLogoClick={handleLogoClick}
+                  collapsed={sideCollapsed}
+                  onToggleCollapsed={() => setSideCollapsed((c) => !c)}
+                />
+              )}
 
-      {isMobile && (
-        <>
-          <BottomNav
-            activeKey={view}
-            onNavigate={navigateTo}
-            onMoreClick={() => setSheetOpen(true)}
-          />
-          <MoreSheet
-            isOpen={sheetOpen}
-            onClose={() => setSheetOpen(false)}
-            onNavigate={navigateTo}
-            onPwaInstallClick={handlePwaInstallClick}
-            pwaStateLabel={pwaStateLabel}
-            onLogoutClick={handleLogout}
-          />
-        </>
-      )}
+              {/* key에 경로+refreshKey를 넣어서 라우트를 옮길 때마다 .main이 다시 마운트되고,
+                  globals.css의 .page-enter 애니메이션(위→아래로 서서히 밝아지며 드러나는 효과)이
+                  매번 새로 재생되게 한다 — 토스 앱의 페이지 전환과 비슷한 "화면이 움직이는" 느낌. */}
+              <main className="main page-enter" key={`${location.pathname}-${refreshKey}`}>
+                <Outlet />
+              </main>
 
-      <SettingsPanel
-        isOpen={settingsOpen}
-        dark={dark}
-        onToggleDark={setDark}
-        notiReport={notiReport}
-        onToggleNotiReport={setNotiReport}
-        notiWiki={notiWiki}
-        onToggleNotiWiki={handleToggleNotiWiki}
-      />
+              <Footer onPwaInstallClick={handlePwaInstallClick} pwaStateLabel={pwaStateLabel} />
 
-      <ProfilePanel
-        isOpen={profileOpen}
-        authed={authed}
-        profile={profile}
-        displayName={myProfile?.display_name}
-        avatarUrl={myAvatarUrl}
-        workspaceName={workspaceName}
-        myRole={myRole}
-        onLogin={handleLogin}
-        onLogout={handleLogout}
-        onDeleteAccount={handleOpenDeleteAccount}
-      />
+              {isMobile && (
+                <>
+                  <BottomNav onMoreClick={() => setSheetOpen(true)} />
+                  <MoreSheet
+                    isOpen={sheetOpen}
+                    onClose={() => setSheetOpen(false)}
+                    onPwaInstallClick={handlePwaInstallClick}
+                    pwaStateLabel={pwaStateLabel}
+                    onLogoutClick={handleLogout}
+                  />
+                </>
+              )}
 
-      <DeleteAccountModal
-        open={deleteOpen}
-        busy={deleting}
-        error={deleteError}
-        onConfirm={handleDeleteAccount}
-        onClose={() => setDeleteOpen(false)}
-      />
-    </div>
+              <SettingsPanel
+                isOpen={settingsOpen}
+                dark={dark}
+                onToggleDark={setDark}
+                notiReport={notiReport}
+                onToggleNotiReport={setNotiReport}
+                notiWiki={notiWiki}
+                onToggleNotiWiki={handleToggleNotiWiki}
+              />
+
+              <ProfilePanel
+                isOpen={profileOpen}
+                authed={authed}
+                profile={profile}
+                displayName={myProfile?.display_name}
+                avatarUrl={myAvatarUrl}
+                workspaceName={workspaceName}
+                myRole={myRole}
+                jobTitle={prefs?.role}
+                onLogin={handleLogin}
+                onLogout={handleLogout}
+                onDeleteAccount={handleOpenDeleteAccount}
+              />
+
+              <DeleteAccountModal
+                open={deleteOpen}
+                busy={deleting}
+                error={deleteError}
+                onConfirm={handleDeleteAccount}
+                onClose={() => setDeleteOpen(false)}
+              />
+            </div>
+          }
+        >
+          {/* 게스트 게이트 — 게스트 모드는 대시보드(index)만 통과, 나머지는 /로 되돌아간다. */}
+          <Route element={<GuestGate guestMode={guestMode} onBlocked={() => setProfileOpen(true)} />}>
+            <Route
+              index
+              element={<DashboardPage interests={prefs?.keywords ?? []} onUpdateInterests={updateInterests} />}
+            />
+            <Route path="report" element={<ReportPage />} />
+            <Route path="category" element={<CategoryPage />} />
+            <Route path="wiki" element={<WikiPage />} />
+            <Route path="wiki/:docId" element={<WikiPage />} />
+            <Route path="agent" element={<AgentPage profile={profile} myProfile={myProfile} />} />
+            <Route
+              path="settings"
+              element={
+                <SettingsPage
+                  dark={dark}
+                  onToggleDark={setDark}
+                  notiReport={notiReport}
+                  onToggleNotiReport={setNotiReport}
+                  notiWiki={notiWiki}
+                  onToggleNotiWiki={handleToggleNotiWiki}
+                  profile={profile}
+                  myProfile={myProfile}
+                  myAvatarUrl={myAvatarUrl}
+                  onProfileChange={loadMyProfile}
+                  workspaceName={workspaceName}
+                  myRole={myRole}
+                  onLogout={handleLogout}
+                  onDeleteAccount={handleOpenDeleteAccount}
+                  onResetInterests={resetOnboarding}
+                />
+              }
+            />
+            <Route path="privacy" element={<PrivacyPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Route>
+      </Route>
+    </Routes>
   );
 }

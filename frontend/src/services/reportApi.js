@@ -2,10 +2,13 @@ import { extractCatalogKeywords } from '../data/wikiKeywords';
 import {
   downloadDailyReport as downloadDailyReportApi,
   fetchDailyReport as fetchDailyReportApi,
+  fetchDailyReportHistory as fetchDailyReportHistoryApi,
   generateDailyReport as generateDailyReportApi,
 } from '../api/report';
 
+const HISTORY_ARCHIVE_LIMIT = 30;
 const reportCache = new Map();
+const reportArchiveCache = new Map();
 const reportGenerationCache = new Map();
 
 const LEVEL_ORDER = { low: 1, mid: 2, high: 3 };
@@ -117,6 +120,44 @@ function normalizeArchiveItem(report, issues, todayDate) {
   };
 }
 
+function normalizeHistoryArchiveItem(item, todayDate) {
+  const date = item.date || '';
+
+  return {
+    reportId: item.report_id,
+    date,
+    label: formatDateLabel(date),
+    day: date === todayDate ? '\uC624\uB298' : '',
+    title: item.title || '\uC77C\uC77C \uC0B0\uC5C5 \uB3D9\uD5A5 \uBCF4\uACE0\uC11C',
+    summary: '',
+    issues: Number(item.issue_count ?? 0),
+    wiki: null,
+    level: null,
+    old: false,
+    version: Number(item.version ?? 1),
+    status: item.status || 'completed',
+    completedAt: item.completed_at || null,
+    hasPdf: Boolean(item.has_pdf),
+    hasDocx: Boolean(item.has_docx),
+    hasPptx: Boolean(item.has_pptx),
+  };
+}
+
+async function loadReportArchive(limit = HISTORY_ARCHIVE_LIMIT) {
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || HISTORY_ARCHIVE_LIMIT));
+  if (!reportArchiveCache.has(safeLimit)) {
+    reportArchiveCache.set(
+      safeLimit,
+      fetchDailyReportHistoryApi(safeLimit).catch((error) => {
+        reportArchiveCache.delete(safeLimit);
+        throw error;
+      }),
+    );
+  }
+
+  return reportArchiveCache.get(safeLimit);
+}
+
 function buildOverview(issues) {
   if (!issues.length) {
     return '아직 생성된 리포트 본문이 없습니다.';
@@ -158,8 +199,9 @@ function buildPendingReportView(date = getTodayKSTDate()) {
     },
     archive: [archiveItem],
     today: {
-      label: `${label} - 리포트 생성 대기`,
+      label: `${label} - ??? ?? ??`,
       date,
+      archiveItem,
     },
     detail: {
       date,
@@ -238,8 +280,9 @@ async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = f
     },
     archive: [archiveItem],
     today: {
-      label: `${formatDateLabel(report.date)} - 일일 동향 보고서 - 이슈 ${issues.length}건`,
+      label: `${formatDateLabel(report.date)} - ?? ?? ??? - ?? ${issues.length}?`,
       date: report.date,
+      archiveItem,
     },
     detail: {
       date: report.date,
@@ -257,7 +300,7 @@ async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = f
 }
 
 export async function fetchReportSummary(date) {
-  const view = await buildReportView(date, { generateOnMissing: true });
+  const view = await buildReportView(date, { generateOnMissing: false });
   return view.summary;
 }
 
@@ -266,13 +309,16 @@ export async function fetchReportIssues(date) {
   return view.issues;
 }
 
-export async function fetchReportArchive(date) {
-  const view = await buildReportView(date, { generateOnMissing: true });
-  return view.archive;
+export async function fetchReportArchive(_date, limit = HISTORY_ARCHIVE_LIMIT) {
+  const history = await loadReportArchive(limit);
+  const todayDate = getTodayKSTDate();
+  return (Array.isArray(history) ? history : []).map((item) =>
+    normalizeHistoryArchiveItem(item, todayDate),
+  );
 }
 
 export async function fetchTodayReport(date) {
-  const view = await buildReportView(date, { generateOnMissing: true });
+  const view = await buildReportView(date, { generateOnMissing: false });
   return view.today;
 }
 

@@ -8,17 +8,15 @@
 // 반응형으로 노출됩니다(같은 App.jsx 상태 deferredPrompt/pwaStateLabel/handlePwaInstallClick을
 // 그대로 재사용 — 로직 중복 없음).
 //
-// ⚠ "개인정보 처리방침"은 실제 서버 라우팅이 없는 SPA라 <a href="/privacy">로 걸면 새로고침 시
-//   404가 난다. 그래서 App.jsx의 view 상태(navigateTo('privacy'))로 여닫는 내부 링크로 만들고,
-//   PrivacyPage.jsx를 최소 내용으로 새로 만들었다.
+import { Link } from 'react-router-dom';
 
-export default function Footer({ onNavigate, onPwaInstallClick, pwaStateLabel = '홈 화면에 추가' }) {
+export default function Footer({ onPwaInstallClick, pwaStateLabel = '홈 화면에 추가' }) {
   return (
     <footer className="site-footer">
       <span className="ft-brand">myWiki</span>
-      <button type="button" className="ft-link" onClick={() => onNavigate?.('privacy')}>
+      <Link to="/privacy" className="ft-link">
         개인정보 처리방침
-      </button>
+      </Link>
       <button type="button" className="ft-pwa" onClick={onPwaInstallClick}>
         {pwaStateLabel}
       </button>

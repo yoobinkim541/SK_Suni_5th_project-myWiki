@@ -1,6 +1,7 @@
 // 대시보드 전용 — "지식 축적화" 네트워크 그래프
 //
-// 대시보드에 들어오자마자(파이프라인 바 바로 아래) 바로 보이는 장식용 시각화입니다.
+// 대시보드에 들어오자마자(헤더 바로 아래, 파이프라인 상태 패널 옆) 바로 보이는 장식용
+// 시각화입니다.
 // 실데이터를 그리는 컴포넌트가 아니라, myWiki가 6개 카테고리·수백 개 키워드를 계속
 // 축적하고 있다는 걸 보여주는 정적 다이어그램입니다 — 그래서 데이터는 mockOnboarding.js의
 // INTEREST_KEYWORD_GROUPS(선호조사 키워드 사전)를 그대로 재사용합니다. 카테고리 6개 순서가
@@ -24,7 +25,10 @@ import { INTEREST_KEYWORD_GROUPS } from '../../data/mockOnboarding';
 import myWikiLogoFull from '../../assets/mywiki-logo-full.png';
 
 const CX = 500;
-const CY = 390; // viewBox 높이(780)의 정확히 절반
+const CY = 340; // 파이프라인 상태가 오른쪽 패널(.hero-pipe)로 빠지면서 그래프 위 가로 바가
+// 없어졌고, 그래프 좌우 폭도 사이드 패널만큼 줄었다 — 세로로 남는 여유를 살려 완전한
+// 원형(가로=세로 반지름, Y축 눌림 없음)으로 되돌렸다. 위/아래로 벌어진 만큼은 아래 viewBox를
+// 넉넉히 잡아서 흡수한다(CY는 그대로 중심).
 const HUB_R = 110;
 const CATEGORY_R = 218; // 중심에서 카테고리 노드까지 거리
 const CATEGORY_NODE_R = 44;
@@ -36,10 +40,6 @@ const LEAF_R_BASE = 320; // 중심에서 리프(키워드 점)까지 기본 거�
 // 되고, 끝까지 둥글게 모일 필요는 없다).
 // 가지 수를 13개에서 11개로 줄여(-42/+62 양 끝단 제거) 더 정돈되어 보이게 함.
 const LEAF_ANGLES = [-32, -22, -12, -3, 6, 15, 25, 35, 45, -52, 53];
-// ⚠ 리프 각도는 카테고리 각도(0/60/120/180/240/300)에 그대로 더해지기 때문에, 어떤 카테고리는
-// 특정 리프의 최종 각도가 0°/180°(정확히 위/아래)에 가까워진다 — 그 방향은 viewBox 세로
-// 여백이 가장 좁아서(중심에서 위/아래 끝까지 390px), 지터를 너무 키우면 밖으로 잘린다.
-// 그래서 최대치를 370(기본 반지름+지터 합)선에서 묶었다.
 const LEAF_JITTER = [22, 40, 30, 14, 48, 24, 34, 32, 44, 50, 18];
 // 라벨을 붙일 리프 인덱스 — 10개 중 5개(퍼짐 양 끝은 피해서 텍스트가 잘리지 않게 함).
 const LABELED_LEAF_INDEXES = new Set([1, 3, 4, 6, 8]);
@@ -75,13 +75,20 @@ export default function KnowledgeGraph() {
 
   return (
     <div
-      className={`kg-wrap relative mx-auto w-full max-w-full overflow-hidden rounded-2xl px-1 pt-1 pb-2 sm:px-4 sm:pt-2 md:px-6${
+      className={`kg-wrap relative mx-auto w-full max-w-full rounded-2xl px-1 pt-0 pb-2 sm:px-4 sm:pt-0 md:px-6${
         inView ? ' in' : ''
       }`}
     >
+      {/* 완전한 원형이라 리프가 y≈-26(최상단, 제품·기술)부터 y≈706(최하단, 공급망·생산)까지
+          뻗는다 — viewBox를 0 -34 1000 769로 잡아서 위쪽은 안티앨리어싱만 안 잘릴 최소 여유
+          (약 2px)만, 아래쪽은 29px 여유를 두고 담는다(노드 좌표는 안 건드리고 보이는 창만
+          세로로 늘림 — 위쪽을 최대한 바짝 잘라서 그래프가 대시보드 헤더 바로 아래에서
+          시작하게 하고, 아래쪽은 라벨이 안 잘리게 여유를 그대로 둠). 실제 화면 높이는
+          .kg-svg의 max-height(globals.css, calc(100vh - …))가 다시 줄여서 항상 한 화면 안에
+          들어오게 한다 — 원 비율은 유지된 채로 축소되므로 찌그러지지 않는다. */}
       <svg
-        className="kg-svg block h-auto w-full max-h-[420px] sm:max-h-[480px] lg:max-h-[560px]"
-        viewBox="0 0 1000 780"
+        className="kg-svg block h-auto w-full"
+        viewBox="0 -34 1000 769"
         role="img"
         aria-label="myWiki 지식 축적 네트워크 — 6개 카테고리와 키워드"
       >
@@ -125,6 +132,10 @@ export default function KnowledgeGraph() {
               className="kg-leaf"
               style={{
                 transitionDelay: `${480 + li * 35}ms`,
+                // 노드가 리프(점)+라벨을 함께 담고 있어서 transform-box:fill-box 기본값을 쓰면
+                // 텍스트 라벨 쪽으로 무게중심이 쏠려 scale/pulse 때 점이 제자리에서 벗어나
+                // "좌우로 움직이는" 것처럼 보인다. 점의 실제 좌표로 원점을 못박아 고정한다.
+                transformOrigin: `${leaf.x}px ${leaf.y}px`,
                 '--kg-float-delay': `${leaf.floatDelay * 0.35}s`,
               }}
             >
@@ -144,7 +155,20 @@ export default function KnowledgeGraph() {
         )}
         {/* 카테고리 노드 — 원, 단색 매트 채움(그라디언트·그림자 없음) */}
         {CATEGORIES.map((c, i) => (
-          <g key={c.name} className="kg-cat" style={{ transitionDelay: `${180 + i * 70}ms` }}>
+          <g
+            key={c.name}
+            className="kg-cat"
+            style={{
+              transitionDelay: `${180 + i * 70}ms`,
+              // 원 + 텍스트를 함께 담은 그룹이라 fill-box 기본 중심은 원의 실제 중심과 다르다
+              // (라벨이 위/아래로 치우쳐 있어서). 펄스가 위치를 흔드는 것처럼 보이지 않도록
+              // 원의 진짜 좌표를 transform-origin으로 못박는다.
+              transformOrigin: `${c.x}px ${c.y}px`,
+              // 진입 스케일-인 트랜지션(.5s)이 다 끝난 뒤에야 펄스가 시작되게 딜레이를 겹치지
+              // 않게 잡는다 — 그래야 애니메이션이 진입 효과를 도중에 가로채 뚝 끊기지 않는다.
+              animationDelay: `${700 + i * 220}ms`,
+            }}
+          >
             <circle cx={c.x} cy={c.y} r={CATEGORY_NODE_R} className="kg-cat-circle" />
             {c.nameLines.length > 1 ? (
               <>
@@ -170,7 +194,7 @@ export default function KnowledgeGraph() {
         </g>
       </svg>
 
-      {/* 허브 로고 오버레이 — viewBox 정중앙(CX=500/1000, CY=390/780 → 50%/50%)에 항상 겹친다.
+      {/* 허브 로고 오버레이 — viewBox 정중앙(CX=500/1000, CY=340/680 → 50%/50%)에 항상 겹친다.
           로고는 SVG 안에 직접 넣는 것보다 <img>로 얹는 쪽이 다크모드 전환에 더 간단하다. */}
       <div className="kg-hub-overlay pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-1">
         <img

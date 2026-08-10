@@ -9,6 +9,7 @@
 //   (3) 리포트 히스토리 2열     ← ReportSection (페이지 넘김)
 import Spinner from '../components/common/Spinner';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   fetchReportSummary,
   fetchReportArchive,
@@ -16,9 +17,11 @@ import {
 } from '../services/reportApi';
 import ReportSection from '../components/report/ReportSection';
 
-export default function ReportPage({ onNavigate }) {
+export default function ReportPage() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [historyError, setHistoryError] = useState('');
   const [summary, setSummary] = useState(null);
   const [archive, setArchive] = useState([]);
   const [today, setToday] = useState(null);
@@ -27,17 +30,26 @@ export default function ReportPage({ onNavigate }) {
     let alive = true;
     setLoading(true);
     setError('');
+    setHistoryError('');
 
     Promise.all([
       fetchReportSummary(),
-      fetchReportArchive(),
       fetchTodayReport(),
+      fetchReportArchive().then(
+        (items) => ({ ok: true, items }),
+        (err) => ({ ok: false, err }),
+      ),
     ])
-      .then(([s, a, t]) => {
+      .then(([s, t, historyResult]) => {
         if (!alive) return;
         setSummary(s);
-        setArchive(a);
         setToday(t);
+        if (historyResult.ok) {
+          setArchive(historyResult.items);
+        } else {
+          setArchive([]);
+          setHistoryError(historyResult.err?.message || '\uB9AC\uD3EC\uD2B8 \uD788\uC2A4\uD1A0\uB9AC\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.');
+        }
       })
       .catch((err) => {
         if (!alive) return;
@@ -72,7 +84,7 @@ export default function ReportPage({ onNavigate }) {
 
   return (
     <section className="view on" id="v-report">
-      <div className="ph">
+      <div className="ph sr-1">
         <h2>일일 동향 보고서</h2>
         <span className="dt">{summary.date}</span>
         <span className="st">{summary.statusLabel || <>수집 파이프라인 <b>정상</b></>}</span>
@@ -84,7 +96,8 @@ export default function ReportPage({ onNavigate }) {
         archive={archive}
         today={today}
         summary={summary}
-        onSelectWiki={(wikiId) => onNavigate?.('wiki', wikiId)}
+        historyError={historyError}
+        onSelectWiki={(wikiId) => navigate(`/wiki/${wikiId}`)}
       />
     </section>
   );

@@ -609,13 +609,13 @@ export default function AgentPage({ profile, myProfile }) {
 
   return (
     <section className="view on" id="v-agent">
-      <div className="ph">
+      <div className="ph sr-1">
         <h2>에이전트</h2>
         <span className="dt">축적된 위키 문서만 근거로 사용</span>
         <span className="st">참조 범위 <b>위키 {wikiDocCount ?? '—'}문서</b></span>
       </div>
 
-      <div className="sp-seg ag-seg" role="tablist" aria-label="에이전트 구분">
+      <div className="sp-seg ag-seg sr-2" role="tablist" aria-label="에이전트 구분">
         {PANE_KEYS.map((key) => (
           <button
             key={key}
@@ -629,7 +629,10 @@ export default function AgentPage({ profile, myProfile }) {
         ))}
       </div>
 
-      <div className={`chat ag-pane ${pane.key} on`}>
+      {/* 대화 목록/컨텍스트(입력 영역 포함)를 감싸는 바깥 래퍼만 sr-3로 살짝 늦게
+          페이드인시킨다 — 실제 답변 생성 시 스트리밍/타이핑 효과 같은 게 있다면 그건
+          이 컴포넌트 안쪽 상태 변화로 트리거되는 별개 애니메이션이라 안 건드린다. */}
+      <div className={`chat ag-pane ${pane.key} on sr-3`}>
         <div>
           {/* 컨텍스트 배너 — 팀은 참여 멤버, 개인은 "비공개" 배지.
               "내 에이전트" 제목은 MOCK_AGENT_PANES.mine.ctx.title(하드코딩된 이름)

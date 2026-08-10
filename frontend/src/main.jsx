@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/globals.css';
 // ⚠ CSS 안의 다크모드 규칙이 `:root[data-theme="dark"]{...}` 형태라서(문서 <html> 기준),
@@ -30,7 +31,7 @@ if (import.meta.env.DEV && devPreview === 'onboarding') {
   );
 } else if (import.meta.env.DEV && devPreview === 'dashboard') {
   const { default: DashboardPage } = await import('./pages/DashboardPage');
-  DevEntry = () => <DashboardPage interests={[]} onNavigate={() => {}} />;
+  DevEntry = () => <DashboardPage interests={[]} />;
 } else if (import.meta.env.DEV && devPreview === 'agent') {
   // 실 로그인/백엔드 없이 AgentPage만 확인 — myProfile.display_name을 profile의
   // user_metadata.full_name과 일부러 다르게 줘서, 배너/작성자 표시가 어느 쪽을
@@ -46,6 +47,8 @@ if (import.meta.env.DEV && devPreview === 'onboarding') {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <DevEntry />
+    <BrowserRouter>
+      <DevEntry />
+    </BrowserRouter>
   </React.StrictMode>
 );
