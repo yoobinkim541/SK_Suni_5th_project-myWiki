@@ -17,6 +17,7 @@ from ..report.selector import select_report_candidates
 from ..report.wiki_context import enrich_issue_groups
 from .generation_models import (
     IssuePageRewriteResult,
+    PageReliabilityJudgment,
     TopicPageCandidate,
     TopLevelTopicPage,
     WikiDraftGenerationResult,
@@ -167,12 +168,15 @@ def _rewrite_issue_page_content(
     evidence_texts: dict[str, str] | None = None,
     *,
     llm_client: WikiTopicLLMClient | None = None,
-) -> ReportSectionDraft:
-    """이슈 페이지 본문 4개 필드(현재상황/핵심사실/시사점/주시할지점)를 LLM으로 다듬는다.
+) -> tuple[ReportSectionDraft, PageReliabilityJudgment | None]:
+    """이슈 페이지 본문 4개 필드(현재상황/핵심사실/시사점/주시할지점)를 LLM으로 다듬고,
+    페이지 신뢰도 판정도 같이 받는다.
 
-    실패(LLM 오류·잘못된 JSON·빈 필드)하면 원본 section을 그대로 반환한다 — 이슈 페이지는
-    지금까지 LLM 없이도 항상 생성에 성공했으므로, 이 재작성 단계가 그 신뢰성을 깨서는 안 된다.
-    "## 출처" 섹션(_build_issue_page_sources)은 여기서 건드리는 4개 필드와 무관해 영향받지 않는다.
+    실패(LLM 오류·잘못된 JSON·빈 필드)하면 원본 section을 그대로 반환하고 판정은 None이다
+    — 이슈 페이지는 지금까지 LLM 없이도 항상 생성에 성공했으므로, 이 재작성 단계가 그
+    신뢰성을 깨서는 안 된다. 판정이 None이면 호출부(_generate_issue_page)가 '보통'으로
+    간주하고 발행을 막지 않는다.
+    "## 출처" 섹션(_build_issue_page_sources)은 여기서 건드리는 필드와 무관해 영향받지 않는다.
     """
     settings = get_openrouter_settings()
     user_prompt = build_issue_page_rewrite_user_prompt(section, evidence_texts)
@@ -192,14 +196,15 @@ def _rewrite_issue_page_content(
             "issue_page_rewrite_llm_fallback",
             extra={"issue_key": section.issue_key, "error": str(exc)},
         )
-        return section
+        return section, None
 
-    return section.model_copy(update={
+    rewritten = section.model_copy(update={
         "current_summary": result.current_summary,
         "key_facts": result.key_facts,
         "implications": result.implications,
         "watch_points": result.watch_points,
     })
+    return rewritten, result.reliability
 
 
 def _generate_issue_page(
@@ -212,8 +217,15 @@ def _generate_issue_page(
     citation_attribution: dict[str, ReportCandidate] | None = None,
     supabase: Client | None = None,
     llm_client: WikiTopicLLMClient | None = None,
-) -> tuple[str, str]:
-    rewritten_section = _rewrite_issue_page_content(section, evidence_texts, llm_client=llm_client)
+) -> tuple[str | None, str | None]:
+    rewritten_section, reliability = _rewrite_issue_page_content(section, evidence_texts, llm_client=llm_client)
+
+    if reliability is not None and reliability.reliability_level == ReliabilityLevel.LOW:
+        logger.info(
+            "wiki_issue_page_skipped_low_reliability",
+            extra={"issue_key": section.issue_key, "reliability_score": reliability.reliability_score},
+        )
+        return None, None
 
     matched = find_matching_issue_page(
         workspace_id,
@@ -255,6 +267,9 @@ def _generate_issue_page(
         ),
         created_by=requested_by,
         generated_by="llm",
+        page_reliability_score=reliability.reliability_score if reliability is not None else None,
+        page_reliability_level=reliability.reliability_level.value if reliability is not None else None,
+        page_reliability_detail=reliability.model_dump() if reliability is not None else None,
     )
     version_id = create_wiki_version(draft, supabase=supabase)
     record_wiki_validation(version_id, "passed", None, supabase=supabase)
@@ -535,8 +550,8 @@ def generate_wiki_drafts_for_sections(
         results.append(
             WikiDraftGenerationResult(
                 issue_key=section.issue_key,
-                issue_page_id=issue_page_id,
-                issue_version_id=issue_version_id,
+                issue_page_id=issue_page_id or "",
+                issue_version_id=issue_version_id or "",
                 topic_action=topic_action,
                 topic_page_id=topic_page_id,
                 topic_version_id=topic_version_id,

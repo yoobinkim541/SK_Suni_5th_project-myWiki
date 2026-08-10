@@ -110,6 +110,55 @@ def test_generate_issue_page_creates_and_auto_publishes(monkeypatch):
     assert create_call[3] == ["doc-1"]
 
 
+def test_generate_issue_page_skips_when_reliability_is_low(monkeypatch):
+    calls = []
+
+    def fake_llm(system_prompt, user_prompt, model):
+        return json.dumps({
+            "current_summary": "요약", "key_facts": ["사실"],
+            "implications": ["시사점"], "watch_points": ["지점"],
+            "reliability": _RELIABILITY_LOW,
+        })
+
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append("upsert") or "should-not-happen")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: calls.append("create") or "should-not-happen")
+
+    page_id, version_id = generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None, llm_client=fake_llm,
+    )
+
+    assert page_id is None
+    assert version_id is None
+    assert calls == []  # upsert_wiki_page/create_wiki_version 둘 다 호출되면 안 된다
+
+
+def test_generate_issue_page_publishes_when_reliability_llm_call_fails(monkeypatch):
+    """이슈 페이지는 'LLM 없이도 항상 성공해야 한다'는 기존 원칙이 있다 — 신뢰도
+    판정 LLM 호출 자체가 실패하면(기존 폴백) '보통'으로 간주하고 그대로 발행해야
+    한다(목표 4 회귀 방지)."""
+    calls = []
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "not json")
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-1")
+    monkeypatch.setattr(
+        generation, "create_wiki_version",
+        lambda draft, **k: calls.append(("create", draft.page_reliability_level)) or "version-1",
+    )
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    page_id, version_id = generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None,
+    )
+
+    assert page_id == "page-1"
+    assert version_id == "version-1"
+    create_call = next(call for call in calls if call[0] == "create")
+    assert create_call[1] is None  # 판정을 못 받았으므로 page_reliability_level은 기록하지 않는다
+
+
 def test_generate_issue_page_defaults_parent_to_none(monkeypatch):
     calls = []
     monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "{}")
@@ -220,23 +269,27 @@ def test_rewrite_issue_page_content_uses_llm_result():
             "key_facts": ["다듬어진 사실"],
             "implications": ["다듬어진 시사점"],
             "watch_points": ["다듬어진 지점"],
+            "reliability": _RELIABILITY_MEDIUM,
         })
 
-    rewritten = generation._rewrite_issue_page_content(_section(), llm_client=fake_llm)
+    rewritten, judgment = generation._rewrite_issue_page_content(_section(), llm_client=fake_llm)
 
     assert rewritten.current_summary == "다듬어진 요약"
     assert rewritten.key_facts == ["다듬어진 사실"]
     assert rewritten.implications == ["다듬어진 시사점"]
     assert rewritten.watch_points == ["다듬어진 지점"]
     assert rewritten.title == _section().title  # 제목은 재작성 대상이 아니다
+    assert judgment is not None
+    assert judgment.reliability_level.value == "보통"
 
 
 def test_rewrite_issue_page_content_falls_back_on_invalid_json(monkeypatch):
     monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "not json")
 
-    rewritten = generation._rewrite_issue_page_content(_section())
+    rewritten, judgment = generation._rewrite_issue_page_content(_section())
 
     assert rewritten == _section()
+    assert judgment is None
 
 
 def test_rewrite_issue_page_content_falls_back_on_empty_fields(monkeypatch):
@@ -247,9 +300,10 @@ def test_rewrite_issue_page_content_falls_back_on_empty_fields(monkeypatch):
         ),
     )
 
-    rewritten = generation._rewrite_issue_page_content(_section())
+    rewritten, judgment = generation._rewrite_issue_page_content(_section())
 
     assert rewritten == _section()
+    assert judgment is None
 
 
 def test_rewrite_issue_page_content_falls_back_on_llm_exception(monkeypatch):
@@ -258,9 +312,10 @@ def test_rewrite_issue_page_content_falls_back_on_llm_exception(monkeypatch):
 
     monkeypatch.setattr(generation, "create_json_completion", exploding_completion)
 
-    rewritten = generation._rewrite_issue_page_content(_section())
+    rewritten, judgment = generation._rewrite_issue_page_content(_section())
 
     assert rewritten == _section()
+    assert judgment is None
 
 
 # ---------------------------------------------------------------------------
@@ -1440,6 +1495,29 @@ def test_generate_wiki_drafts_for_sections_sends_one_notification_for_batch(monk
     )
 
     assert calls == [("ws-1", 2)]
+
+
+def test_generate_wiki_drafts_for_sections_handles_issue_page_skip(monkeypatch):
+    def fake_generate_topic_page(section, wiki_contexts, **kwargs):
+        return "skip", None, None
+
+    def fake_generate_issue_page(section, **kwargs):
+        return None, None  # 신뢰도 낮음으로 스킵된 경우
+
+    monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: pytest.fail("호출되면 안 됨"))
+
+    results = generation.generate_wiki_drafts_for_sections(
+        [_section("issue-low-reliability")],
+        [_enriched_group("issue-low-reliability", candidate_summary="근거")],
+        workspace_id="ws-1",
+    )
+
+    assert len(results) == 1
+    assert results[0].issue_page_id == ""
+    assert results[0].issue_version_id == ""
+    assert results[0].error_message is None  # 실패가 아니라 정상 스킵이므로 에러 메시지 없음
 
 
 def test_generate_wiki_drafts_for_sections_skips_notification_when_nothing_published(monkeypatch):
