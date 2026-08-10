@@ -21,6 +21,7 @@
 
 import { Children, cloneElement, isValidElement } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import CitationTag from '../wiki/CitationTag';
 
 const CITATION_RE = /\[(\d+)\]/g;
@@ -152,7 +153,7 @@ export default function ChatMessage({ message, flag, flagPriv = false, onAction,
           (message.paragraphs || []).map((parts, pi) =>
             parts.length === 1 && typeof parts[0] === 'string' ? (
               <div className="md" key={pi}>
-                <ReactMarkdown components={citationComponents(message.cites || [])}>{parts[0]}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={citationComponents(message.cites || [])}>{parts[0]}</ReactMarkdown>
               </div>
             ) : (
               <p key={pi}>

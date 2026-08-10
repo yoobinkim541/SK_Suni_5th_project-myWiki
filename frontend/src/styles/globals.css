@@ -470,6 +470,10 @@ svg text{font-family:inherit}
 .doc .md ul,.doc .md ol{margin:0 0 10px 20px;color:var(--ink-2);font-size:13.5px;line-height:1.85}
 .doc .md strong{color:var(--ink);font-weight:700}
 .doc .md hr{border:none;border-top:1px solid var(--hair);margin:16px 0}
+.doc .md table{display:block;overflow-x:auto;width:100%;border-collapse:collapse;
+  margin:4px 0 10px;font-size:13px}
+.doc .md th,.doc .md td{border:1px solid var(--hair);padding:7px 12px;text-align:left;color:var(--ink-2)}
+.doc .md th{font-weight:700;color:var(--ink);background:var(--hair-3);white-space:nowrap}
 .doc .md a{color:var(--green);text-decoration:underline}
 .fn{font-size:9px;font-weight:700;color:var(--green);vertical-align:super;margin-left:2px}
 .tl .i{display:grid;grid-template-columns:64px 1fr;gap:16px;padding:15px 0;
@@ -508,6 +512,10 @@ svg text{font-family:inherit}
 .turn.ai .md strong{font-weight:700}
 .turn.ai .md code{background:var(--hair-3);padding:1px 5px;border-radius:4px;font-size:12.5px}
 .turn.ai .md a{color:var(--green);text-decoration:underline}
+.turn.ai .md table{display:block;overflow-x:auto;width:100%;border-collapse:collapse;
+  margin:2px 0 11px;font-size:12.5px}
+.turn.ai .md th,.turn.ai .md td{border:1px solid var(--hair);padding:6px 10px;text-align:left}
+.turn.ai .md th{font-weight:700;background:var(--hair-3);white-space:nowrap}
 .cites{display:flex;gap:7px;flex-wrap:wrap;margin-top:15px;padding-top:13px;
   border-top:1px solid var(--hair-3)}
 .cite{display:inline-flex;align-items:center;gap:7px;font-size:10.5px;font-weight:500;
@@ -746,6 +754,10 @@ svg text{font-family:inherit}
    12px/400으로 통일하고, 흐린 회색(--muted/--faint) 대신 검정(--ink)으로 바꿨다. */
 .set-row .tx .ds{font-size:12px;font-weight:400;color:var(--ink);margin-top:2px;line-height:1.5}
 .set-row .vl{font-size:12px;font-weight:500;color:var(--ink)}
+.set-row .vl table{display:block;overflow-x:auto;width:100%;border-collapse:collapse;
+  margin:2px 0;font-size:12px}
+.set-row .vl th,.set-row .vl td{border:1px solid var(--hair);padding:5px 9px;text-align:left}
+.set-row .vl th{font-weight:700;background:var(--hair-3);white-space:nowrap}
 .set-row .sp-seg{flex:none}
 .set-ver{margin-top:24px;font-size:10.5px;font-weight:300;color:var(--ink)}
 

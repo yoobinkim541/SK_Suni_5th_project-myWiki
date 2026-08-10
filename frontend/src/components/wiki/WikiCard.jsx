@@ -17,6 +17,7 @@
 
 import { Children, cloneElement, isValidElement } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import CitationTag from './CitationTag';
 import WikiKeywordBar from './WikiKeywordBar';
 import { WIKI_KEYWORD_LINKS, getWikiKeywordList } from '../../data/mockWiki';
@@ -127,7 +128,7 @@ export default function WikiCard({ doc, onKeyword, onKeywordDocs, catalog, linkW
           <div className="zone">{zone.title}</div>
           {zone.markdown ? (
             <div className="md">
-              <ReactMarkdown components={buildCitationComponents(doc.sources)}>{zone.markdown}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={buildCitationComponents(doc.sources)}>{zone.markdown}</ReactMarkdown>
             </div>
           ) : (
             zone.paragraphs.map((parts, pi) => (
