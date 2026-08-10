@@ -58,6 +58,9 @@ class WikiDraftInput:
     generator_model: Optional[str] = None
     generator_prompt_version: Optional[str] = None
     generation_run_id: Optional[str] = None
+    page_reliability_score: Optional[int] = None
+    page_reliability_level: Optional[str] = None
+    page_reliability_detail: Optional[dict] = None
 
 
 @dataclass(frozen=True)
