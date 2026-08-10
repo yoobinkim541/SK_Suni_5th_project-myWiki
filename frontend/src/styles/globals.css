@@ -2019,6 +2019,31 @@ a.fn:hover{text-decoration:underline}
 }
 .page-enter{animation:page-reveal .5s cubic-bezier(.22,.61,.36,1) both}
 
+/* ---------- 페이지 내부 영역 Soft Fade + Staggered Reveal(.sr-1~.sr-4) ----------
+   .page-enter(<main>, 위 블록)이 페이지 전체를 위→아래로 리빌하는 "바깥" 애니메이션이라면,
+   이건 그 안에서 주요 영역 3~4개가 아주 짧은 시간차로 각자 선명해지는 "안쪽" 애니메이션이다.
+   서로 다른 엘리먼트(.page-enter는 <main>, .sr-*는 그 자식 섹션들)에 걸리므로 같은
+   transform/opacity를 다시 건드려도 서로 값을 지우거나 끊지 않는다 — 그냥 겹쳐서 보인다.
+   기존에 컴포넌트 자체가 들고 있는 애니메이션(지식 축적화 그래프의 kg-wrap.in, 원그래프
+   조각 진입, 뉴스 카드 스크롤 리빌 등)은 전혀 안 건드린다 — 그것들은 각자 다른 하위
+   엘리먼트/다른 트리거(마운트 후 다음 틱, IntersectionObserver)로 독립적으로 돈다.
+   opacity+translateY만 쓰고 blur는 뺐다 — filter는 지정값이 있으면(설령 blur(0)이라도)
+   조상 엘리먼트가 그 안의 position:fixed 자손의 기준점이 돼버리는 문제가 있다(이 파일의
+   .page-enter가 filter:brightness를 쓰는 것도 같은 부작용이 있는 걸 이미 알고 있지만 기존
+   동작이라 안 건드린다 — 여기서 새로 넣는 것까지 그 문제를 늘릴 필요는 없다). */
+@keyframes soft-reveal{
+  from{opacity:0;transform:translateY(6px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.sr-1,.sr-2,.sr-3,.sr-4{animation:soft-reveal .45s var(--ease) both}
+.sr-1{animation-delay:0s}
+.sr-2{animation-delay:.1s}
+.sr-3{animation-delay:.2s}
+.sr-4{animation-delay:.3s}
+@media (prefers-reduced-motion: reduce){
+  .sr-1,.sr-2,.sr-3,.sr-4{animation:none}
+}
+
 /* ---------- 대시보드 로딩 스켈레톤(.dash-skeleton) — "불러오는 중…" 텍스트 대신
    실루엣 블록이 은은한 shimmer와 함께 위에서부터 순서대로 나타난다 ---------- */
 .dash-skeleton{display:flex;flex-direction:column;gap:22px}

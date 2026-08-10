@@ -120,7 +120,7 @@ export default function ReportSection({ archive, today, summary, historyError, o
   return (
     <>
       {/* ── 오늘 리포트 (큰 카드) ── */}
-      <section className="sec">
+      <section className="sec sr-2">
         <div className="sh big">
           <span className="t">오늘 리포트</span>
           <span className="s">카드를 누르면 전체 리포트와 출처를 볼 수 있습니다</span>
@@ -187,7 +187,7 @@ export default function ReportSection({ archive, today, summary, historyError, o
       </section>
 
       {/* ── 리포트 히스토리 (2열 · 페이지 넘김) ── */}
-      <section className="sec">
+      <section className="sec sr-3">
         <div className="sh big">
           <span className="t">리포트 히스토리</span>
           <span className="c">{history.length}건</span>

@@ -143,7 +143,7 @@ export default function DashboardPage({ interests = [], onUpdateInterests }) {
 
   return (
     <section className="view on" id="v-dash">
-      <div className="ph ph-tight">
+      <div className="ph ph-tight sr-1">
         {/* 밑줄(border-bottom)을 .ph 전체가 아니라 이 안쪽 래퍼(제목+날짜)에만 줘서,
             줄 길이가 텍스트 폭만큼만 그려지게 한다 — 오른쪽 "반도체 도메인…" 배지 아래로는
             선이 안 이어진다. */}
@@ -164,10 +164,10 @@ export default function DashboardPage({ interests = [], onUpdateInterests }) {
           섹션 타이틀("지식 축적화" / 설명 문구)도 생략한다 — 그래프 자체가 아래
           kg-hub-overlay 로고로 무엇인지 이미 드러난다. */}
       <div className="hero">
-        <section className="hero-graph">
+        <section className="hero-graph sr-1">
           <KnowledgeGraph />
         </section>
-        <aside className="hero-pipe">
+        <aside className="hero-pipe sr-2">
           {PIPELINE_STEPS.map((step) => (
             <div className="st" key={step.name}>
               <span className="n">{step.name}</span>
@@ -180,7 +180,7 @@ export default function DashboardPage({ interests = [], onUpdateInterests }) {
 
       {/* 2) 최근 현황 — 카테고리 현황 페이지의 "오늘의 분류 요약"과 같은 .kpi/KpiCard를 쓰지만,
           여기서는 .kpi-compact로 카드 크기만 살짝 줄인다(다른 페이지의 .kpi는 그대로 둠). */}
-      <section className="sec">
+      <section className="sec sr-2">
         <div className="sh"><span className="t">최근 현황</span><span className="r">7일 누적 기준</span></div>
         <div className="kpi kpi-compact">
           <KpiCard label="수집 문서" value={kpiSummary.collectedDocs.value} desc={kpiDesc(kpiSummary.collectedDocs.desc)} />
@@ -192,7 +192,7 @@ export default function DashboardPage({ interests = [], onUpdateInterests }) {
       </section>
 
       {/* 3) 산업 동향 분석 그래프 */}
-      <section className="sec">
+      <section className="sec sr-2">
         <div className="sh">
           <span className="t">산업 동향 분석</span>
           <span className="s">최근 7일 수집·채택 추이</span>
@@ -203,10 +203,12 @@ export default function DashboardPage({ interests = [], onUpdateInterests }) {
 
       {/* 3.5) 관심 키워드 — 온보딩과 별개로 대시보드에서 바로 추가·삭제. "산업 동향 분석"과
           "최신 뉴스" 사이에 배치(고른 키워드가 바로 아래 최신 뉴스 필터에 반영되니 자연스럽게 이어짐) */}
-      <InterestsBar interests={interests} onUpdateInterests={onUpdateInterests} />
+      <div className="sr-3">
+        <InterestsBar interests={interests} onUpdateInterests={onUpdateInterests} />
+      </div>
 
       {/* 4) 최신 뉴스 */}
-      <section className="sec news-feed">
+      <section className="sec news-feed sr-3">
         <div className="sh">
           <span className="t">최신 뉴스</span>
           <span className="s">최신순 · {filteredNews.length}건</span>
@@ -271,7 +273,7 @@ export default function DashboardPage({ interests = [], onUpdateInterests }) {
       </section>
 
       {/* 5) 오늘의 키워드 — 세로 목록 대신 가로 칩으로 배치("카테고리 현황" 섹션은 삭제) */}
-      <section className="sec">
+      <section className="sec sr-4">
         <div className="sh">
           <span className="t">오늘의 키워드</span>
           <span className="s">누르면 뉴스가 좁혀집니다</span>
@@ -293,7 +295,7 @@ export default function DashboardPage({ interests = [], onUpdateInterests }) {
 
       {/* 6) 최근 산업 이슈 — "최신 뉴스"와 구분되게 톤 다른 패널에 담고, 관심사와 무관하게
           모든 사용자에게 동일한 항목을 보여준다(출처도 공시·IR 등 공식 문서 위주). */}
-      <section className="sec sec-issues">
+      <section className="sec sec-issues sr-4">
         <div className="sh">
           <span className="t">최근 산업 이슈</span>
           <span className="badge-official">공식 근거 기반</span>

@@ -143,21 +143,25 @@ export default function WikiPage() {
 
   return (
     <section className="view on" id="v-wiki">
-      <div className="ph">
+      <div className="ph sr-1">
         <h2>{doc.title}</h2>
         <span className="dt">{doc.category}</span>
         <span className="st">최종 갱신 <b>{doc.updated}</b></span>
       </div>
 
       <div className="wiki">
-        <WikiSideNav tree={tree} current={current} onSelect={setCurrent} />
+        <div className="sr-2">
+          <WikiSideNav tree={tree} current={current} onSelect={setCurrent} />
+        </div>
 
-        <WikiCard
-          doc={doc} onKeyword={setKeyword} onKeywordDocs={setDocKeyword}
-          catalog={catalog} linkWords={KEYWORD_LINK_WORDS}
-        />
+        <div className="sr-3">
+          <WikiCard
+            doc={doc} onKeyword={setKeyword} onKeywordDocs={setDocKeyword}
+            catalog={catalog} linkWords={KEYWORD_LINK_WORDS}
+          />
+        </div>
 
-        <div>
+        <div className="sr-4">
           <div className="col">
             <h5>근거 출처<span className="c">{doc.sourceCount}</span></h5>
             {doc.sources.map((s, i) => (

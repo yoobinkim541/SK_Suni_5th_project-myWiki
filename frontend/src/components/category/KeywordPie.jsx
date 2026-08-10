@@ -111,7 +111,12 @@ export default function KeywordPie({ items = [], title, total, onSlice, activeWo
               fill="none" stroke="#fff" strokeWidth={R_OUT - R_IN + 1}
               strokeDasharray={SWEEP_CIRC}
               strokeDashoffset={SWEEP_CIRC}
-              transform={`rotate(-90 ${CX} ${CY})`}
+              // <circle>는 브라우저가 기본적으로 3시 방향에서 시계방향으로 그린다.
+              // rotate(-90)만 걸면 시작점만 12시로 옮겨질 뿐 방향은 그대로 시계방향이라,
+              // y축 기준으로 한 번 뒤집어(translate+scale로 cy를 축으로 대칭) 방향 자체를
+              // 반시계로 뒤집은 다음 회전한다 — 순서가 중요하다(뒤집기 → 회전 순으로
+              // 적용되도록 transform 목록에서 회전을 앞에, 뒤집기를 뒤에 쓴다).
+              transform={`rotate(-90 ${CX} ${CY}) translate(0 ${2 * CY}) scale(1 -1)`}
             />
           </mask>
         </defs>

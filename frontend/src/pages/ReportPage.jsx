@@ -84,7 +84,7 @@ export default function ReportPage() {
 
   return (
     <section className="view on" id="v-report">
-      <div className="ph">
+      <div className="ph sr-1">
         <h2>일일 동향 보고서</h2>
         <span className="dt">{summary.date}</span>
         <span className="st">{summary.statusLabel || <>수집 파이프라인 <b>정상</b></>}</span>
