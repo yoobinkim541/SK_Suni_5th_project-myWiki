@@ -10,10 +10,37 @@ export class ApiError extends Error {
   }
 }
 
+// supabase.auth.getSession()이 세션 복원 중 네트워크 지연 등으로 응답 없이 멈추면
+// 그 뒤의 fetch가 영영 시작되지 못해 화면이 "불러오는 중"에서 멈춘다(게스트가
+// 위키처럼 여러 초기 조회를 순차로 거는 페이지에서 특히 눈에 띈다). 5초 안에 세션을
+// 못 읽으면 토큰 없이(게스트로) 진행한다 — 로그인된 사용자라면 이어지는 요청이
+// 401로 실패해 dashboardApi.js의 재시도가 잡아준다.
+const SESSION_TIMEOUT_MS = 5000;
+
 async function getAuthHeaders() {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  try {
+    const { data } = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('session lookup timed out')), SESSION_TIMEOUT_MS),
+      ),
+    ]);
+    const token = data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+// 백엔드가 응답 없이 멈추는 경우에도 화면이 무한 로딩에 빠지지 않도록 요청 자체에
+// 상한을 둔다 — 타임아웃되면 일반 네트워크 에러처럼 처리돼 각 서비스의 폴백/에러
+// 화면으로 이어진다.
+const REQUEST_TIMEOUT_MS = 15000;
+
+function withTimeout() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
 }
 
 async function parseErrorDetail(res) {
@@ -34,15 +61,22 @@ function getResponseFilename(res) {
 
 export async function apiFetch(path, { method = 'GET', body } = {}) {
   const authHeaders = await getAuthHeaders();
+  const { signal, clear } = withTimeout();
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal,
+    });
+  } finally {
+    clear();
+  }
 
   if (!res.ok) {
     throw new ApiError(res.status, await parseErrorDetail(res));
@@ -56,12 +90,19 @@ export async function apiFetch(path, { method = 'GET', body } = {}) {
 // boundary가 빠져 서버가 파싱하지 못한다).
 export async function apiFetchUpload(path, formData) {
   const authHeaders = await getAuthHeaders();
+  const { signal, clear } = withTimeout();
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
-    headers: authHeaders,
-    body: formData,
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: formData,
+      signal,
+    });
+  } finally {
+    clear();
+  }
 
   if (!res.ok) {
     throw new ApiError(res.status, await parseErrorDetail(res));
@@ -71,15 +112,22 @@ export async function apiFetchUpload(path, formData) {
 
 export async function apiFetchBlob(path, { method = 'GET', body } = {}) {
   const authHeaders = await getAuthHeaders();
+  const { signal, clear } = withTimeout();
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: {
-      ...authHeaders,
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers: {
+        ...authHeaders,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal,
+    });
+  } finally {
+    clear();
+  }
 
   if (!res.ok) {
     throw new ApiError(res.status, await parseErrorDetail(res));

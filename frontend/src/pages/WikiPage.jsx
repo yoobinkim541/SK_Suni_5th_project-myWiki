@@ -43,7 +43,7 @@ export default function WikiPage() {
   const { docId } = useParams();
   const [tree, setTree] = useState(null);
   const [current, setCurrent] = useState(null);
-  const [doc, setDoc] = useState(null);
+  const [doc, setDoc] = useState(undefined);
   const [keyword, setKeyword] = useState(null);   // 본문 키워드 → 원문·뉴스 모달
   const [docKeyword, setDocKeyword] = useState(null); // 상단 키워드 칩 → 문서 목록 모달
   // docKeyword 조회 결과 — null: 조회 전/중, []: 조회 끝났고 결과 없음, 배열: 결과 있음.
@@ -101,12 +101,15 @@ export default function WikiPage() {
   }, [docId]);
 
   // 현재 선택된 문서의 본문을 불러옵니다.
+  // doc: undefined = 불러오는 중, null = 문서 없음(게시 안 됨), 객체 = 정상 로드.
+  // null과 "불러오는 중"을 구분하지 않으면 게시되지 않은 문서로 진입했을 때
+  // 스피너 화면에서 영영 못 벗어난다.
   useEffect(() => {
     if (!current) return;
     let alive = true;
-    setDoc(null);
+    setDoc(undefined);
     fetchWikiDoc(current)
-      .then((data) => alive && setDoc(data))
+      .then((data) => alive && setDoc(data ?? null))
       .catch((e) => alive && setError(e.message || '위키 문서를 불러오지 못했습니다.'));
     return () => { alive = false; };
   }, [current]);
@@ -133,10 +136,19 @@ export default function WikiPage() {
     );
   }
 
-  if (!tree || !doc) {
+  if (!tree || doc === undefined) {
     return (
       <section className="view on" id="v-wiki">
         <Spinner />
+      </section>
+    );
+  }
+
+  if (doc === null) {
+    return (
+      <section className="view on" id="v-wiki">
+        <div className="ph"><h2>문서를 찾을 수 없습니다</h2></div>
+        <p>아직 게시되지 않았거나 삭제된 문서입니다.</p>
       </section>
     );
   }
