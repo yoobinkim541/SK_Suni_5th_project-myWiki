@@ -80,17 +80,29 @@ export default function IssueList({ items, onSelectWiki, onOpenIssue, downloadFo
               <p>{issue.summary}</p>
             </div>
             <div className="meta">
-              <a
-                className={`s${issue.sourceIsDoc ? ' doc' : ''}`}
-                href={issue.sourceUrl}
-                target="_blank"
-                rel="noopener"
-                title={issue.sourceTitle}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {issue.sourceLabel}
-              </a>
-              {issue.wikiTitle && (
+              {/* 샘플 데이터는 링크로 만들지 않는다. 목업의 sourceUrl이 개별 원문이
+                  아니라 도메인 루트여서, 누르면 해당 이슈가 아니라 홈페이지로 간다.
+                  백엔드가 붙으면 isSample이 사라지고 아래 <a>가 그대로 살아난다. */}
+              {issue.isSample ? (
+                <span
+                  className={`s${issue.sourceIsDoc ? ' doc' : ''} sample`}
+                  title="샘플 데이터입니다. 원문 연결은 준비 중입니다"
+                >
+                  {issue.sourceLabel} (샘플)
+                </span>
+              ) : (
+                <a
+                  className={`s${issue.sourceIsDoc ? ' doc' : ''}`}
+                  href={issue.sourceUrl}
+                  target="_blank"
+                  rel="noopener"
+                  title={issue.sourceTitle}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {issue.sourceLabel}
+                </a>
+              )}
+              {issue.wikiTitle && !issue.isSample && (
                 <a
                   className="w"
                   href={issue.wikiHref || '#'}
