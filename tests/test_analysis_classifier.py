@@ -68,7 +68,11 @@ def test_reject_confidence_out_of_range() -> None:
 
 
 def test_missing_api_key_fails_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    # delenv가 아니라 setenv("")를 쓴다 — get_openrouter_settings()가 매번 load_dotenv()를
+    # 호출하는데, 기본 override=False라 "아예 없는" 값만 .env로 채워 넣고 "빈 문자열로
+    # 이미 설정된" 값은 안 건드린다. delenv로 지우면 이 worktree 상위 경로의 실제 .env
+    # (레포 루트)에서 진짜 키가 다시 채워져 "키 없음" 시나리오 자체가 깨진다.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
     monkeypatch.setenv("OPENROUTER_MODEL", "")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
