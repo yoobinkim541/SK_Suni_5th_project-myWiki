@@ -84,8 +84,21 @@ a{color:inherit;text-decoration:none}
 svg text{font-family:inherit}
 
 /* ---------- 시안 헤더 ---------- */
+/* 3열 그리드(1fr auto 1fr)로 바꿔서 .deck-title이 왼쪽 brand2 로고·오른쪽 deck-right
+   너비와 무관하게 바(bar) 전체 기준 정중앙에 오게 했다(예전엔 flex+baseline이라
+   가운데에 새 요소를 넣으면 좌우 콘텐츠 너비 차이만큼 안 맞았을 것). */
 .deck{border-bottom:1px solid var(--ink);padding:16px 30px;
-  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;column-gap:14px}
+.deck .brand2{justify-self:start}
+.deck-right{justify-self:end}
+/* 상단바 정중앙 타이틀 — 사이드바 구석의 작은 문구였던 걸 여기로 옮겨 크게 보여준다.
+   세리프(윈도우 Batang 등)·시스템 산세리프 둘 다 별로라는 피드백 이후, 새 폰트를 불러오는
+   대신 이미 로드돼 있고 앱 전체에서 검증된 브랜드 폰트(S-Core Dream)의 최고 굵기(900,
+   위 @font-face에 등록된 300/400/500/700/900 중 제일 무거운 값)를 크게 써서 "이 폰트의
+   가장 강조된 버전"으로 차별화한다 — 본문(400 안팎)과 나란히 둬도 확실히 도드라진다. */
+.deck-title{font-family:'S-Core Dream',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',sans-serif;
+  font-size:23px;font-weight:900;letter-spacing:-.03em;color:var(--ink);
+  white-space:nowrap;text-align:center}
 .deck h1{font-size:13px;font-weight:900;letter-spacing:.01em}
 .deck .v{font-size:10.5px;font-weight:300;color:var(--muted)}
 /* 로고 아이콘(LogoMark.jsx) — SVG라 var(--green)이 다크모드에서 자동으로 민트로 바뀝니다.
@@ -108,7 +121,10 @@ svg text{font-family:inherit}
 /* 상단 헤더(.deck)는 사이드바/카드와도 다른 한 단계 — 배경(#111716) < 헤더(#141C1A) <
    사이드바(#17201E) < 카드(#1D2825) 순으로 아주 미묘하게 밝아진다. */
 :root[data-theme="dark"] .deck{background:var(--header)}
-.brand .eb{font-size:9.5px;font-weight:300;letter-spacing:.1em;color:var(--faint)}
+/* 나머지 사이드바 글자는 전역 폰트(S-Core Dream)를 그대로 쓰지만, 이 문구만 살짝 더 크고
+   진하게 + 시스템 UI 서체로 바꿔서 톤을 구분했다. */
+.brand .eb{font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',sans-serif}
 .brand .nm{display:flex;align-items:center;gap:7px;
   font-size:18px;font-weight:900;letter-spacing:-.02em;margin-top:3px}
 .brand .rule{width:19px;height:2px;background:var(--green);margin-top:10px}
@@ -144,6 +160,11 @@ svg text{font-family:inherit}
 .ph .dt{font-size:12px;font-weight:500;color:var(--muted)}
 .ph .st{margin-left:auto;font-size:11.5px;font-weight:300;color:var(--muted)}
 .ph .st b{font-weight:700;color:var(--green)}
+/* 대시보드 전용 — 밑줄을 .ph 전체(가로 꽉 참) 대신 제목+날짜를 감싼 .ph-title에만 줘서
+   텍스트 폭까지만 그려지게 한다. width:fit-content가 핵심(flex 자식 기본값은 auto라
+   부모 flex 컨테이너 안에서 늘어나 보일 수 있다). */
+.ph-title{display:flex;align-items:baseline;gap:14px;width:fit-content;
+  padding-bottom:8px;border-bottom:1px solid var(--ink)}
 
 /* ---------- 구역 ---------- */
 .sec{padding:30px 0;border-bottom:1px solid var(--hair)}
@@ -155,26 +176,32 @@ svg text{font-family:inherit}
 .sh .r{margin-left:auto;font-size:11px;font-weight:300;color:var(--muted)}
 .sh .r a{color:var(--green);font-weight:700}
 
-/* ---------- 파이프라인 ---------- */
-.pipe{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
-  padding:14px 0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);
-  margin:22px 0 8px}
-/* 파이프라인 바로 다음 섹션(대시보드에서는 "지식 축적화")은 기본 .sec 위쪽 여백(30px)이
-   더해지면 .pipe와 사이 간격이 과하게 벌어져서, 이 조합에서만 위쪽 패딩을 줄인다. */
-.pipe + .sec{padding-top:4px}
-/* 파이프라인 바로 다음 섹션의 제목("지식 축적화") 아래 여백도 같이 줄여서, 그래프가
-   파이프라인 바에 더 가까이 붙되 겹치지는 않을 만큼만 위로 올라와 보이게 한다. */
-.pipe + .sec .sh{margin-bottom:8px}
-/* 대시보드 전용 — 헤더·파이프라인 바 위아래 여백을 더 좁혀서, 화면에 들어오자마자
-   바로 아래 있는 지식 축적화 그래프가 스크롤 없이 최대한 잘 보이게 한다. */
-.ph-tight{padding-bottom:10px}
-.pipe-tight{margin-top:10px}
-.pipe .st{display:flex;align-items:baseline;gap:7px}
-.pipe .st .n{font-size:12.5px;font-weight:700}
-.pipe .st .n::before{content:"✓";color:var(--green);margin-right:5px;font-weight:900}
-.pipe .st .tm{font-size:10.5px;font-weight:300;color:var(--faint)}
-.pipe .ar{color:var(--faint);font-size:11px}
-.pipe .nx{margin-left:auto;font-size:10.5px;font-weight:300;color:var(--muted)}
+/* ---------- 히어로: 지식 축적화 그래프 + 파이프라인 상태 ---------- */
+/* 파이프라인 상태를 그래프 위 가로 바 대신 그래프 오른쪽 세로 패널(.hero-pipe)로 옮겼다 —
+   가로 바 한 줄이 통째로 빠지면서 그래프가 헤더 바로 아래에서 시작하고, 그만큼 번 세로
+   공간을 .kg-svg의 max-height(calc(100vh - …), 아래 지식 축적화 섹션 참고)가 활용해서
+   원형 그래프 전체가 스크롤 없이 한 화면에 들어오게 한다. */
+.hero{display:flex;align-items:flex-start;gap:24px;margin-top:0;
+  padding-bottom:20px;border-bottom:1px solid var(--hair)}
+.hero-graph{flex:1;min-width:0}
+.hero-pipe{flex:none;width:168px;display:flex;flex-direction:column;gap:11px;
+  margin-top:4px;padding:16px;border:1px solid var(--hair);border-radius:14px}
+.hero-pipe .st{display:flex;flex-direction:column;gap:2px}
+.hero-pipe .st .n{font-size:12px;font-weight:700}
+.hero-pipe .st .n::before{content:"✓";color:var(--green);margin-right:5px;font-weight:900}
+/* 그린·amber에 이어 이번엔 청록 계열(딥 네이비 패널 + 스카이블루 숫자)로 — 얇은 유리질
+   하이라이트 + 눌린 그림자로 은은한 입체감만 남긴다. */
+.hero-pipe .st .tm{display:inline-block;margin-top:3px;padding:3px 7px;
+  font-family:'SF Mono',ui-monospace,'Roboto Mono',Consolas,monospace;
+  font-variant-numeric:tabular-nums;font-size:11px;font-weight:700;letter-spacing:.04em;
+  color:#7ec8ff;background:linear-gradient(155deg,#16232e 0%,#0a1218 100%);
+  border-radius:6px;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.08),inset 0 -2px 3px rgba(0,0,0,.4)}
+.hero-pipe .nx{padding-top:11px;border-top:1px solid var(--hair);
+  font-size:10.5px;font-weight:300;color:var(--muted)}
+/* 대시보드 전용 — .ph 자체의 가로 전체 밑줄은 없애고(.ph-title이 대신 담당), 아래 여백만
+   최소로 줄인다. */
+.ph-tight{padding-bottom:2px;border-bottom:0}
 
 /* ---------- 검색 ---------- */
 .search{display:flex;align-items:center;gap:14px;padding:13px 17px;
@@ -708,17 +735,19 @@ svg text{font-family:inherit}
 .ph2{padding-bottom:16px;border-bottom:1px solid var(--ink);margin-bottom:8px;
   display:flex;align-items:baseline;gap:12px}
 .ph2 h2{font-size:23px;font-weight:900;letter-spacing:-.03em}
-.ph2 .dt{font-size:12px;font-weight:300;color:var(--muted)}
-.set-lb{font-size:9.5px;font-weight:700;letter-spacing:.14em;color:var(--faint);margin:26px 0 10px}
+.ph2 .dt{font-size:12px;font-weight:300;color:var(--ink)}
+.set-lb{font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink);margin:26px 0 10px}
 .set-card{border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:var(--panel);max-width:640px}
 .set-row{display:flex;align-items:center;gap:18px;padding:16px 18px;border-top:1px solid var(--hair-2)}
 .set-row:first-child{border-top:0}
 .set-row .tx{flex:1;min-width:0}
 .set-row .tx .nm{font-size:13.5px;font-weight:700}
-.set-row .tx .ds{font-size:11.5px;font-weight:300;color:var(--muted);margin-top:2px;line-height:1.5}
-.set-row .vl{font-size:12.5px;font-weight:500;color:var(--muted)}
+/* 설명(.ds)과 값(.vl)이 각각 11.5px/12.5px, weight 300/500으로 미묘하게 달랐던 걸
+   12px/400으로 통일하고, 흐린 회색(--muted/--faint) 대신 검정(--ink)으로 바꿨다. */
+.set-row .tx .ds{font-size:12px;font-weight:400;color:var(--ink);margin-top:2px;line-height:1.5}
+.set-row .vl{font-size:12px;font-weight:500;color:var(--ink)}
 .set-row .sp-seg{flex:none}
-.set-ver{margin-top:24px;font-size:10.5px;font-weight:300;color:var(--faint)}
+.set-ver{margin-top:24px;font-size:10.5px;font-weight:300;color:var(--ink)}
 
 /* ---------- 설정 입력 필드 (기존 set-row 안에서 사용) ---------- */
 .fld{font:inherit;font-size:12.5px;font-weight:500;color:var(--ink);background:var(--panel);
@@ -758,6 +787,15 @@ input[type="text"].fld,input[type="email"].fld{min-width:196px}
 
 /* 참여자 관리 모달 — 현재 참여자(칩+x)/추가 후보(행+plus) */
 .pt-chips{display:flex;flex-wrap:wrap;gap:8px}
+/* 설정 페이지(TeamPanel)에서만 — 이 클래스들은 원래 참여자 관리 모달용이라 자체 좌우
+   여백이 없다. .set-row(라벨 폭 18px 인셋)와 나란히 놓이니, 같은 18px로 맞춰서 이름·
+   아바타가 카드 왼쪽에, +버튼이 카드 오른쪽에 딱 붙어 보이던 걸 자연스럽게 안쪽으로
+   들였다. .pt-row 자체 padding은 호버 배경 박스용으로만 작게 남긴다. */
+.set-card .pt-chips{padding:0 18px 4px}
+.set-card .mw-lb{padding:0 18px;font-size:11px;letter-spacing:.08em;color:var(--ink)}
+.set-card .kwm-empty{padding:8px 18px;font-size:12px;font-weight:400;color:var(--ink)}
+.set-card .pt-list{padding:0 18px}
+.set-card .pt-row{padding:6px 2px;gap:11px}
 .pt-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);
   border:1px solid var(--hair);border-radius:20px;padding:4px 6px 4px 4px}
 .pt-chip .av{width:22px;height:22px;border-radius:50%;flex:none;font-style:normal;
@@ -859,6 +897,14 @@ a.cite:hover .ex{color:var(--green)}
 .ag-ctx .avs i.more{background:var(--panel);color:var(--muted);border:1px solid var(--hair)}
 :root[data-theme="dark"] .ag-ctx .avs i{color:#0d1512}
 :root[data-theme="dark"] .ag-ctx .avs i.more{color:var(--muted)}
+/* MemberAvatar가 실제 사진(<img>)을 렌더링할 때도 이니셜 원과 같은 겹침 스택으로 보이게 */
+.ag-ctx .avs img{width:24px;height:24px;border-radius:50%;flex:none;object-fit:cover;
+  border:2px solid var(--panel);margin-left:-8px}
+.ag-ctx .avs img:first-child{margin-left:0}
+/* 팀 배너 전체를 눌러 팀 구성원 명단을 볼 수 있음을 알림 */
+.ag-ctx.team{cursor:pointer}
+.ag-ctx.team:hover{filter:brightness(0.97)}
+:root[data-theme="dark"] .ag-ctx.team:hover{filter:brightness(1.08)}
 .ag-ctx .priv{margin-left:auto;flex:none;font-size:10.5px;font-weight:700;color:var(--muted);
   background:var(--panel);border:1px solid var(--hair);border-radius:20px;padding:4px 11px}
 .turn.me .au{display:flex;align-items:center;gap:6px;margin-bottom:7px;
@@ -1183,7 +1229,8 @@ a.fn:hover{text-decoration:underline}
     transition:transform var(--dur-base) var(--ease)
   }
   .m-drawer.open{transform:none}
-  .m-drawer .brand .eb{font-size:9.5px;font-weight:300;letter-spacing:.1em;color:var(--faint)}
+  .m-drawer .brand .eb{font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',sans-serif}
   .m-drawer .brand .nm{font-size:19px;font-weight:900;letter-spacing:-.02em;margin-top:3px}
   .m-drawer .brand .rule{width:19px;height:2px;background:var(--green);margin:10px 0 4px}
   .m-drawer nav{margin-top:22px;display:flex;flex-direction:column;gap:2px}
@@ -1249,11 +1296,17 @@ a.fn:hover{text-decoration:underline}
     padding:16px 18px;margin-bottom:14px;
     border-bottom:1px solid var(--hair) !important
   }
-  .pipe{
-    background:var(--panel);border:1px solid var(--hair);border-radius:16px;
-    padding:14px 16px;margin:0 0 14px;
-    border-top:0 !important;border-bottom:0 !important
+  /* 모바일에서는 사이드 패널 대신 그래프 아래로 다시 쌓고(.hero-pipe를 원래 .pipe처럼
+     가로 카드 하나로), 그래프는 카드 폭 전체를 쓴다. */
+  .hero{flex-direction:column;gap:14px;margin-top:0;padding-bottom:0;border-bottom:0}
+  .hero-graph{width:100%}
+  .hero-pipe{
+    width:100%;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:10px 16px;
+    margin-top:0;background:var(--panel);border:1px solid var(--hair);border-radius:16px;
+    padding:14px 16px
   }
+  .hero-pipe .st{flex-direction:row;align-items:baseline;gap:6px}
+  .hero-pipe .nx{margin-left:auto;padding-top:0;border-top:0}
   .search{
     background:var(--panel);border:1.5px solid var(--hair);border-radius:16px;margin-bottom:14px
   }
@@ -1300,6 +1353,7 @@ a.fn:hover{text-decoration:underline}
     padding:14px 16px;margin:0 0 14px;border-bottom:0}
   .ag-ctx{margin:0 0 14px;border-radius:16px;padding:14px 16px}
   .ag-ctx .avs i{width:22px;height:22px}
+  .ag-ctx .avs img{width:22px;height:22px}
   .rlist{grid-template-columns:1fr}
   .mw-modal{padding:20px 18px 18px}
 }
@@ -1465,14 +1519,15 @@ a.fn:hover{text-decoration:underline}
 .pie-hd .s{font-size:10.5px;font-weight:300;color:var(--muted)}
 .pie{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
 .pie svg{width:168px;height:auto;flex:none}
-/* 조각 진입 애니메이션 — 중심에서 scale 0.4→1 + fade로 튀어나오며, 각 조각의 각도
-   순서대로 딜레이를 흩뿌려(KeywordPie.jsx가 style로 넣어준다) 한 바퀴 돌면서 채워지는
-   인상을 준다. 회전/pulse처럼 계속 반복되는 애니메이션은 아니고 진입 시 한 번만. */
-@keyframes pie-fill{
-  from{opacity:0;transform:scale(.4)}
-  to{opacity:1;transform:scale(1)}
-}
-.pie .sl{transform-origin:84px 84px;opacity:0;animation:pie-fill .5s var(--ease) both;
+/* 진입 애니메이션 — 도넛 전체가 12시 방향에서 시작해 시계방향으로 한 바퀴 쓸려가며
+   그려진다(KeywordPie.jsx의 <mask> + stroke-dashoffset 스윕). 여기서는 그 스윕 원의
+   stroke-dashoffset을 둘레→0으로 애니메이션하는 것만 담당 — 조각(.sl) 쪽은 애니메이션
+   없이 항상 완성된 상태로 두고, 마스크가 드러내는 영역만 시계방향으로 넓어진다.
+   회전/pulse처럼 계속 반복되지는 않고 진입 시 한 번만(둘레 값은 JS가 stroke-dasharray로
+   이미 넣어줬으니 여기선 0까지만 보내면 끝). */
+@keyframes pie-sweep-in{ to{ stroke-dashoffset:0; } }
+.pie-sweep{animation:pie-sweep-in .9s var(--ease) both}
+.pie .sl{transform-origin:84px 84px;
   transition:transform var(--dur-fast) var(--ease),filter var(--dur-fast) var(--ease)}
 .pie .sl.clickable{cursor:pointer}
 /* hover는 그 조각만 살짝(4%) 커지고 밝아진다 — 다른 조각·전체 그래프는 그대로 둔다. */
@@ -1740,13 +1795,23 @@ a.fn:hover{text-decoration:underline}
   padding:0;margin-left:8px}
 
 /* ---------- 지식 축적화 네트워크 그래프 (KnowledgeGraph.jsx) ---------- */
-/* 반응형 크기·여백은 컴포넌트 쪽에서 Tailwind 유틸리티 클래스로 준다(w-full, max-h-, px- 등).
+/* 반응형 너비·여백은 컴포넌트 쪽에서 Tailwind 유틸리티 클래스로 준다(w-full, px- 등).
    여기 globals.css는 SVG 노드·선·애니메이션처럼 Tailwind로 표현하기 번거로운 것만 담당한다.
    ⚠ 매트(flat) 스타일 — 3D 기울기(perspective/sway), 카테고리 노드의 방사형 그라디언트·
    그림자는 뺐다. 다만 중앙 허브(그라디언트 글로우 + 로고)는 남기고, 허브↔카테고리를 잇는
    선 6개만 뺐다(다 같은 중심에서 뻗어나가는 선이 있으면 지저분해 보인다는 피드백). */
 .kg-wrap{background:transparent}
 .kg-svg{display:block;overflow:visible}
+/* max-height를 뷰포트 높이 기준 calc()로 잡는다 — .kg-svg는 폭 100%에 viewBox 비율(원형)로
+   높이가 정해지는데, 그 자연 높이가 이 상한을 넘으면 SVG가 (좌우 여백을 더 두고) 비율을
+   유지한 채로 줄어들어서, 원 모양이 찌그러지지 않으면서도 화면 높이 안에 항상 다 들어온다.
+   150px = 상단바(.deck)+.main 위쪽 패딩+.ph.ph-tight+.hero 위 여백 등 그래프 위에 쌓이는
+   실측 높이 + .hero 아래쪽 padding/border 여유분. 이전에 100px/최대 1000px까지 키웠더니
+   실제로는 그 100px이 실측보다 낙관적이라 그래프 아래쪽이 뷰포트 밖으로 밀려 잘려 보였다
+   — 150px/최대 820px로 다시 낮춰서 한 화면에 다 들어오는 걸 우선한다(그래도 예전 300~760
+   구간보다는 크다). min/max는 아주 짧거나 아주 긴 화면에서 그래프가 너무 작아지거나
+   커지지 않게 잡은 상한/하한이다. */
+.kg-svg{max-height:clamp(380px,calc(100vh - 150px),820px)}
 
 .kg-line{stroke:var(--hair);stroke-width:1.5;opacity:0;
   transition:opacity .6s var(--ease)}
@@ -1769,7 +1834,7 @@ a.fn:hover{text-decoration:underline}
 .kg-wrap.in .kg-cat{opacity:1;transform:scale(1);animation:kg-node-pulse 4.6s ease-in-out infinite}
 .kg-cat:hover{transform:scale(1.06)}
 .kg-cat-circle{fill:var(--green)}
-.kg-cat-label{fill:#fff;font-size:16.5px;font-weight:800;letter-spacing:-.01em}
+.kg-cat-label{fill:#fff;font-size:18px;font-weight:800;letter-spacing:-.01em}
 :root[data-theme="dark"] .kg-cat-label{fill:#0d1512}
 
 /* 리프(키워드) 점 — 스케일인 후 각자 다른 딜레이로 아주 미세하게 계속 pulse한다.
@@ -1784,17 +1849,21 @@ a.fn:hover{text-decoration:underline}
 /* 다크모드에서는 주요 카테고리 노드(밝은 --green)와 구분되도록, 리프 점은 더 차분하게
    가라앉힌 muted green을 쓴다 — 전부 같은 초록으로 뭉쳐 보이지 않게. */
 :root[data-theme="dark"] .kg-leaf-dot{fill:#5C8A79;opacity:.8}
-.kg-leaf-label{fill:#17201E;font-size:12px;font-weight:600}
+.kg-leaf-label{fill:#17201E;font-size:18px;font-weight:600}
 
-/* 중앙 허브 — 그라디언트 글로우 + my Wiki 로고 이미지(아이콘+텍스트 전체).
-   글로우 원의 확대폭을 줄이고(1.14→1.08), 로고 이미지 자체에도 아주 은은한 pulse를
-   더해 "허브가 커졌다 작아진다"는 게 실제 로고에서도 느껴지게 했다. 로고는 위치를
-   잡는 부모(.kg-hub-overlay)가 이미 translate(-50%,-50%)로 중앙 정렬을 담당하고,
-   pulse는 자식 <img> 하나에만 걸기 때문에 두 transform이 서로 덮어쓰지 않는다 —
-   translate와 scale이 같은 엘리먼트의 transform에 같이 있었다면 둘 중 하나가 다른
-   하나를 지워서 위치가 튀었을 것이다. */
-.kg-hub-glow{fill:#4C9A83;opacity:.09;animation:kg-pulse 2.6s var(--ease) infinite}
-.kg-hub-grad{fill:url(#kgHubGrad)}
+/* 중앙 허브 — 그라디언트 글로우 + myWiki 로고 이미지(아이콘+텍스트 전체).
+   글로우/그라디언트 원 둘 다 허브 중심(CX=500,CY=340)에서 하위 카테고리 원이 있는
+   둘레(반지름 218) 부근까지 커졌다 줄어들기를 반복한다 — transform-origin을 뷰박스
+   좌표로 직접 못박아서(기본값인 view-box 50%/50%는 살짝 어긋난다) 항상 중심에서부터
+   퍼져 나가 보이게 했다. 로고 이미지 자체에도 아주 은은한 pulse를 더해 "허브가 커졌다
+   작아진다"는 게 실제 로고에서도 느껴지게 했다. 로고는 위치를 잡는 부모(.kg-hub-overlay)가
+   이미 translate(-50%,-50%)로 중앙 정렬을 담당하고, pulse는 자식 <img> 하나에만 걸기
+   때문에 두 transform이 서로 덮어쓰지 않는다 — translate와 scale이 같은 엘리먼트의
+   transform에 같이 있었다면 둘 중 하나가 다른 하나를 지워서 위치가 튀었을 것이다. */
+.kg-hub-glow{fill:#4C9A83;opacity:.2;transform-origin:500px 340px;
+  animation:kg-pulse 3.8s ease-in-out infinite}
+.kg-hub-grad{fill:url(#kgHubGrad);transform-origin:500px 340px;
+  animation:kg-pulse-grad 3.8s ease-in-out infinite}
 /* 허브 원(지름 = viewBox 폭의 14.4%) 안에 들어가도록 폭을 그보다 살짝 작게 %로 고정 —
    .kg-wrap이 viewBox 비율 그대로 반응형으로 커지므로 %값이 화면 크기와 무관하게 맞습니다. */
 /* .kg-hub-logo-full 자체에 %width를 주면, 그 부모(.kg-hub-overlay)가 명시적 너비 없이
@@ -1831,9 +1900,19 @@ a.fn:hover{text-decoration:underline}
   50%{transform:scale(1.03)}
 }
 
+/* 최소 크기를 허브 원래 반지름(HUB_R=110px) 근처로 잡아서 로고와 비슷한 크기에서
+   시작하게 했다 — 전엔 반지름이 47px까지 확 줄었다 커지길 반복해서 너무 작아졌다
+   커지는 게 어지럽다는 피드백이 있었다. 거기서 카테고리 링(218px)을 지나 리프(키워드)
+   점들이 있는 둘레(반지름 320~370px)까지 커졌다가 다시 로고 크기로 돌아오길 반복한다. */
 @keyframes kg-pulse{
-  0%,100%{transform:scale(1);opacity:.07}
-  50%{transform:scale(1.08);opacity:.14}
+  0%,100%{transform:scale(.82);opacity:.24}
+  50%{transform:scale(2.8);opacity:.02}
+}
+/* 그라디언트 원(kg-hub-grad)도 같은 시작 크기·도달 범위로 같이 움직이되, 그라디언트
+   자체가 이미 옅어서 불투명도 변화 폭은 글로우보다 덜 극단적으로 준다. */
+@keyframes kg-pulse-grad{
+  0%,100%{transform:scale(.92);opacity:.95}
+  50%{transform:scale(3.1);opacity:.15}
 }
 /* 카테고리 노드용 — 아주 미세하게 커졌다 작아짐(위치 이동 없음). */
 @keyframes kg-node-pulse{
@@ -1849,12 +1928,12 @@ a.fn:hover{text-decoration:underline}
 
 @media (prefers-reduced-motion: reduce){
   .kg-line,.kg-cat,.kg-leaf{transition:none;opacity:1;transform:none;animation:none}
-  .kg-hub-glow{animation:none}
+  .kg-hub-glow,.kg-hub-grad{animation:none}
 }
 
 @media (max-width:720px){
-  .kg-cat-label{font-size:13.5px}
-  .kg-leaf-label{font-size:10px}
+  .kg-cat-label{font-size:14.5px}
+  .kg-leaf-label{font-size:14.5px}
 }
 /* ===== 모바일 상단바 로고 이미지 — globals.css 맨 아래에 붙여넣기 ===== */
 
@@ -1887,7 +1966,7 @@ a.fn:hover{text-decoration:underline}
 }
 
 /* ---------- PC 사이드바 브랜드(로고) 안 "myWiki" 줄 + 접기 토글, SideNav.jsx .nm-row ---------- */
-/* 펼친 상태: "반도체 동향 시스템"은 그대로 위 줄, 그 아래 줄에 토글 버튼 + "myWiki"를 나란히 */
+/* 펼친 상태: "반도체 산업 동향 자동 큐레이션"은 그대로 위 줄, 그 아래 줄에 토글 버튼 + "myWiki"를 나란히 */
 .nm-row{display:flex;align-items:center;gap:8px;margin-top:2px}
 .side-toggle{flex:none;width:30px;height:30px;border-radius:9px;border:1px solid var(--hair);
   background:var(--panel);color:var(--ink-2);cursor:pointer;display:flex;align-items:center;
@@ -1948,6 +2027,31 @@ a.fn:hover{text-decoration:underline}
   100%{clip-path:inset(0 0 0% 0);filter:brightness(1)}
 }
 .page-enter{animation:page-reveal .5s cubic-bezier(.22,.61,.36,1) both}
+
+/* ---------- 페이지 내부 영역 Soft Fade + Staggered Reveal(.sr-1~.sr-4) ----------
+   .page-enter(<main>, 위 블록)이 페이지 전체를 위→아래로 리빌하는 "바깥" 애니메이션이라면,
+   이건 그 안에서 주요 영역 3~4개가 아주 짧은 시간차로 각자 선명해지는 "안쪽" 애니메이션이다.
+   서로 다른 엘리먼트(.page-enter는 <main>, .sr-*는 그 자식 섹션들)에 걸리므로 같은
+   transform/opacity를 다시 건드려도 서로 값을 지우거나 끊지 않는다 — 그냥 겹쳐서 보인다.
+   기존에 컴포넌트 자체가 들고 있는 애니메이션(지식 축적화 그래프의 kg-wrap.in, 원그래프
+   조각 진입, 뉴스 카드 스크롤 리빌 등)은 전혀 안 건드린다 — 그것들은 각자 다른 하위
+   엘리먼트/다른 트리거(마운트 후 다음 틱, IntersectionObserver)로 독립적으로 돈다.
+   opacity+translateY만 쓰고 blur는 뺐다 — filter는 지정값이 있으면(설령 blur(0)이라도)
+   조상 엘리먼트가 그 안의 position:fixed 자손의 기준점이 돼버리는 문제가 있다(이 파일의
+   .page-enter가 filter:brightness를 쓰는 것도 같은 부작용이 있는 걸 이미 알고 있지만 기존
+   동작이라 안 건드린다 — 여기서 새로 넣는 것까지 그 문제를 늘릴 필요는 없다). */
+@keyframes soft-reveal{
+  from{opacity:0;transform:translateY(6px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.sr-1,.sr-2,.sr-3,.sr-4{animation:soft-reveal .45s var(--ease) both}
+.sr-1{animation-delay:0s}
+.sr-2{animation-delay:.1s}
+.sr-3{animation-delay:.2s}
+.sr-4{animation-delay:.3s}
+@media (prefers-reduced-motion: reduce){
+  .sr-1,.sr-2,.sr-3,.sr-4{animation:none}
+}
 
 /* ---------- 대시보드 로딩 스켈레톤(.dash-skeleton) — "불러오는 중…" 텍스트 대신
    실루엣 블록이 은은한 shimmer와 함께 위에서부터 순서대로 나타난다 ---------- */

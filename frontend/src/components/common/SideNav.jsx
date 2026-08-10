@@ -11,9 +11,10 @@
 //   두 파일 모두 assets/ 에 있습니다. 크기·정렬은 globals.css의 .suni-logo / .suni-mark 에서 조정.
 //
 // ⚠ 접기(collapsed) 모드 + 항목별 아이콘 + 접기 토글 위치:
-//   - "반도체 동향 시스템" 글자는 그대로 위 줄에 두고, 그 아래 줄에 접기 토글을 로고
-//     왼쪽에 나란히 둡니다(.nm-row). 토글이 brand(로고 클릭=새로고침) 블록 안에
-//     있으므로, 클릭이 로고 새로고침으로 번지지 않도록 stopPropagation을 건다.
+//   - "반도체 산업 동향 자동 큐레이션" 문구는 상단바(TopBar.jsx .deck-title) 정중앙으로
+//     옮겼습니다 — 여기 사이드바에는 더 이상 없습니다. 접기 토글은 mySUNI 로고 왼쪽에
+//     나란히 둡니다(.nm-row). 토글이 brand(로고 클릭=새로고침) 블록 안에 있으므로,
+//     클릭이 로고 새로고침으로 번지지 않도록 stopPropagation을 건다.
 //   - 접힌 상태에서도 토글이 보여야 다시 펼 수 있어서, 접힌 모드에서는 마크 아래에
 //     세로로 토글을 둔다.
 //   - 항목 아이콘은 접힌 상태뿐 아니라 펼친 상태에서도 글자 옆에 항상 보입니다
@@ -21,6 +22,8 @@
 //   - 아이콘은 MobileNav.jsx의 하단 탭바(BOTTOM_TABS)와 같은 선 굵기·스타일을 씁니다.
 //   - "설정" 아이콘은 원래 쓰던 원+스포크 SVG로(TopBar.jsx .gear 버튼과 동일한 path).
 
+import { NavLink } from 'react-router-dom';
+import { NAV_PATHS } from '../../constants/navPaths';
 import SuniLogo from '../../assets/suni-logo.png';
 import SuniMark from '../../assets/suni-mark.png';
 
@@ -82,7 +85,7 @@ function ToggleButton({ collapsed, onToggleCollapsed }) {
   );
 }
 
-export default function SideNav({ activeKey, onNavigate, onLogoClick, collapsed = false, onToggleCollapsed }) {
+export default function SideNav({ onLogoClick, collapsed = false, onToggleCollapsed }) {
   return (
     <aside className={`side${collapsed ? ' collapsed' : ''}`}>
       <div className="brand brand-btn" role="button" tabIndex={0}
@@ -97,7 +100,6 @@ export default function SideNav({ activeKey, onNavigate, onLogoClick, collapsed 
           </>
         ) : (
           <>
-            <div className="eb">반도체 동향 시스템</div>
             <div className="nm-row">
               <ToggleButton collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
               <div className="nm">
@@ -113,15 +115,16 @@ export default function SideNav({ activeKey, onNavigate, onLogoClick, collapsed 
         <nav key={section.group}>
           {!collapsed && <div className="lb">{section.group}</div>}
           {section.items.map((item) => (
-            <a
+            <NavLink
               key={item.key}
-              className={activeKey === item.key ? 'on' : ''}
+              to={NAV_PATHS[item.key]}
+              end={item.key === 'dash'}
+              className={({ isActive }) => (isActive ? 'on' : '')}
               title={collapsed ? item.label : undefined}
-              onClick={() => onNavigate(item.key)}
             >
               <span className="side-ic">{ICONS[item.key]}</span>
               <span className="side-label">{item.label}</span>
-            </a>
+            </NavLink>
           ))}
         </nav>
       ))}

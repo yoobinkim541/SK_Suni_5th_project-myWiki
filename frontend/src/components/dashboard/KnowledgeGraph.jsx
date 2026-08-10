@@ -1,6 +1,7 @@
 // 대시보드 전용 — "지식 축적화" 네트워크 그래프
 //
-// 대시보드에 들어오자마자(파이프라인 바 바로 아래) 바로 보이는 장식용 시각화입니다.
+// 대시보드에 들어오자마자(헤더 바로 아래, 파이프라인 상태 패널 옆) 바로 보이는 장식용
+// 시각화입니다.
 // 실데이터를 그리는 컴포넌트가 아니라, myWiki가 6개 카테고리·수백 개 키워드를 계속
 // 축적하고 있다는 걸 보여주는 정적 다이어그램입니다 — 그래서 데이터는 mockOnboarding.js의
 // INTEREST_KEYWORD_GROUPS(선호조사 키워드 사전)를 그대로 재사용합니다. 카테고리 6개 순서가
@@ -24,17 +25,14 @@ import { INTEREST_KEYWORD_GROUPS } from '../../data/mockOnboarding';
 import myWikiLogoFull from '../../assets/mywiki-logo-full.png';
 
 const CX = 500;
-const CY = 340; // viewBox 높이(680)의 정확히 절반
+const CY = 340; // 파이프라인 상태가 오른쪽 패널(.hero-pipe)로 빠지면서 그래프 위 가로 바가
+// 없어졌고, 그래프 좌우 폭도 사이드 패널만큼 줄었다 — 세로로 남는 여유를 살려 완전한
+// 원형(가로=세로 반지름, Y축 눌림 없음)으로 되돌렸다. 위/아래로 벌어진 만큼은 아래 viewBox를
+// 넉넉히 잡아서 흡수한다(CY는 그대로 중심).
 const HUB_R = 110;
-const CATEGORY_R = 218; // 중심에서 카테고리 노드까지 거리(가로 기준 — Y_SQUASH 적용 전)
+const CATEGORY_R = 218; // 중심에서 카테고리 노드까지 거리
 const CATEGORY_NODE_R = 44;
-const LEAF_R_BASE = 320; // 중심에서 리프(키워드 점)까지 기본 거리(가로 기준 — Y_SQUASH 적용 전)
-// 타원형 배치 — 화면은 세로보다 가로가 훨씬 넓은데 예전엔 완전한 원형(가로=세로 반지름)으로
-// 배치해서, 가로는 여유가 남아도는데 세로는 위/아래 끝 리프가 viewBox 밖으로 살짝
-// 잘렸다. toXY의 Y좌표에만 이 배수를 곱해 세로 반지름을 줄인다 — 각 카테고리·리프의
-// 각도/개수/연결 관계 등 데이터는 전혀 안 건드리고, 화면에 투영되는 좌표만 눌러
-// 타원으로 만든다(노드 자체는 원의 r=CATEGORY_NODE_R을 그대로 쓰므로 동그란 모양은 유지된다).
-const Y_SQUASH = 0.72;
+const LEAF_R_BASE = 320; // 중심에서 리프(키워드 점)까지 기본 거리
 // 카테고리 하나당 리프 13개 — 각도 퍼짐 + 반지름을 어긋나게 해서 가지 길이가 다양해 보이게
 // 함. 라벨 있는 가지(아래 LABELED_LEAF_INDEXES)는 텍스트가 잘리지 않도록 반지름을 크게
 // 안 건드리고, 라벨 없는 "빈 가지"는 반지름을 훨씬 크게 들쭉날쭉하게 벌려서 전체 윤곽이
@@ -42,18 +40,13 @@ const Y_SQUASH = 0.72;
 // 되고, 끝까지 둥글게 모일 필요는 없다).
 // 가지 수를 13개에서 11개로 줄여(-42/+62 양 끝단 제거) 더 정돈되어 보이게 함.
 const LEAF_ANGLES = [-32, -22, -12, -3, 6, 15, 25, 35, 45, -52, 53];
-// ⚠ 리프 각도는 카테고리 각도(0/60/120/180/240/300)에 그대로 더해지기 때문에, 어떤 카테고리는
-// 특정 리프의 최종 각도가 0°/180°(정확히 위/아래)에 가까워진다 — Y_SQUASH 덕분에 그 방향
-// 반지름이 실제로는 370*0.72≈266px까지만 나가므로(CY=340 기준 위/아래 모두 70px 이상 여유),
-// 예전 완전 원형일 때보다 여유가 넉넉해졌다. 그래도 최대치는 370(기본 반지름+지터 합)선에서
-// 그대로 묶어 둔다.
 const LEAF_JITTER = [22, 40, 30, 14, 48, 24, 34, 32, 44, 50, 18];
 // 라벨을 붙일 리프 인덱스 — 10개 중 5개(퍼짐 양 끝은 피해서 텍스트가 잘리지 않게 함).
 const LABELED_LEAF_INDEXES = new Set([1, 3, 4, 6, 8]);
 
 function toXY(angleDeg, radius) {
   const rad = (angleDeg * Math.PI) / 180;
-  return { x: CX + radius * Math.sin(rad), y: CY - radius * Math.cos(rad) * Y_SQUASH };
+  return { x: CX + radius * Math.sin(rad), y: CY - radius * Math.cos(rad) };
 }
 
 const CATEGORIES = INTEREST_KEYWORD_GROUPS.map((g, i) => {
@@ -82,13 +75,20 @@ export default function KnowledgeGraph() {
 
   return (
     <div
-      className={`kg-wrap relative mx-auto w-full max-w-full rounded-2xl px-1 pt-1 pb-2 sm:px-4 sm:pt-2 md:px-6${
+      className={`kg-wrap relative mx-auto w-full max-w-full rounded-2xl px-1 pt-0 pb-2 sm:px-4 sm:pt-0 md:px-6${
         inView ? ' in' : ''
       }`}
     >
+      {/* 완전한 원형이라 리프가 y≈-26(최상단, 제품·기술)부터 y≈706(최하단, 공급망·생산)까지
+          뻗는다 — viewBox를 0 -34 1000 769로 잡아서 위쪽은 안티앨리어싱만 안 잘릴 최소 여유
+          (약 2px)만, 아래쪽은 29px 여유를 두고 담는다(노드 좌표는 안 건드리고 보이는 창만
+          세로로 늘림 — 위쪽을 최대한 바짝 잘라서 그래프가 대시보드 헤더 바로 아래에서
+          시작하게 하고, 아래쪽은 라벨이 안 잘리게 여유를 그대로 둠). 실제 화면 높이는
+          .kg-svg의 max-height(globals.css, calc(100vh - …))가 다시 줄여서 항상 한 화면 안에
+          들어오게 한다 — 원 비율은 유지된 채로 축소되므로 찌그러지지 않는다. */}
       <svg
-        className="kg-svg block h-auto w-full max-h-[380px] sm:max-h-[480px] lg:max-h-[580px]"
-        viewBox="0 0 1000 680"
+        className="kg-svg block h-auto w-full"
+        viewBox="0 -34 1000 769"
         role="img"
         aria-label="myWiki 지식 축적 네트워크 — 6개 카테고리와 키워드"
       >

@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/globals.css';
 // ⚠ CSS 안의 다크모드 규칙이 `:root[data-theme="dark"]{...}` 형태라서(문서 <html> 기준),
@@ -13,12 +14,15 @@ import './styles/tailwind.css';
 
 // 개발 중 로그인 없이 특정 화면만 빨리 확인하고 싶을 때 쓰는 우회 경로.
 // import.meta.env.DEV로 감싸서 프로덕션 빌드(vite build)에는 이 코드 자체가 포함되지 않는다.
-// 사용법: 로컬 dev 서버에서 http://localhost:5173/?previewOnboarding=1 또는 ?previewDashboard=1 로 접속.
+// 사용법: 로컬 dev 서버에서 http://localhost:5173/?previewOnboarding=1 또는 ?previewDashboard=1,
+// ?previewAgent=1 로 접속.
 let DevEntry = App;
 const devPreview = new URLSearchParams(location.search).get('previewOnboarding')
   ? 'onboarding'
   : new URLSearchParams(location.search).has('previewDashboard')
   ? 'dashboard'
+  : new URLSearchParams(location.search).has('previewAgent')
+  ? 'agent'
   : null;
 if (import.meta.env.DEV && devPreview === 'onboarding') {
   const { default: OnboardingPage } = await import('./pages/OnboardingPage');
@@ -27,11 +31,24 @@ if (import.meta.env.DEV && devPreview === 'onboarding') {
   );
 } else if (import.meta.env.DEV && devPreview === 'dashboard') {
   const { default: DashboardPage } = await import('./pages/DashboardPage');
-  DevEntry = () => <DashboardPage interests={[]} onNavigate={() => {}} />;
+  DevEntry = () => <DashboardPage interests={[]} />;
+} else if (import.meta.env.DEV && devPreview === 'agent') {
+  // 실 로그인/백엔드 없이 AgentPage만 확인 — myProfile.display_name을 profile의
+  // user_metadata.full_name과 일부러 다르게 줘서, 배너/작성자 표시가 어느 쪽을
+  // 우선하는지(실제 프로필이 우선해야 함) 눈으로 바로 구분할 수 있게 한다.
+  const { default: AgentPage } = await import('./pages/AgentPage');
+  DevEntry = () => (
+    <AgentPage
+      profile={{ id: 'dev-user', email: 'dev@example.com', user_metadata: { full_name: '(구)OAuth 이름' } }}
+      myProfile={{ id: 'dev-user', display_name: '(신)수정된 이름', has_avatar: false }}
+    />
+  );
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <DevEntry />
+    <BrowserRouter>
+      <DevEntry />
+    </BrowserRouter>
   </React.StrictMode>
 );

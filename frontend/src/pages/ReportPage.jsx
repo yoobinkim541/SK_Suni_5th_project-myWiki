@@ -9,6 +9,7 @@
 //   (3) 리포트 히스토리 2열     ← ReportSection (페이지 넘김)
 import Spinner from '../components/common/Spinner';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   fetchReportSummary,
   fetchReportArchive,
@@ -16,7 +17,8 @@ import {
 } from '../services/reportApi';
 import ReportSection from '../components/report/ReportSection';
 
-export default function ReportPage({ onNavigate }) {
+export default function ReportPage() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
@@ -82,7 +84,7 @@ export default function ReportPage({ onNavigate }) {
 
   return (
     <section className="view on" id="v-report">
-      <div className="ph">
+      <div className="ph sr-1">
         <h2>일일 동향 보고서</h2>
         <span className="dt">{summary.date}</span>
         <span className="st">{summary.statusLabel || <>수집 파이프라인 <b>정상</b></>}</span>
@@ -95,7 +97,7 @@ export default function ReportPage({ onNavigate }) {
         today={today}
         summary={summary}
         historyError={historyError}
-        onSelectWiki={(wikiId) => onNavigate?.('wiki', wikiId)}
+        onSelectWiki={(wikiId) => navigate(`/wiki/${wikiId}`)}
       />
     </section>
   );

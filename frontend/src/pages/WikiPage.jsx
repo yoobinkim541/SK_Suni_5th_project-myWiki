@@ -22,6 +22,7 @@
 // VITE_USE_MOCK=true면 목업, false면 실제 백엔드(api/wiki.js)를 호출합니다.
 import Spinner from '../components/common/Spinner';
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { WIKI_KEYWORD_LINKS } from '../data/mockWiki';
 import { getKeywordCategory } from '../data/wikiKeywords';
 import {
@@ -32,12 +33,14 @@ import WikiSideNav from '../components/wiki/WikiSideNav';
 import WikiCard from '../components/wiki/WikiCard';
 import WikiKeywordDocsModal from '../components/wiki/WikiKeywordDocsModal';
 import WikiKeywordModal from '../components/wiki/WikiKeywordModal';
+import mascotWikiImg from '../assets/mascot-wiki.png';
 
 // 목업 모드에서만 값이 있음(실제 모드는 빈 배열) — services/wikiApi.js 참고.
 // 렌더마다 새 배열이 생기지 않게 컴포넌트 밖에서 한 번만 계산한다.
 const KEYWORD_LINK_WORDS = getKeywordLinkWords();
 
-export default function WikiPage({ docId }) {
+export default function WikiPage() {
+  const { docId } = useParams();
   const [tree, setTree] = useState(null);
   const [current, setCurrent] = useState(null);
   const [doc, setDoc] = useState(null);
@@ -140,21 +143,25 @@ export default function WikiPage({ docId }) {
 
   return (
     <section className="view on" id="v-wiki">
-      <div className="ph">
+      <div className="ph sr-1">
         <h2>{doc.title}</h2>
         <span className="dt">{doc.category}</span>
         <span className="st">최종 갱신 <b>{doc.updated}</b></span>
       </div>
 
       <div className="wiki">
-        <WikiSideNav tree={tree} current={current} onSelect={setCurrent} />
+        <div className="sr-2">
+          <WikiSideNav tree={tree} current={current} onSelect={setCurrent} />
+        </div>
 
-        <WikiCard
-          doc={doc} onKeyword={setKeyword} onKeywordDocs={setDocKeyword}
-          catalog={catalog} linkWords={KEYWORD_LINK_WORDS}
-        />
+        <div className="sr-3">
+          <WikiCard
+            doc={doc} onKeyword={setKeyword} onKeywordDocs={setDocKeyword}
+            catalog={catalog} linkWords={KEYWORD_LINK_WORDS}
+          />
+        </div>
 
-        <div>
+        <div className="sr-4">
           <div className="col">
             <h5>근거 출처<span className="c">{doc.sourceCount}</span></h5>
             {doc.sources.map((s, i) => (
@@ -180,6 +187,9 @@ export default function WikiPage({ docId }) {
                 <b>{l.title}</b>{l.desc}
               </button>
             ))}
+            <div className="mascot-float">
+              <img src={mascotWikiImg} alt="마이위키 마스코트" />
+            </div>
           </div>
         </div>
       </div>

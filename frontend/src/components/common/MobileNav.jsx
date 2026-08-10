@@ -17,7 +17,9 @@
 //
 // ⚠ 로고 아이콘 추가: 드로어 브랜드도 사이드바와 같은 LogoMark(SVG)를 씁니다.
 
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import LogoMark from './LogoMark';
+import { NAV_PATHS } from '../../constants/navPaths';
 
 // 항목 아이콘 — SideNav.jsx(PC)와 같은 path를 씁니다. globals.css의 `.m-drawer a .ic svg`가
 // 이미 이 마크업(`<span className="ic">`)을 전제로 스타일을 준비해뒀는데 지금까지 안 쓰이고
@@ -58,7 +60,7 @@ const DRAWER_ITEMS = [
   ]},
 ];
 
-export function Drawer({ isOpen, activeKey, onNavigate, onClose, onLogoClick, lastCollected = '07:42', nextCollected = '08:00' }) {
+export function Drawer({ isOpen, onClose, onLogoClick, lastCollected = '07:42', nextCollected = '08:00' }) {
   return (
     <>
       <div className={`m-drawer-scrim${isOpen ? ' open' : ''}`} onClick={onClose}></div>
@@ -68,7 +70,7 @@ export function Drawer({ isOpen, activeKey, onNavigate, onClose, onLogoClick, la
           onClick={() => { onLogoClick?.(); onClose?.(); }}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onLogoClick?.(); onClose?.(); } }}
         >
-          <div className="eb">반도체 동향 시스템</div>
+          <div className="eb">반도체 산업 동향 자동 큐레이션</div>
           <div className="nm"><LogoMark className="nm-ic" />myWiki</div>
           <div className="rule"></div>
         </div>
@@ -76,14 +78,16 @@ export function Drawer({ isOpen, activeKey, onNavigate, onClose, onLogoClick, la
           <nav key={section.group}>
             <div className="lb">{section.group}</div>
             {section.items.map((item) => (
-              <a
+              <NavLink
                 key={item.key}
-                className={activeKey === item.key ? 'on' : ''}
-                onClick={() => { onNavigate(item.key); onClose?.(); }}
+                to={NAV_PATHS[item.key]}
+                end={item.key === 'dash'}
+                className={({ isActive }) => (isActive ? 'on' : '')}
+                onClick={() => onClose?.()}
               >
                 <span className="ic">{DRAWER_ICONS[item.key]}</span>
                 {item.label}
-              </a>
+              </NavLink>
             ))}
           </nav>
         ))}
@@ -116,19 +120,24 @@ const MORE_ICON = (
   <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></svg>
 );
 
-export function BottomNav({ activeKey, onNavigate, onMoreClick }) {
-  // "더보기"는 activeKey가 탭 4개(dash/report/agent/wiki) 밖의 화면일 때(예: cat, settings) 활성 표시
-  const isMoreActive = !BOTTOM_TABS.some((t) => t.key === activeKey);
+export function BottomNav({ onMoreClick }) {
+  // "더보기"는 현재 경로가 탭 4개(dash/report/agent/wiki)의 경로 밖일 때(예: /category, /settings) 활성 표시
+  const location = useLocation();
+  const isMoreActive = !BOTTOM_TABS.some((tab) => {
+    const path = NAV_PATHS[tab.key];
+    return path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
+  });
   return (
     <nav className="m-tabbar" aria-label="하단 탭">
       {BOTTOM_TABS.map((tab) => (
-        <button
+        <NavLink
           key={tab.key}
-          className={`mtab${activeKey === tab.key ? ' active' : ''}`}
-          onClick={() => onNavigate(tab.key)}
+          to={NAV_PATHS[tab.key]}
+          end={tab.key === 'dash'}
+          className={({ isActive }) => `mtab${isActive ? ' active' : ''}`}
         >
           <span className="ic">{tab.icon}</span>{tab.label}
-        </button>
+        </NavLink>
       ))}
       <button className={`mtab${isMoreActive ? ' active' : ''}`} onClick={onMoreClick}>
         <span className="ic">{MORE_ICON}</span>더보기
@@ -143,11 +152,11 @@ export function BottomNav({ activeKey, onNavigate, onMoreClick }) {
 export function MoreSheet({
   isOpen,
   onClose,
-  onNavigate,
   onPwaInstallClick,
   pwaStateLabel = '홈 화면에 추가',
   onLogoutClick,
 }) {
+  const navigate = useNavigate();
   function close(action) {
     action?.();
     onClose?.();
@@ -158,7 +167,7 @@ export function MoreSheet({
       <div className={`m-sheet${isOpen ? ' open' : ''}`} role="dialog" aria-label="더보기">
         <div className="m-grip"></div>
         <div className="m-sheet-h">더보기</div>
-        <button className="m-sheet-item" onClick={() => close(() => onNavigate?.('settings'))}>
+        <button className="m-sheet-item" onClick={() => close(() => navigate(NAV_PATHS.settings))}>
           <span className="ic">
             <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" /></svg>
           </span>설정

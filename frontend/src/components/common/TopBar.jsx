@@ -63,6 +63,10 @@ export default function TopBar({
         <img src={myWikiLogoFull} alt="my Wiki" className="brand2-logo-full" />
       </button>
 
+      {/* 상단바 정중앙 타이틀 — 원래 사이드바 구석의 작은 문구(.brand .eb)였는데, 더 눈에
+          띄게 상단바 가운데로 옮겨 크게·다른 서체(세리프)로 보여준다. */}
+      <div className="deck-title">반도체 산업 동향 자동 큐레이션</div>
+
       <div className="deck-right">
         <button
           className={`gear${settingsOpen ? ' open' : ''}`}
