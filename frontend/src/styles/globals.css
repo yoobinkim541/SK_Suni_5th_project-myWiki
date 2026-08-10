@@ -345,6 +345,9 @@ svg text{font-family:inherit}
 .row p{font-size:12.5px;font-weight:400;color:#68736F;line-height:1.75;max-width:620px}
 .row .meta{text-align:right}
 .row .meta .s{font-size:11px;font-weight:600;color:#175243}
+/* 샘플 데이터의 출처 표시. 링크가 아니므로 눌리는 것처럼 보이면 안 된다 —
+   목업 sourceUrl이 도메인 루트라 실제로 눌러도 홈페이지로 간다. */
+.row .meta .s.sample{font-weight:400;color:#9AA6A2;cursor:default}
 .row .meta .w{display:block;font-size:11px;font-weight:400;color:#9AA6A2;margin-top:7px}
 .row.empty{border-left:2px dashed var(--hair);padding-left:16px}
 .legend{margin-top:20px;padding-top:13px;border-top:1px solid var(--hair);
