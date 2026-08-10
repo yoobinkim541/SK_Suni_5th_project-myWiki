@@ -76,6 +76,8 @@
 --  27) [8/07] daily_report_analysis_batches 테이블 신설 (일일 리포트용 분석
 --      배치 — 특정 report_date에 어떤 document_version이 묶였는지 기록)
 --  28) [8/07] wiki_page_keywords 테이블 신설 (위키 페이지 키워드 검색/필터)
+--  29) [8/10] wiki_page_versions.page_reliability_score/level/detail 추가
+--      (야간 배치 위키 페이지 생성 LLM의 자율 신뢰도 판정 + 발행 게이트)
 -- ============================================================
 
 
@@ -288,6 +290,9 @@ CREATE TABLE wiki_page_versions (
     generation_run_id          UUID,
     validation_status          VARCHAR       NOT NULL,
     confidence_score           NUMERIC,
+    page_reliability_score      INTEGER,
+    page_reliability_level      VARCHAR,
+    page_reliability_detail     JSONB,
     created_at                 TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
@@ -656,6 +661,10 @@ ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_review_status CHECK (revi
 ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_generated_by  CHECK (generated_by IN ('human','llm'));
 ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_validation_status CHECK (validation_status IN ('pending','passed','failed'));
 ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_confidence    CHECK (confidence_score >= 0 AND confidence_score <= 1);
+ALTER TABLE wiki_page_versions ADD CONSTRAINT wiki_page_versions_page_reliability_score_check
+  CHECK (page_reliability_score IS NULL OR (page_reliability_score >= 0 AND page_reliability_score <= 100));
+ALTER TABLE wiki_page_versions ADD CONSTRAINT wiki_page_versions_page_reliability_level_check
+  CHECK (page_reliability_level IS NULL OR page_reliability_level IN ('낮음', '보통', '높음'));
 
 -- [8/07] report_type/status: 리포트 유형이 daily 외로 확장되고, 생성 파이프라인이
 -- planning/researching/drafting/verifying/rendering 세부 단계를 거치도록 바뀜

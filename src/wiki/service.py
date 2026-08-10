@@ -124,6 +124,12 @@ def create_wiki_version(draft: WikiDraftInput, *, supabase: Client | None = None
         insert_data["generator_prompt_version"] = draft.generator_prompt_version
     if draft.generation_run_id is not None:
         insert_data["generation_run_id"] = draft.generation_run_id
+    if draft.page_reliability_score is not None:
+        insert_data["page_reliability_score"] = draft.page_reliability_score
+    if draft.page_reliability_level is not None:
+        insert_data["page_reliability_level"] = draft.page_reliability_level
+    if draft.page_reliability_detail is not None:
+        insert_data["page_reliability_detail"] = draft.page_reliability_detail
 
     version_res = (
         db.table("wiki_page_versions")

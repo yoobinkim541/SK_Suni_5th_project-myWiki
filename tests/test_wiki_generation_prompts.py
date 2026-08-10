@@ -127,3 +127,34 @@ def test_issue_rewrite_user_prompt_handles_no_citations():
     section = _section().model_copy(update={"news_citations": []})
     prompt = build_issue_page_rewrite_user_prompt(section)
     assert "없음" in prompt
+
+
+def _topic_section_with_reliability_score(score: int) -> ReportSectionDraft:
+    return ReportSectionDraft(
+        issue_key="issue-1", representative_analysis_result_id="analysis-1",
+        category=Category.PRODUCT_TECHNOLOGY, title="테스트 이슈",
+        reliability_score=score,
+    )
+
+
+def test_wiki_topic_system_prompt_requests_weighted_reliability_judgment():
+    assert "grounding_fidelity" in WIKI_TOPIC_SYSTEM_PROMPT
+    assert "40" in WIKI_TOPIC_SYSTEM_PROMPT
+    assert "reliability_level" in WIKI_TOPIC_SYSTEM_PROMPT
+
+
+def test_issue_page_rewrite_system_prompt_requests_weighted_reliability_judgment():
+    assert "grounding_fidelity" in ISSUE_PAGE_REWRITE_SYSTEM_PROMPT
+    assert "reliability_level" in ISSUE_PAGE_REWRITE_SYSTEM_PROMPT
+
+
+def test_wiki_topic_user_prompt_includes_source_reliability_signal():
+    prompt = build_wiki_topic_user_prompt(
+        section=_topic_section_with_reliability_score(72), candidates=[], top_level_pages=[],
+    )
+    assert "근거 신뢰도(원문 문서 기준): 72" in prompt
+
+
+def test_issue_page_rewrite_user_prompt_includes_source_reliability_signal():
+    prompt = build_issue_page_rewrite_user_prompt(_topic_section_with_reliability_score(72))
+    assert "근거 신뢰도(원문 문서 기준): 72" in prompt

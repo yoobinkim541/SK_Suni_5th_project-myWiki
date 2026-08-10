@@ -143,6 +143,9 @@ CREATE TABLE `wiki_page_versions` (
     `generation_run_id`          UUID,
     `validation_status`          VARCHAR(30)   NOT NULL,
     `confidence_score`           NUMERIC(5,4),
+    `page_reliability_score`     INTEGER,
+    `page_reliability_level`     VARCHAR,
+    `page_reliability_detail`    JSONB,
     `created_at`                 TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
@@ -427,6 +430,10 @@ ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_review_status` CHECK (
 ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_generated_by`  CHECK (`generated_by` IN ('human','llm'));
 ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_validation_status` CHECK (`validation_status` IN ('pending','passed','failed'));
 ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `ck_wpv_confidence`    CHECK (`confidence_score` >= 0 AND `confidence_score` <= 1);
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `wiki_page_versions_page_reliability_score_check`
+  CHECK (`page_reliability_score` IS NULL OR (`page_reliability_score` >= 0 AND `page_reliability_score` <= 100));
+ALTER TABLE `wiki_page_versions`   ADD CONSTRAINT `wiki_page_versions_page_reliability_level_check`
+  CHECK (`page_reliability_level` IS NULL OR `page_reliability_level` IN ('낮음', '보통', '높음'));
 
 ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_status`    CHECK (`status` IN ('pending','generating','completed','failed'));
 ALTER TABLE `reports`              ADD CONSTRAINT `ck_reports_version`   CHECK (`version` >= 1);

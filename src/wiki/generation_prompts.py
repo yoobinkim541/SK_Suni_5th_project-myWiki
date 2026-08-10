@@ -33,6 +33,12 @@ WIKI_TOPIC_SYSTEM_PROMPT = """당신은 SK하이닉스 반도체 산업 위키�
   경쟁사→company, 고객·수요산업→industry, 공급망·생산→supply_chain, 정책·규제→policy,
   시장·경영→market. 이 7종 밖의 값은 절대 반환하지 마십시오.
 - confidence_score(0~1)에 이번 갱신이 얼마나 근거로 잘 뒷받침되는지 스스로 평가해 반환하십시오.
+- 아래 4개 항목으로 이 페이지 자체의 신뢰도를 직접 판정해 reliability 객체로 반환하십시오.
+  grounding_fidelity(0~40, 가장 중요 — 본문의 각 주장이 [근거 문서] 범위를 벗어나 추론·과장한
+  부분이 있는지), source_reliability(0~20, [이슈 정보]의 "근거 신뢰도" 값을 참고해 원문 자체의
+  신뢰도를 반영), evidence_diversity(0~20, 단일 출처에만 의존하는지), currency(0~20, 근거가
+  최근 것인지). reliability_score는 4개 항목의 합, reliability_level은 0~39=낮음/40~69=보통/
+  70~100=높음 구간을 그대로 따르십시오. 각 항목마다 reason을 한 문장으로 쓰십시오.
 - 마크다운 코드블록 없이 지정된 JSON 구조로만 응답하십시오.
 
 JSON 출력 형식:
@@ -46,7 +52,14 @@ JSON 출력 형식:
   "markdown": "전체 새 버전 본문",
   "change_summary": "변경 이력에 들어갈 한 줄",
   "claims": [{"document_version_id": "...", "claim_text": "...", "citation_order": 1}],
-  "confidence_score": 0.0
+  "confidence_score": 0.0,
+  "reliability": {
+    "grounding_fidelity_score": 0, "grounding_fidelity_reason": "",
+    "source_reliability_score": 0, "source_reliability_reason": "",
+    "evidence_diversity_score": 0, "evidence_diversity_reason": "",
+    "currency_score": 0, "currency_reason": "",
+    "reliability_score": 0, "reliability_level": "낮음" | "보통" | "높음"
+  }
 }"""
 
 
@@ -88,6 +101,7 @@ def build_wiki_topic_user_prompt(
         f"제목: {section.title}",
         f"카테고리: {section.category.value}",
         f"현재 상황 요약: {section.current_summary or ''}",
+        f"근거 신뢰도(원문 문서 기준): {section.reliability_score}",
         "핵심 사실:",
     ]
     lines.extend(f"- {fact}" for fact in section.key_facts)
@@ -142,6 +156,12 @@ ISSUE_PAGE_REWRITE_SYSTEM_PROMPT = """당신은 SK하이닉스 반도체 산업 
 - key_facts/implications/watch_points는 각각 원본과 비슷한 개수의 리스트로, 항목마다
   한 문장 이내로 쓰십시오. 원본에 있던 사실을 누락하지 마십시오.
 - 출처·인용 표기는 이 작업과 무관합니다 — 절대 언급하거나 만들어내지 마십시오.
+- 아래 4개 항목으로 이 페이지 자체의 신뢰도를 직접 판정해 reliability 객체로 반환하십시오.
+  grounding_fidelity(0~40, 가장 중요 — 본문의 각 주장이 [근거 문서 원문] 범위를 벗어나 추론·과장한
+  부분이 있는지), source_reliability(0~20, [이슈 정보]의 "근거 신뢰도" 값을 참고해 원문 자체의
+  신뢰도를 반영), evidence_diversity(0~20, 단일 출처에만 의존하는지), currency(0~20, 근거가
+  최근 것인지). reliability_score는 4개 항목의 합, reliability_level은 0~39=낮음/40~69=보통/
+  70~100=높음 구간을 그대로 따르십시오. 각 항목마다 reason을 한 문장으로 쓰십시오.
 - 마크다운 코드블록 없이 지정된 JSON 구조로만 응답하십시오.
 
 JSON 출력 형식:
@@ -149,7 +169,14 @@ JSON 출력 형식:
   "current_summary": "다듬어진 현재 상황 문단",
   "key_facts": ["핵심 사실 1", "핵심 사실 2"],
   "implications": ["시사점 1", "시사점 2"],
-  "watch_points": ["주시할 지점 1", "주시할 지점 2"]
+  "watch_points": ["주시할 지점 1", "주시할 지점 2"],
+  "reliability": {
+    "grounding_fidelity_score": 0, "grounding_fidelity_reason": "",
+    "source_reliability_score": 0, "source_reliability_reason": "",
+    "evidence_diversity_score": 0, "evidence_diversity_reason": "",
+    "currency_score": 0, "currency_reason": "",
+    "reliability_score": 0, "reliability_level": "낮음" | "보통" | "높음"
+  }
 }"""
 
 
@@ -161,6 +188,7 @@ def build_issue_page_rewrite_user_prompt(
         "[이슈 정보]",
         f"제목: {section.title}",
         f"카테고리: {section.category.value}",
+        f"근거 신뢰도(원문 문서 기준): {section.reliability_score}",
         "",
         "[현재 상황]",
         section.current_summary or "",

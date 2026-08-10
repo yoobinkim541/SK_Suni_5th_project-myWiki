@@ -172,6 +172,35 @@ def test_create_wiki_version_basic(workspace_id):
     db.table("wiki_pages").delete().eq("slug", slug).eq("workspace_id", workspace_id).execute()
 
 
+def test_create_wiki_version_stores_page_reliability_fields(workspace_id):
+    slug = f"test-ver-rel-{uuid.uuid4().hex[:8]}"
+    draft = WikiDraftInput(
+        workspace_id=workspace_id,
+        slug=slug,
+        title="신뢰도 필드 테스트",
+        page_type="term",
+        markdown="# 테스트\n내용입니다.",
+        sources=[],
+        page_reliability_score=85,
+        page_reliability_level="높음",
+        page_reliability_detail={"grounding_fidelity_score": 35},
+    )
+    version_id = create_wiki_version(draft)
+
+    db = _get_client()
+    ver = db.table("wiki_page_versions").select("*").eq("id", version_id).single().execute()
+    assert ver.data["page_reliability_score"] == 85
+    assert ver.data["page_reliability_level"] == "높음"
+    assert ver.data["page_reliability_detail"] == {"grounding_fidelity_score": 35}
+
+    # teardown
+    obj_key = ver.data["markdown_object_key"]
+    db.storage.from_("wiki").remove([obj_key])
+    db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
+    db.table("wiki_page_versions").delete().eq("id", version_id).execute()
+    db.table("wiki_pages").delete().eq("slug", slug).eq("workspace_id", workspace_id).execute()
+
+
 def test_create_wiki_version_deduplicates_identical_sources(workspace_id):
     slug = f"test-src-dedupe-{uuid.uuid4().hex[:8]}"
     db = _get_client()

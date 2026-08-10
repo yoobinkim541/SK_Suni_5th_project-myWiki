@@ -39,6 +39,23 @@ def _section(issue_key: str = "issue-hbm4-supply", evidence_text: str | None = N
     )
 
 
+_RELIABILITY_MEDIUM = {
+    "grounding_fidelity_score": 25, "grounding_fidelity_reason": "근거 범위 안에서 서술함",
+    "source_reliability_score": 15, "source_reliability_reason": "원문 신뢰도 보통 수준",
+    "evidence_diversity_score": 10, "evidence_diversity_reason": "출처 2건 확인",
+    "currency_score": 10, "currency_reason": "최근 1주 이내 정보",
+    "reliability_score": 60, "reliability_level": "보통",
+}
+
+_RELIABILITY_LOW = {
+    "grounding_fidelity_score": 5, "grounding_fidelity_reason": "근거에 없는 수치를 추가함",
+    "source_reliability_score": 10, "source_reliability_reason": "단일 출처",
+    "evidence_diversity_score": 5, "evidence_diversity_reason": "교차검증 불가",
+    "currency_score": 5, "currency_reason": "오래된 정보",
+    "reliability_score": 25, "reliability_level": "낮음",
+}
+
+
 def _patch_topic_candidates_filter(monkeypatch, allowed: set[str] | None = None) -> None:
     """filter_to_topic_page_ids를 대체한다. allowed=None이면 전부 통과."""
     monkeypatch.setattr(
@@ -91,6 +108,55 @@ def test_generate_issue_page_creates_and_auto_publishes(monkeypatch):
 
     create_call = next(call for call in calls if call[0] == "create")
     assert create_call[3] == ["doc-1"]
+
+
+def test_generate_issue_page_skips_when_reliability_is_low(monkeypatch):
+    calls = []
+
+    def fake_llm(system_prompt, user_prompt, model):
+        return json.dumps({
+            "current_summary": "요약", "key_facts": ["사실"],
+            "implications": ["시사점"], "watch_points": ["지점"],
+            "reliability": _RELIABILITY_LOW,
+        })
+
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append("upsert") or "should-not-happen")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: calls.append("create") or "should-not-happen")
+
+    page_id, version_id = generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None, llm_client=fake_llm,
+    )
+
+    assert page_id is None
+    assert version_id is None
+    assert calls == []  # upsert_wiki_page/create_wiki_version 둘 다 호출되면 안 된다
+
+
+def test_generate_issue_page_publishes_when_reliability_llm_call_fails(monkeypatch):
+    """이슈 페이지는 'LLM 없이도 항상 성공해야 한다'는 기존 원칙이 있다 — 신뢰도
+    판정 LLM 호출 자체가 실패하면(기존 폴백) '보통'으로 간주하고 그대로 발행해야
+    한다(목표 4 회귀 방지)."""
+    calls = []
+    monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "not json")
+    monkeypatch.setattr(generation, "find_matching_issue_page", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-1")
+    monkeypatch.setattr(
+        generation, "create_wiki_version",
+        lambda draft, **k: calls.append(("create", draft.page_reliability_level)) or "version-1",
+    )
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    page_id, version_id = generation._generate_issue_page(
+        _section(), workspace_id="ws-1", requested_by=None,
+    )
+
+    assert page_id == "page-1"
+    assert version_id == "version-1"
+    create_call = next(call for call in calls if call[0] == "create")
+    assert create_call[1] is None  # 판정을 못 받았으므로 page_reliability_level은 기록하지 않는다
 
 
 def test_generate_issue_page_defaults_parent_to_none(monkeypatch):
@@ -203,23 +269,27 @@ def test_rewrite_issue_page_content_uses_llm_result():
             "key_facts": ["다듬어진 사실"],
             "implications": ["다듬어진 시사점"],
             "watch_points": ["다듬어진 지점"],
+            "reliability": _RELIABILITY_MEDIUM,
         })
 
-    rewritten = generation._rewrite_issue_page_content(_section(), llm_client=fake_llm)
+    rewritten, judgment = generation._rewrite_issue_page_content(_section(), llm_client=fake_llm)
 
     assert rewritten.current_summary == "다듬어진 요약"
     assert rewritten.key_facts == ["다듬어진 사실"]
     assert rewritten.implications == ["다듬어진 시사점"]
     assert rewritten.watch_points == ["다듬어진 지점"]
     assert rewritten.title == _section().title  # 제목은 재작성 대상이 아니다
+    assert judgment is not None
+    assert judgment.reliability_level.value == "보통"
 
 
 def test_rewrite_issue_page_content_falls_back_on_invalid_json(monkeypatch):
     monkeypatch.setattr(generation, "create_json_completion", lambda **kwargs: "not json")
 
-    rewritten = generation._rewrite_issue_page_content(_section())
+    rewritten, judgment = generation._rewrite_issue_page_content(_section())
 
     assert rewritten == _section()
+    assert judgment is None
 
 
 def test_rewrite_issue_page_content_falls_back_on_empty_fields(monkeypatch):
@@ -230,9 +300,10 @@ def test_rewrite_issue_page_content_falls_back_on_empty_fields(monkeypatch):
         ),
     )
 
-    rewritten = generation._rewrite_issue_page_content(_section())
+    rewritten, judgment = generation._rewrite_issue_page_content(_section())
 
     assert rewritten == _section()
+    assert judgment is None
 
 
 def test_rewrite_issue_page_content_falls_back_on_llm_exception(monkeypatch):
@@ -241,9 +312,10 @@ def test_rewrite_issue_page_content_falls_back_on_llm_exception(monkeypatch):
 
     monkeypatch.setattr(generation, "create_json_completion", exploding_completion)
 
-    rewritten = generation._rewrite_issue_page_content(_section())
+    rewritten, judgment = generation._rewrite_issue_page_content(_section())
 
     assert rewritten == _section()
+    assert judgment is None
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +446,7 @@ def test_generate_topic_page_prompt_includes_mapped_evidence_text(monkeypatch):
 
     def fake_completion(**kwargs):
         prompts.append(kwargs["user_prompt"])
-        return json.dumps({"action": "skip", "claims": [], "confidence_score": 0.1})
+        return json.dumps({"action": "skip", "claims": [], "confidence_score": 0.1, "reliability": _RELIABILITY_MEDIUM})
 
     monkeypatch.setattr(generation, "create_json_completion", fake_completion)
 
@@ -396,7 +468,7 @@ def test_generate_topic_page_skips_when_llm_returns_skip(monkeypatch):
     monkeypatch.setattr(
         generation,
         "create_json_completion",
-        lambda **kwargs: json.dumps({"action": "skip", "claims": [], "confidence_score": 0.1}),
+        lambda **kwargs: json.dumps({"action": "skip", "claims": [], "confidence_score": 0.1, "reliability": _RELIABILITY_MEDIUM}),
     )
 
     action, page_id, version_id = generation._generate_topic_page(
@@ -406,6 +478,71 @@ def test_generate_topic_page_skips_when_llm_returns_skip(monkeypatch):
     assert action == "skip"
     assert page_id is None
     assert version_id is None
+
+
+def test_generate_topic_page_skips_when_reliability_is_low(monkeypatch):
+    calls = []
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps({
+            "action": "create_new",
+            "slug": "hbm4-supply", "title": "HBM4_수급현황", "page_type": "technology",
+            "markdown": "# 본문",
+            "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+            "confidence_score": 0.2,
+            "reliability": _RELIABILITY_LOW,
+        }),
+    )
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: calls.append("create") or "should-not-happen")
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: calls.append("upsert") or "should-not-happen")
+
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "skip"
+    assert page_id is None
+    assert version_id is None
+    assert calls == []  # create_wiki_version/upsert_wiki_page 둘 다 호출되면 안 된다
+
+
+def test_generate_topic_page_stores_reliability_fields_when_published(monkeypatch):
+    calls = []
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion",
+        lambda **kwargs: json.dumps({
+            "action": "create_new",
+            "slug": "hbm4-supply", "title": "HBM4_수급현황", "page_type": "technology",
+            "markdown": "# 본문",
+            "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+            "confidence_score": 0.8,
+            "reliability": _RELIABILITY_MEDIUM,
+        }),
+    )
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-1")
+    monkeypatch.setattr(
+        generation, "create_wiki_version",
+        lambda draft, **k: calls.append(
+            ("create", draft.page_reliability_score, draft.page_reliability_level, draft.page_reliability_detail)
+        ) or "version-1",
+    )
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "create_new"
+    create_call = next(call for call in calls if call[0] == "create")
+    assert create_call[1] == 60
+    assert create_call[2] == "보통"
+    assert create_call[3] is not None
 
 
 def test_generate_topic_page_updates_existing_when_confidence_high(monkeypatch):
@@ -431,6 +568,7 @@ def test_generate_topic_page_updates_existing_when_confidence_high(monkeypatch):
                 "change_summary": "신규 근거 반영",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -468,6 +606,7 @@ def test_generate_topic_page_skips_when_target_page_identity_missing(monkeypatch
                 "markdown": "# 갱신된 본문",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -500,6 +639,7 @@ def test_generate_topic_page_creates_new_under_chosen_parent(monkeypatch):
                 "change_summary": "최초 생성",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.85,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -539,6 +679,7 @@ def test_generate_topic_page_skips_when_title_duplicates_issue_title(monkeypatch
                 "change_summary": "최초 생성",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.85,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -577,6 +718,7 @@ def test_generate_topic_page_creates_when_title_meaningfully_broader(monkeypatch
                 "change_summary": "최초 생성",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.85,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -614,6 +756,7 @@ def test_generate_topic_page_falls_back_to_industry_on_invalid_page_type(monkeyp
                 "change_summary": "최초 생성",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.85,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -651,6 +794,7 @@ def test_generate_topic_page_auto_publishes_even_when_confidence_low(monkeypatch
                 "change_summary": "최초 생성",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.3,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -685,7 +829,7 @@ def test_generate_topic_page_drops_issue_pages_from_candidates(monkeypatch):
 
     def fake_completion(**kwargs):
         prompts.append(kwargs["user_prompt"])
-        return json.dumps({"action": "skip", "claims": []})
+        return json.dumps({"action": "skip", "claims": [], "reliability": _RELIABILITY_MEDIUM})
 
     monkeypatch.setattr(generation, "create_json_completion", fake_completion)
 
@@ -713,6 +857,7 @@ def test_generate_topic_page_skips_when_all_claims_reference_unknown_documents(m
                 "markdown": "# 새 주제",
                 "claims": [{"document_version_id": "doc-hallucinated", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -744,6 +889,7 @@ def test_generate_topic_page_filters_unknown_document_ids_from_sources(monkeypat
                     {"document_version_id": "doc-hallucinated", "claim_text": "허구", "citation_order": 2},
                 ],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -775,6 +921,7 @@ def test_generate_topic_page_ignores_unknown_parent_page_id(monkeypatch):
                 "markdown": "# 새 주제",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -810,6 +957,7 @@ def test_generate_topic_page_skips_when_target_page_not_in_candidates(monkeypatc
                 "markdown": "# 갱신된 본문",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -844,6 +992,7 @@ def test_generate_topic_page_passes_workspace_id_to_identity_lookup(monkeypatch)
                 "markdown": "# 갱신된 본문",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -876,6 +1025,7 @@ def test_generate_topic_page_skips_when_markdown_is_blank(monkeypatch, markdown)
                 "markdown": markdown,
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -905,7 +1055,7 @@ def test_generate_topic_page_uses_injected_llm_client(monkeypatch):
 
     def fake_llm(system_prompt, user_prompt, model):
         seen["system_prompt"] = system_prompt
-        return json.dumps({"action": "skip", "claims": []})
+        return json.dumps({"action": "skip", "claims": [], "reliability": _RELIABILITY_MEDIUM})
 
     action, _page_id, _version_id = generation._generate_topic_page(
         _section(), [], workspace_id="ws-1", requested_by=None, llm_client=fake_llm,
@@ -940,6 +1090,7 @@ def test_generate_topic_page_threads_supabase_into_repository_and_writes(monkeyp
                 "markdown": "# 새 주제",
                 "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
                 "confidence_score": 0.9,
+                "reliability": _RELIABILITY_MEDIUM,
             }
         ),
     )
@@ -1344,6 +1495,29 @@ def test_generate_wiki_drafts_for_sections_sends_one_notification_for_batch(monk
     )
 
     assert calls == [("ws-1", 2)]
+
+
+def test_generate_wiki_drafts_for_sections_handles_issue_page_skip(monkeypatch):
+    def fake_generate_topic_page(section, wiki_contexts, **kwargs):
+        return "skip", None, None
+
+    def fake_generate_issue_page(section, **kwargs):
+        return None, None  # 신뢰도 낮음으로 스킵된 경우
+
+    monkeypatch.setattr(generation, "_generate_topic_page", fake_generate_topic_page)
+    monkeypatch.setattr(generation, "_generate_issue_page", fake_generate_issue_page)
+    monkeypatch.setattr(generation, "send_wiki_notification", lambda *a, **k: pytest.fail("호출되면 안 됨"))
+
+    results = generation.generate_wiki_drafts_for_sections(
+        [_section("issue-low-reliability")],
+        [_enriched_group("issue-low-reliability", candidate_summary="근거")],
+        workspace_id="ws-1",
+    )
+
+    assert len(results) == 1
+    assert results[0].issue_page_id == ""
+    assert results[0].issue_version_id == ""
+    assert results[0].error_message is None  # 실패가 아니라 정상 스킵이므로 에러 메시지 없음
 
 
 def test_generate_wiki_drafts_for_sections_skips_notification_when_nothing_published(monkeypatch):
