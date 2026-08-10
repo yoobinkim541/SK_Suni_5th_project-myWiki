@@ -438,13 +438,22 @@ def generate_wiki_drafts_for_sections(
     requested_by: str | None = None,
     supabase: Client | None = None,
     llm_client: WikiTopicLLMClient | None = None,
+    deadline: datetime | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> list[WikiDraftGenerationResult]:
     """
     섹션별로 주제 페이지(Topic)를 먼저 생성하고, 그 결과를 이슈 페이지(Issue)의 parent_page_id로 연결한다.
 
     주제 페이지 생성 실패가 이슈 페이지 생성을 막지 않으며, 이슈 페이지 생성 실패도 다른 섹션 처리를 막지 않는다.
     (단계별 실패 격리)
+
+    deadline이 주어지면(예: GH Actions job timeout보다 여유 있게 잡은 자체 시간 예산),
+    섹션 처리 도중 그 시각을 넘기는 순간부터는 남은 섹션을 건너뛰고 여기까지의 결과만
+    반환한다 — 외부 프로세스가 통째로 강제 종료돼 아무 상태도 안 남는 것보다,
+    처리한 만큼이라도 발행되고 호출자가 정상적으로 후속 처리(예: 게이트 타임스탬프 갱신)를
+    이어갈 수 있는 쪽이 낫다.
     """
+    now = clock or (lambda: datetime.now(timezone.utc))
     wiki_contexts_by_issue_key = {
         group.issue_group.issue_key: group.wiki_contexts for group in enriched_groups
     }
@@ -455,7 +464,13 @@ def generate_wiki_drafts_for_sections(
     # (upsert_wiki_page는 ignore_duplicates=True라 기존 페이지의 parent_page_id를
     #  나중에 수정할 방법이 없으므로, 이슈 페이지를 처음 만들 때 값을 넣어야 한다.)
     results: list[WikiDraftGenerationResult] = []
-    for section in sections:
+    for index, section in enumerate(sections):
+        if deadline is not None and now() >= deadline:
+            logger.warning(
+                "wiki_refresh_time_budget_exceeded",
+                extra={"processed": index, "remaining": len(sections) - index},
+            )
+            break
         wiki_contexts = wiki_contexts_by_issue_key.get(section.issue_key, [])
         evidence_texts = evidence_texts_by_issue_key.get(section.issue_key, {})
         citation_attribution = citation_attribution_by_issue_key.get(section.issue_key, {})
@@ -551,6 +566,7 @@ def refresh_wiki_from_recent_analysis(
     since_hours: int = 2,
     requested_by: str | None = None,
     supabase: Client | None = None,
+    deadline: datetime | None = None,
 ) -> list[WikiDraftGenerationResult]:
     """리포트 파이프라인과 별개로, 최근 since_hours 내 분석 완료된 문서를 근거로
     위키만 갱신한다. reports/report_sections에는 아무것도 남기지 않는다."""
@@ -580,4 +596,5 @@ def refresh_wiki_from_recent_analysis(
 
     return generate_wiki_drafts_for_sections(
         sections, enriched_groups, workspace_id=workspace_id, requested_by=requested_by, supabase=supabase,
+        deadline=deadline,
     )

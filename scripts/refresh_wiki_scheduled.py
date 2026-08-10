@@ -34,6 +34,12 @@ from src.wiki.generation_models import WikiDraftGenerationResult
 
 SINCE_HOURS_LOOKBACK = 24
 GRACE_MINUTES = 15
+SELF_BUDGET_MINUTES = 80
+"""wiki-refresh-gate.yml의 GH Actions job timeout(90분)보다 여유 있게 잡은 자체 시간 예산.
+run_daily_report_analysis_catchup.py/run_nightly_analysis.py와 같은 self-budget 패턴 —
+큰 백로그로 처리 시간이 늘어나도 GH Actions에 강제 종료되기 전에 스스로 멈춰서
+(refresh_wiki_from_recent_analysis의 deadline 인자), last_wiki_refresh_at 갱신이
+아예 누락되는 걸 막는다. 남은 10분은 checkout/pip install 등 스크립트 실행 전후 오버헤드 여유분."""
 
 KST = timezone(timedelta(hours=9))
 REPORT_CRITICAL_WINDOW_KST = (time(6, 0), time(8, 30))
@@ -125,8 +131,9 @@ if __name__ == "__main__":
 
     gate_now = now  # 게이트 통과 시각 — 갱신 완료 후가 아니라 이 시각으로 last_wiki_refresh_at을 찍는다
     since_hours = _compute_since_hours(settings.last_wiki_refresh_at, now=gate_now)
+    deadline = gate_now + timedelta(minutes=SELF_BUDGET_MINUTES)
     log(f"주기 도달 — 갱신 시작 (주기={settings.wiki_update_cycle_minutes}분, since_hours={since_hours})")
-    results = refresh_wiki_from_recent_analysis(workspace_id, since_hours=since_hours)
+    results = refresh_wiki_from_recent_analysis(workspace_id, since_hours=since_hours, deadline=deadline)
     exit_code = report_results(results)
     _mark_wiki_refreshed_at(workspace_id, gate_now)
 
