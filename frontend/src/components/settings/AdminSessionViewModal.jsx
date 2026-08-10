@@ -10,6 +10,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function AdminSessionViewModal({ open, title, messages, loading, error, onClose }) {
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function AdminSessionViewModal({ open, title, messages, loading, 
                 {m.role === 'user' ? '질문' : '답변'}
               </div>
               <div className="vl">
-                <ReactMarkdown>{m.content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
               </div>
             </div>
           ))}
