@@ -90,7 +90,13 @@ export function fetchNews() {
 
 // [목업] 백엔드 없음
 export function fetchIssues() {
-  return delay(MOCK_ISSUES);
+  // isSample을 여기서 붙입니다. 목업/실데이터를 아는 것은 이 계층이고,
+  // 화면(IssueList)은 플래그만 보고 표시를 정합니다.
+  //
+  // 목업의 sourceUrl이 개별 원문이 아니라 도메인 루트라(https://dart.fss.or.kr)
+  // 그대로 링크로 걸면 눌렀을 때 언론사·DART 홈페이지로 갑니다. 실제로 그렇게
+  // 신고가 들어왔습니다. 백엔드가 붙기 전까지는 링크로 만들지 않습니다.
+  return delay(MOCK_ISSUES.map((issue) => ({ ...issue, isSample: true })));
 }
 
 // 백엔드 TrendDayOut -> TrendChart가 기대하는 shape.

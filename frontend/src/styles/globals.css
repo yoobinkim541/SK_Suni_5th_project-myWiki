@@ -273,6 +273,11 @@ svg text{font-family:inherit}
 .row .meta{text-align:right}
 .row .meta .s{font-size:11px;font-weight:500;color:var(--ink-2)}
 .row .meta .s.doc{color:var(--green);font-weight:700}
+/* 샘플 데이터의 출처 표시. 링크가 아니므로 눌리는 것처럼 보이면 안 된다 —
+   목업 sourceUrl이 도메인 루트라 실제로 눌러도 홈페이지로 간다. */
+.row .meta .s.sample{color:var(--muted);font-weight:400;cursor:default}
+.row .meta .s.sample.doc{color:var(--muted);font-weight:400}
+.row .meta .s.sample.doc::before{display:none}
 .row .meta .s.doc::before{content:"";display:inline-block;width:5px;height:5px;
   border-radius:50%;background:var(--green);margin-right:6px;vertical-align:1px}
 .row .meta .w{display:block;font-size:11px;font-weight:300;color:var(--muted);margin-top:7px}
