@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pydantic import ValidationError
 
 from .classifier import create_json_completion, get_openrouter_settings, parse_json_response
+from .concurrency import run_concurrently
 from .exceptions import (
     ClassificationLoadFailedError,
     ClassificationSaveFailedError,
@@ -150,14 +151,14 @@ def evaluate_and_save_reliability(*, workspace_id: str, document_version_id: str
 
 
 def evaluate_and_save_reliabilities(*, workspace_id: str, document_version_ids: list[str], force: bool = False) -> list[StoredReliabilityResult]:
-    return [
-        evaluate_and_save_reliability(
+    return run_concurrently(
+        document_version_ids,
+        lambda document_version_id: evaluate_and_save_reliability(
             workspace_id=workspace_id,
             document_version_id=document_version_id,
             force=force,
-        )
-        for document_version_id in document_version_ids
-    ]
+        ),
+    )
 
 
 def evaluate_reliability_for_documents(*, workspace_id: str, document_version_ids: list[str], force: bool = False) -> list[StoredReliabilityResult]:
