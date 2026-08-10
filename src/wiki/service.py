@@ -140,42 +140,49 @@ def create_wiki_version(draft: WikiDraftInput, *, supabase: Client | None = None
 
 
 def _build_source_rows(version_id: str, sources: list[WikiSourceInput]) -> list[dict[str, object]]:
-    """Collapse to one row per document_version_id so the same source never renders
+    """Collapse to one row per source identity so the same source never renders
     twice in the "근거 문서" list — even when several distinct claims (e.g. from a
     wiki dedup-merge that carries claims over from two source pages) cite the same
     document. Distinct claim texts are merged into the row instead of dropped;
     exact-repeat claim texts collapse as before.
+
+    document_version_id가 없는(웹검색 근거) 소스는 전부 None이 같은 값이라, 그것만
+    묶음 키로 쓰면 서로 다른 웹 출처가 한 행으로 뭉개진다 — document_version_id가
+    있으면 그걸, 없으면 source_url을 묶음 키로 쓴다.
     """
 
-    rows_by_document: dict[str, dict[str, object]] = {}
-    claim_texts_by_document: dict[str, set[str]] = {}
+    rows_by_key: dict[str, dict[str, object]] = {}
+    claim_texts_by_key: dict[str, set[str]] = {}
     order: list[str] = []
 
     for source in sources:
-        doc_id = source.document_version_id
-        if doc_id not in rows_by_document:
-            order.append(doc_id)
-            rows_by_document[doc_id] = {
+        key = source.document_version_id or f"web:{source.source_url}"
+        if key not in rows_by_key:
+            order.append(key)
+            rows_by_key[key] = {
                 "wiki_version_id": version_id,
-                "document_version_id": doc_id,
+                "document_version_id": source.document_version_id,
+                "source_url": source.source_url,
+                "source_title": source.source_title,
+                "published_at": source.published_at,
                 "claim_text": source.claim_text,
                 "support_type": source.support_type,
                 "source_start_line": source.source_start_line,
                 "source_end_line": source.source_end_line,
                 "citation_order": source.citation_order,
             }
-            claim_texts_by_document[doc_id] = {source.claim_text}
+            claim_texts_by_key[key] = {source.claim_text}
             continue
 
-        seen_claims = claim_texts_by_document[doc_id]
+        seen_claims = claim_texts_by_key[key]
         if source.claim_text and source.claim_text not in seen_claims:
             seen_claims.add(source.claim_text)
-            row = rows_by_document[doc_id]
+            row = rows_by_key[key]
             row["claim_text"] = f"{row['claim_text']} / {source.claim_text}" if row["claim_text"] else source.claim_text
-        if rows_by_document[doc_id]["citation_order"] is None and source.citation_order is not None:
-            rows_by_document[doc_id]["citation_order"] = source.citation_order
+        if rows_by_key[key]["citation_order"] is None and source.citation_order is not None:
+            rows_by_key[key]["citation_order"] = source.citation_order
 
-    rows = [rows_by_document[doc_id] for doc_id in order]
+    rows = [rows_by_key[key] for key in order]
     for index, row in enumerate(rows):
         if row["citation_order"] is None:
             row["citation_order"] = index + 1

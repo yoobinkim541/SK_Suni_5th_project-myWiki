@@ -89,19 +89,27 @@ def _enrich_sources(db: Client, workspace_id: str, rows: list[dict]) -> tuple[Wi
     document_analysis_results.reliability_score. 화면의 "평균 신뢰도"는 여기서
     평균 내지 않고 개별 점수만 내려준다 — "근거 문서 건수"처럼 프론트에서
     배열 기준으로 계산하게 둔다(집계 로직이 백엔드/프론트 두 곳에 흩어지지 않게).
+
+    document_version_id가 없는 행(웹검색 근거)은 저장 시점에 이미 자기 행에
+    source_url/source_title/published_at을 직접 채워뒀으므로(조인할 DB 행 자체가
+    없음) 그 값을 그대로 쓰고, source_name/reliability_score는 개념이 없어 None으로 둔다.
     """
     if not rows:
         return tuple()
 
-    document_version_ids = list({row["document_version_id"] for row in rows})
+    document_version_ids = list({
+        row["document_version_id"] for row in rows if row["document_version_id"] is not None
+    })
 
-    versions_res = (
-        db.table("document_versions")
-        .select("id, document_id")
-        .in_("id", document_version_ids)
-        .execute()
-    )
-    document_id_by_version = {row["id"]: row["document_id"] for row in versions_res.data}
+    document_id_by_version: dict[str, str] = {}
+    if document_version_ids:
+        versions_res = (
+            db.table("document_versions")
+            .select("id, document_id")
+            .in_("id", document_version_ids)
+            .execute()
+        )
+        document_id_by_version = {row["id"]: row["document_id"] for row in versions_res.data}
 
     document_ids = list({doc_id for doc_id in document_id_by_version.values() if doc_id})
     documents_by_id: dict[str, dict] = {}
@@ -127,21 +135,40 @@ def _enrich_sources(db: Client, workspace_id: str, rows: list[dict]) -> tuple[Wi
         )
         source_name_by_id = {row["id"]: row["name"] for row in sources_res.data}
 
-    analysis_res = (
-        db.table("document_analysis_results")
-        .select("document_version_id, reliability_score")
-        .eq("workspace_id", workspace_id)
-        .in_("document_version_id", document_version_ids)
-        .execute()
-    )
-    reliability_by_version = {
-        row["document_version_id"]: row["reliability_score"]
-        for row in analysis_res.data
-        if row.get("reliability_score") is not None
-    }
+    reliability_by_version: dict[str, int] = {}
+    if document_version_ids:
+        analysis_res = (
+            db.table("document_analysis_results")
+            .select("document_version_id, reliability_score")
+            .eq("workspace_id", workspace_id)
+            .in_("document_version_id", document_version_ids)
+            .execute()
+        )
+        reliability_by_version = {
+            row["document_version_id"]: row["reliability_score"]
+            for row in analysis_res.data
+            if row.get("reliability_score") is not None
+        }
 
     enriched = []
     for row in rows:
+        if row["document_version_id"] is None:
+            enriched.append(
+                WikiSource(
+                    document_version_id=None,
+                    citation_order=row.get("citation_order"),
+                    claim_text=row.get("claim_text"),
+                    support_type=row.get("support_type"),
+                    source_start_line=row.get("source_start_line"),
+                    source_end_line=row.get("source_end_line"),
+                    document_title=row.get("source_title"),
+                    canonical_url=row.get("source_url"),
+                    published_at=row.get("published_at"),
+                    source_name=None,
+                    reliability_score=None,
+                )
+            )
+            continue
         document_id = document_id_by_version.get(row["document_version_id"])
         document = documents_by_id.get(document_id) if document_id else None
         enriched.append(
@@ -266,7 +293,8 @@ def get_published_wiki_page(
         db.table("wiki_page_sources")
         .select(
             "document_version_id, citation_order, claim_text,"
-            " support_type, source_start_line, source_end_line"
+            " support_type, source_start_line, source_end_line,"
+            " source_url, source_title, published_at"
         )
         .eq("wiki_version_id", version_id)
         .order("citation_order")
@@ -288,7 +316,7 @@ def get_published_wiki_page(
         workspace_id,
         page["id"],
         version_id,
-        [s.document_version_id for s in sources],
+        [s.document_version_id for s in sources if s.document_version_id is not None],
     )
 
     return WikiPageContent(

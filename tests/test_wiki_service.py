@@ -51,6 +51,55 @@ def test_build_source_rows_still_dedupes_identical_repeats():
     assert rows[0]["claim_text"] == "같은 주장"
 
 
+def test_build_source_rows_keeps_distinct_web_sources_separate():
+    """document_version_id가 없는(웹검색 근거) 소스는 전부 None이 같은 값이라, document_version_id만
+    묶음 키로 쓰면 서로 다른 웹 출처 두 개가 한 행으로 뭉개진다 — source_url이 다르면 별도 행이어야 한다."""
+    rows = _build_source_rows(
+        "version-1",
+        [
+            WikiSourceInput(
+                document_version_id=None, source_url="https://a.example/1", source_title="기사 A",
+                published_at="2026-08-01", claim_text="주장 A", citation_order=1,
+            ),
+            WikiSourceInput(
+                document_version_id=None, source_url="https://b.example/2", source_title="기사 B",
+                published_at="2026-08-02", claim_text="주장 B", citation_order=2,
+            ),
+        ],
+    )
+
+    assert len(rows) == 2
+    row_a = next(r for r in rows if r["source_url"] == "https://a.example/1")
+    row_b = next(r for r in rows if r["source_url"] == "https://b.example/2")
+    assert row_a["document_version_id"] is None
+    assert row_a["source_title"] == "기사 A"
+    assert row_a["published_at"] == "2026-08-01"
+    assert row_a["claim_text"] == "주장 A"
+    assert row_b["claim_text"] == "주장 B"
+
+
+def test_build_source_rows_merges_identical_web_source_repeats():
+    """같은 source_url을 가리키는 웹 근거가 여러 번 들어오면(같은 문서 다른 정보) 문서 근거와
+    동일하게 한 행으로 합쳐지고 claim_text가 이어붙는지 확인한다."""
+    rows = _build_source_rows(
+        "version-1",
+        [
+            WikiSourceInput(
+                document_version_id=None, source_url="https://a.example/1", source_title="기사 A",
+                claim_text="주장 A",
+            ),
+            WikiSourceInput(
+                document_version_id=None, source_url="https://a.example/1", source_title="기사 A",
+                claim_text="주장 A-2",
+            ),
+        ],
+    )
+
+    assert len(rows) == 1
+    assert "주장 A" in rows[0]["claim_text"]
+    assert "주장 A-2" in rows[0]["claim_text"]
+
+
 @pytest.fixture(scope="module")
 def workspace_id() -> str:
     if not os.environ.get("SUPABASE_URL") or not (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SECRET_KEY")):
@@ -494,3 +543,71 @@ def test_published_page_sources_include_document_metadata(workspace_id):
     db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
     db.table("wiki_page_versions").delete().eq("id", version_id).execute()
     db.table("wiki_pages").delete().eq("id", page_id).execute()
+
+
+def test_published_page_sources_include_web_source_metadata(workspace_id):
+    """document_version_id가 없는(웹검색 근거) 소스가 문서 근거와 섞여 저장돼도, 웹 근거는
+    저장된 source_url/source_title/published_at을 그대로 돌려주고 문서 근거는 기존처럼
+    라이브 조인 값을 돌려주는지 확인한다(회귀 방지)."""
+    db = _get_client()
+    analyzed = (
+        db.table("document_analysis_results")
+        .select("document_version_id")
+        .eq("workspace_id", workspace_id)
+        .not_.is_("reliability_score", "null")
+        .limit(1)
+        .execute()
+    )
+    if not analyzed.data:
+        pytest.skip("신뢰도 점수가 있는 document_analysis_results 데이터 없음")
+    doc_ver_id = analyzed.data[0]["document_version_id"]
+
+    slug = f"test-web-src-{uuid.uuid4().hex[:8]}"
+    draft = WikiDraftInput(
+        workspace_id=workspace_id,
+        slug=slug,
+        title="웹 출처 테스트",
+        page_type="term",
+        markdown="근거 있는 내용",
+        sources=[
+            WikiSourceInput(document_version_id=doc_ver_id, claim_text="문서 근거 주장"),
+            WikiSourceInput(
+                document_version_id=None, source_url="https://example.com/web-src",
+                source_title="웹 기사 제목", published_at="2026-08-01T00:00:00Z",
+                claim_text="웹 근거 주장",
+            ),
+        ],
+    )
+    version_id = create_wiki_version(draft)
+    ver = db.table("wiki_page_versions").select("page_id,markdown_object_key").eq("id", version_id).single().execute()
+    page_id = ver.data["page_id"]
+    obj_key = ver.data["markdown_object_key"]
+
+    try:
+        record_wiki_validation(version_id, "passed", 0.95)
+        profile = db.table("profiles").select("id").limit(1).execute()
+        if not profile.data:
+            pytest.skip("profiles 데이터 없음")
+        review_wiki_version(version_id, profile.data[0]["id"], "approved")
+        publish_wiki_version(page_id, version_id)
+
+        published = get_published_wiki_page(workspace_id, slug)
+        assert published is not None
+        assert len(published.sources) == 2
+
+        doc_source = next(s for s in published.sources if s.document_version_id == str(doc_ver_id))
+        assert doc_source.document_title is not None
+        assert doc_source.reliability_score is not None
+
+        web_source = next(s for s in published.sources if s.document_version_id is None)
+        assert web_source.canonical_url == "https://example.com/web-src"
+        assert web_source.document_title == "웹 기사 제목"
+        assert web_source.published_at == "2026-08-01T00:00:00Z"
+        assert web_source.source_name is None
+        assert web_source.reliability_score is None
+    finally:
+        db.table("wiki_pages").update({"current_version_id": None}).eq("id", page_id).execute()
+        db.storage.from_("wiki").remove([obj_key])
+        db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
+        db.table("wiki_page_versions").delete().eq("id", version_id).execute()
+        db.table("wiki_pages").delete().eq("id", page_id).execute()

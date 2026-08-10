@@ -51,7 +51,10 @@ def find_duplicate_candidate_pairs(
     )
     docs_by_version: dict[str, set[str]] = {}
     for row in source_rows:
-        docs_by_version.setdefault(str(row["wiki_version_id"]), set()).add(row["document_version_id"])
+        document_version_id = row["document_version_id"]
+        if document_version_id is None:
+            continue
+        docs_by_version.setdefault(str(row["wiki_version_id"]), set()).add(document_version_id)
 
     scored: list[tuple[float, DedupCandidatePair]] = []
     for page_a, page_b in combinations(pages, 2):

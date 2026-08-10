@@ -245,7 +245,10 @@ def find_matching_issue_page(
     )
     docs_by_version: dict[str, set[str]] = {}
     for row in full_source_rows:
-        docs_by_version.setdefault(str(row["wiki_version_id"]), set()).add(row["document_version_id"])
+        document_version_id = row["document_version_id"]
+        if document_version_id is None:
+            continue
+        docs_by_version.setdefault(str(row["wiki_version_id"]), set()).add(document_version_id)
 
     all_candidate_doc_ids = list({did for docs in docs_by_version.values() for did in docs})
     if not all_candidate_doc_ids:

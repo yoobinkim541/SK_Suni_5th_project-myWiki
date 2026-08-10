@@ -142,7 +142,7 @@ class WikiVersionSummaryOut(BaseModel):
 class WikiSourceOut(BaseModel):
     model_config = {"from_attributes": True}
 
-    document_version_id: str
+    document_version_id: Optional[str] = None
     citation_order: Optional[int]
     claim_text: Optional[str]
     support_type: Optional[str]

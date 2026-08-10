@@ -19,6 +19,7 @@ from src.wiki.interface import (
     WikiPageContent,
     WikiPageSummary,
     WikiRelatedPage,
+    WikiSource,
     WikiVersionSummary,
 )
 
@@ -103,6 +104,46 @@ def test_get_page_found(client, monkeypatch):
             "shared_source_count": 3,
         }
     ]
+
+
+def test_get_page_found_with_web_source(client, monkeypatch):
+    """웹검색 근거(document_version_id=None)가 섞인 페이지도 API가 500 없이 정상 응답해야 한다."""
+    content = WikiPageContent(
+        page_id=PAGE_ID,
+        slug="hbm4",
+        title="HBM4",
+        page_type="technology",
+        published_at="2026-07-24T00:00:00Z",
+        version_id="33333333-3333-3333-3333-333333333333",
+        version_no=2,
+        markdown="# HBM4\n본문",
+        change_summary="쟁점 문단 갱신",
+        confidence_score=0.7,
+        validation_status="passed",
+        review_status="approved",
+        generated_by="llm",
+        generator_model="deepseek/deepseek-v4-flash",
+        created_at="2026-07-24T00:00:00Z",
+        sources=(
+            WikiSource(
+                document_version_id=None,
+                citation_order=1,
+                claim_text="웹 근거 주장",
+                support_type="supports",
+                source_start_line=None,
+                source_end_line=None,
+                document_title="웹 기사 제목",
+                canonical_url="https://example.com/web-src",
+                published_at="2026-08-01T00:00:00Z",
+            ),
+        ),
+        versions=(),
+    )
+    monkeypatch.setattr(wiki_query, "get_published_wiki_page", lambda workspace_id, slug: content)
+    res = client.get("/wiki/pages/hbm4")
+    assert res.status_code == 200
+    assert res.json()["sources"][0]["document_version_id"] is None
+    assert res.json()["sources"][0]["canonical_url"] == "https://example.com/web-src"
 
 
 def test_get_versions(client, monkeypatch):
