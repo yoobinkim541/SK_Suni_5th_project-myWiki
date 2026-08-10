@@ -76,9 +76,20 @@ function toMockCategory(c) {
   };
 }
 
+// 게스트(비로그인)는 토큰이 없어 실백엔드 요청이 401(missing bearer token)로 실패한다.
+// 그 경우엔 에러를 화면에 그대로 흘려보내는 대신 목업으로 대체해 둘러볼 수 있게 한다.
+function isAuthError(error) {
+  return error?.status === 401;
+}
+
 export function fetchCategories() {
   if (USE_MOCK) return delay(MOCK_CATEGORIES.map(toMockCategory));
-  return loadStats().then((stats) => stats.categories.map(toCategory));
+  return loadStats()
+    .then((stats) => stats.categories.map(toCategory))
+    .catch((error) => {
+      if (isAuthError(error)) return MOCK_CATEGORIES.map(toMockCategory);
+      throw error;
+    });
 }
 
 // KpiCard 4장. CategoryDetail이 {value, desc} 중첩 구조를 그대로 읽으므로
@@ -122,7 +133,12 @@ function overallLevelLabel(categories) {
 
 export function fetchCategorySummary() {
   if (USE_MOCK) return delay(MOCK_SUMMARY);
-  return loadStats().then(toSummary);
+  return loadStats()
+    .then(toSummary)
+    .catch((error) => {
+      if (isAuthError(error)) return MOCK_SUMMARY;
+      throw error;
+    });
 }
 
 // fetchNewsByCategory는 없앴습니다. 관련 뉴스가 카테고리 객체의 recentDocuments로

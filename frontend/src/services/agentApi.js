@@ -8,6 +8,13 @@ import { formatDate, reliabilityLabel } from './wikiApi';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 
+// 게스트(비로그인)는 토큰이 없어 실백엔드 요청이 401(missing bearer token)로 실패한다.
+// 초기 조회(패널 목록·대화 내용)만 목업으로 대체한다 — 질문 전송 등 쓰기 동작은
+// 게스트가 실제로 할 수 없는 일이라 에러를 그대로 보여주는 게 맞다.
+function isAuthError(error) {
+  return error?.status === 401;
+}
+
 // 근거 부족 응답 판별용 접두사 — 백엔드가 content 앞에 붙여서 보냅니다.
 const NO_ANSWER_PREFIX = '[근거 부족]';
 
@@ -219,15 +226,20 @@ function formatMeta(iso) {
 export async function fetchAgentPanes() {
   if (USE_MOCK) return MOCK_AGENT_PANES;
 
-  const [teamSessions, mineSessions] = await Promise.all([
-    agentApi.fetchChatSessions('team'),
-    agentApi.fetchChatSessions('mine'),
-  ]);
+  try {
+    const [teamSessions, mineSessions] = await Promise.all([
+      agentApi.fetchChatSessions('team'),
+      agentApi.fetchChatSessions('mine'),
+    ]);
 
-  return {
-    team: { ...MOCK_AGENT_PANES.team, conversations: teamSessions.map(toViewConversation) },
-    mine: { ...MOCK_AGENT_PANES.mine, conversations: mineSessions.map(toViewConversation) },
-  };
+    return {
+      team: { ...MOCK_AGENT_PANES.team, conversations: teamSessions.map(toViewConversation) },
+      mine: { ...MOCK_AGENT_PANES.mine, conversations: mineSessions.map(toViewConversation) },
+    };
+  } catch (error) {
+    if (isAuthError(error)) return MOCK_AGENT_PANES;
+    throw error;
+  }
 }
 
 /**
@@ -240,13 +252,18 @@ export async function fetchConversation(sessionId, scope) {
     return { messages: [], evidence: [] };
   }
 
-  const raw = await agentApi.fetchChatMessages(sessionId);
-  const messages = raw.map((m) => toViewMessage(m, scope));
+  try {
+    const raw = await agentApi.fetchChatMessages(sessionId);
+    const messages = raw.map((m) => toViewMessage(m, scope));
 
-  // 근거 원문 컬럼 — 대화 전체의 위키 근거 답변들을 합쳐서 보여줍니다(mergeConversationCitations 참고).
-  const evidence = toEvidence(mergeConversationCitations(raw));
+    // 근거 원문 컬럼 — 대화 전체의 위키 근거 답변들을 합쳐서 보여줍니다(mergeConversationCitations 참고).
+    const evidence = toEvidence(mergeConversationCitations(raw));
 
-  return { messages, evidence };
+    return { messages, evidence };
+  } catch (error) {
+    if (isAuthError(error)) return { messages: [], evidence: [] };
+    throw error;
+  }
 }
 
 /**

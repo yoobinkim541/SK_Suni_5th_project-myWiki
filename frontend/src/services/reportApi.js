@@ -5,6 +5,37 @@ import {
   fetchDailyReportHistory as fetchDailyReportHistoryApi,
   generateDailyReport as generateDailyReportApi,
 } from '../api/report';
+import {
+  MOCK_REPORT_SUMMARY,
+  MOCK_REPORT_ARCHIVE,
+  MOCK_REPORT_TODAY,
+  MOCK_REPORT_DETAILS,
+} from '../data/mockReport';
+
+// 게스트(비로그인)는 토큰이 없어 실백엔드 요청이 401(missing bearer token)로 실패한다.
+// 이 파일은 목업/실데이터 스위치가 따로 없어(항상 실백엔드를 호출) 그 경우엔 에러를
+// 화면에 그대로 흘려보내는 대신 mockReport.js 목업으로 대체해 둘러볼 수 있게 한다.
+function isAuthError(error) {
+  return error?.status === 401;
+}
+
+function mockDetail(date) {
+  const found = MOCK_REPORT_DETAILS[date] || MOCK_REPORT_DETAILS[MOCK_REPORT_TODAY.date];
+  const archiveItem =
+    MOCK_REPORT_ARCHIVE.find((item) => item.date === date) || MOCK_REPORT_ARCHIVE[0];
+  return {
+    date: archiveItem.date,
+    label: archiveItem.label,
+    day: archiveItem.day,
+    title: archiveItem.title,
+    summary: archiveItem.summary,
+    level: archiveItem.level,
+    issueCount: found.issues.length,
+    wikiCount: archiveItem.wiki,
+    overview: found.overview,
+    issues: found.issues,
+  };
+}
 
 const HISTORY_ARCHIVE_LIMIT = 30;
 const reportCache = new Map();
@@ -300,8 +331,13 @@ async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = f
 }
 
 export async function fetchReportSummary(date) {
-  const view = await buildReportView(date, { generateOnMissing: false });
-  return view.summary;
+  try {
+    const view = await buildReportView(date, { generateOnMissing: false });
+    return view.summary;
+  } catch (error) {
+    if (isAuthError(error)) return MOCK_REPORT_SUMMARY;
+    throw error;
+  }
 }
 
 export async function fetchReportIssues(date) {
@@ -310,16 +346,26 @@ export async function fetchReportIssues(date) {
 }
 
 export async function fetchReportArchive(_date, limit = HISTORY_ARCHIVE_LIMIT) {
-  const history = await loadReportArchive(limit);
-  const todayDate = getTodayKSTDate();
-  return (Array.isArray(history) ? history : []).map((item) =>
-    normalizeHistoryArchiveItem(item, todayDate),
-  );
+  try {
+    const history = await loadReportArchive(limit);
+    const todayDate = getTodayKSTDate();
+    return (Array.isArray(history) ? history : []).map((item) =>
+      normalizeHistoryArchiveItem(item, todayDate),
+    );
+  } catch (error) {
+    if (isAuthError(error)) return MOCK_REPORT_ARCHIVE;
+    throw error;
+  }
 }
 
 export async function fetchTodayReport(date) {
-  const view = await buildReportView(date, { generateOnMissing: false });
-  return view.today;
+  try {
+    const view = await buildReportView(date, { generateOnMissing: false });
+    return view.today;
+  } catch (error) {
+    if (isAuthError(error)) return MOCK_REPORT_TODAY;
+    throw error;
+  }
 }
 
 export async function fetchReportDetail(date) {
@@ -329,6 +375,7 @@ export async function fetchReportDetail(date) {
     return view.detail;
   } catch (error) {
     if (error?.status === 404) return null;
+    if (isAuthError(error)) return mockDetail(date);
     throw error;
   }
 }
