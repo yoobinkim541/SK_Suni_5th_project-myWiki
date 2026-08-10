@@ -11,6 +11,12 @@ import { WIKI_KEYWORD_LINKS } from '../data/mockWiki';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 
+// 게스트(비로그인)는 토큰이 없어 실백엔드 요청이 401(missing bearer token)로 실패한다.
+// 그 경우엔 에러를 화면에 그대로 흘려보내는 대신 목업으로 대체해 둘러볼 수 있게 한다.
+function isAuthError(error) {
+  return error?.status === 401;
+}
+
 // 출처 원문 정의(공시/뉴스 등) 조회 — CitationTag.jsx, AgentPage.jsx가 그대로 씁니다.
 // 위키 화면 자체는 이제 실제 문서 출처(document_title/canonical_url)를 직접 쓰므로
 // 이 조회를 거치지 않습니다.
@@ -119,15 +125,25 @@ async function fetchAllWikiPages() {
 /** WikiPage 좌측 트리 전체. */
 export async function fetchWikiTree() {
   if (USE_MOCK) return MOCK_WIKI_TREE;
-  const pages = await fetchAllWikiPages();
-  return toTree(pages);
+  try {
+    const pages = await fetchAllWikiPages();
+    return toTree(pages);
+  } catch (error) {
+    if (isAuthError(error)) return MOCK_WIKI_TREE;
+    throw error;
+  }
 }
 
 /** 문서 하나(본문 + 출처 + 변경이력). 게시된 페이지가 없으면 null. */
 export async function fetchWikiDoc(slug) {
   if (USE_MOCK) return MOCK_WIKI_DOCS[slug] || MOCK_WIKI_DOCS[DEFAULT_WIKI_DOC];
-  const content = await wikiApi.fetchWikiPage(slug);
-  return content ? toDoc(content) : null;
+  try {
+    const content = await wikiApi.fetchWikiPage(slug);
+    return content ? toDoc(content) : null;
+  } catch (error) {
+    if (isAuthError(error)) return MOCK_WIKI_DOCS[slug] || MOCK_WIKI_DOCS[DEFAULT_WIKI_DOC];
+    throw error;
+  }
 }
 
 /**
@@ -138,8 +154,13 @@ export async function fetchWikiDoc(slug) {
  */
 export async function fetchWikiKeywordCatalog() {
   if (USE_MOCK) return WIKI_KEYWORD_CATALOG;
-  const flat = await wikiApi.fetchWikiKeywordCatalog();
-  return groupKeywordCatalog(flat);
+  try {
+    const flat = await wikiApi.fetchWikiKeywordCatalog();
+    return groupKeywordCatalog(flat);
+  } catch (error) {
+    if (isAuthError(error)) return WIKI_KEYWORD_CATALOG;
+    throw error;
+  }
 }
 
 /**
@@ -164,13 +185,18 @@ export function getKeywordLinkWords() {
 export async function fetchDocsWithKeyword(word, tree) {
   if (!word) return [];
   if (USE_MOCK) return findDocsWithKeyword(word, tree);
-  const pages = await wikiApi.fetchWikiPages({ keyword: word });
-  return pages.map((p) => ({
-    id: p.slug,
-    title: p.title,
-    group: WIKI_PAGE_TYPE_LABELS[p.page_type] || p.page_type,
-    count: null,
-  }));
+  try {
+    const pages = await wikiApi.fetchWikiPages({ keyword: word });
+    return pages.map((p) => ({
+      id: p.slug,
+      title: p.title,
+      group: WIKI_PAGE_TYPE_LABELS[p.page_type] || p.page_type,
+      count: null,
+    }));
+  } catch (error) {
+    if (isAuthError(error)) return findDocsWithKeyword(word, tree);
+    throw error;
+  }
 }
 
 // 대시보드·리포트의 "관련 위키" 링크 이름을 문서 slug로 바꿉니다.
