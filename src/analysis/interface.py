@@ -8,6 +8,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from .classifier import classify_document, get_openrouter_settings
+from .concurrency import run_concurrently
 from .exceptions import (
     ClassificationLoadFailedError,
     ClassificationSaveFailedError,
@@ -228,14 +229,14 @@ def classify_document_versions(
     document_version_ids: list[str],
     force: bool = False,
 ) -> list[StoredClassificationResult]:
-    return [
-        classify_document_version(
+    return run_concurrently(
+        document_version_ids,
+        lambda document_version_id: classify_document_version(
             workspace_id=workspace_id,
             document_version_id=document_version_id,
             force=force,
-        )
-        for document_version_id in document_version_ids
-    ]
+        ),
+    )
 
 
 

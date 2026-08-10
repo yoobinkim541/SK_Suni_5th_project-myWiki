@@ -4,7 +4,12 @@ import pytest
 
 from src.analysis.classifier import parse_json_response
 from src.analysis.exceptions import InvalidJsonResponseError, InvalidScoreError, MissingApiKeyError
-from src.analysis.reliability import _detect_official_correction, build_machine_signals, evaluate_reliability
+from src.analysis.reliability import (
+    _detect_official_correction,
+    build_machine_signals,
+    evaluate_and_save_reliabilities,
+    evaluate_reliability,
+)
 from src.analysis.reliability_models import (
     EvidenceDocument,
     MachineSignals,
@@ -225,3 +230,17 @@ def test_missing_api_key_fails_immediately(monkeypatch: pytest.MonkeyPatch) -> N
 
     with pytest.raises(MissingApiKeyError, match="OPENROUTER_API_KEY"):
         evaluate_reliability(_request())
+
+
+def test_evaluate_and_save_reliabilities_preserves_order(monkeypatch):
+    def fake_evaluate(*, workspace_id, document_version_id, force=False):
+        return document_version_id
+
+    monkeypatch.setattr("src.analysis.reliability.evaluate_and_save_reliability", fake_evaluate)
+
+    results = evaluate_and_save_reliabilities(
+        workspace_id="ws-1",
+        document_version_ids=["doc-1", "doc-2", "doc-3"],
+    )
+
+    assert results == ["doc-1", "doc-2", "doc-3"]

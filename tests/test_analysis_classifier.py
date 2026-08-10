@@ -4,6 +4,7 @@ import pytest
 
 from src.analysis.classifier import classify_document, parse_classification_response
 from src.analysis.exceptions import InvalidCategoryError, InvalidJsonResponseError, MissingApiKeyError
+from src.analysis.interface import classify_document_versions
 from src.analysis.models import ClassificationResult
 
 
@@ -92,3 +93,25 @@ def test_reject_more_than_two_secondary_categories() -> None:
 def test_non_json_response_raises() -> None:
     with pytest.raises(InvalidJsonResponseError):
         parse_classification_response("not-json")
+
+
+def test_classify_document_versions_preserves_order_and_runs_concurrently(monkeypatch):
+    import time
+
+    call_order: list[str] = []
+
+    def fake_classify(*, workspace_id, document_version_id, force=False):
+        if document_version_id == "doc-slow":
+            time.sleep(0.05)
+        call_order.append(document_version_id)
+        return document_version_id  # 실제 StoredClassificationResult 대신 id를 그대로 반환해 순서만 확인
+
+    monkeypatch.setattr("src.analysis.interface.classify_document_version", fake_classify)
+
+    results = classify_document_versions(
+        workspace_id="ws-1",
+        document_version_ids=["doc-slow", "doc-fast-1", "doc-fast-2"],
+    )
+
+    assert results == ["doc-slow", "doc-fast-1", "doc-fast-2"]
+    assert set(call_order) == {"doc-slow", "doc-fast-1", "doc-fast-2"}

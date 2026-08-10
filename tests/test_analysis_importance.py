@@ -7,7 +7,11 @@ from pydantic import ValidationError
 
 from src.analysis.classifier import parse_json_response
 from src.analysis.exceptions import InvalidJsonResponseError, InvalidScoreError, MissingApiKeyError
-from src.analysis.importance import evaluate_importance, parse_importance_response
+from src.analysis.importance import (
+    evaluate_and_save_importances,
+    evaluate_importance,
+    parse_importance_response,
+)
 from src.analysis.importance_models import (
     ImpactDirection,
     ImportanceCriterionResult,
@@ -230,4 +234,18 @@ def test_final_level_cap_keeps_score_level_and_summary() -> None:
     assert result.importance_score == 69
     assert result.core_summary
     assert result.summary_evidence_refs
+
+
+def test_evaluate_and_save_importances_preserves_order(monkeypatch):
+    def fake_evaluate(*, workspace_id, document_version_id, force=False):
+        return document_version_id
+
+    monkeypatch.setattr("src.analysis.importance.evaluate_and_save_importance", fake_evaluate)
+
+    results = evaluate_and_save_importances(
+        workspace_id="ws-1",
+        document_version_ids=["doc-1", "doc-2", "doc-3"],
+    )
+
+    assert results == ["doc-1", "doc-2", "doc-3"]
 
