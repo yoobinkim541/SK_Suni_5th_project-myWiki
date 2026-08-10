@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Literal
+import logging
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..analysis.reliability_models import RELIABILITY_LEVELS, ReliabilityLevel
+
+logger = logging.getLogger(__name__)
 
 TopicPageType = Literal[
     "industry", "company", "technology", "supply_chain", "policy", "market", "term"
@@ -28,18 +31,57 @@ class PageReliabilityJudgment(BaseModel):
     reliability_score: int = Field(ge=0, le=100)
     reliability_level: ReliabilityLevel
 
-    @model_validator(mode="after")
-    def validate_total_and_level(self) -> "PageReliabilityJudgment":
-        computed = (
-            self.grounding_fidelity_score + self.source_reliability_score
-            + self.evidence_diversity_score + self.currency_score
+    @model_validator(mode="before")
+    @classmethod
+    def validate_total_and_level(cls, data: Any) -> Any:
+        """reliability_score/reliability_level은 4개 세부 점수만으로 결정되는 순수
+        파생값이다. LLM이 별도로 되돌려주는 값은 정보량이 없고, 4항 덧셈은 LLM이
+        자주 틀리는 산술이므로 여기서 세부 점수로부터 다시 계산해 덮어쓴다 — LLM이
+        보낸 값과 어긋나도 거부(ValidationError)하지 않고 파생값으로 대체한다."""
+        if not isinstance(data, dict):
+            return data
+
+        sub_score_keys = (
+            "grounding_fidelity_score",
+            "source_reliability_score",
+            "evidence_diversity_score",
+            "currency_score",
         )
-        if computed != self.reliability_score:
-            raise ValueError("총점이 항목별 점수 합과 일치하지 않습니다.")
-        low, high = RELIABILITY_LEVELS[self.reliability_level.value]
-        if not (low <= self.reliability_score <= high):
-            raise ValueError("reliability_level이 reliability_score 구간과 일치하지 않습니다.")
-        return self
+        if any(data.get(key) is None for key in sub_score_keys):
+            # 세부 점수가 누락된 경우: 일반 필드 검증이 그에 맞는 에러를 내도록 그대로 둔다.
+            return data
+        try:
+            sub_scores = [int(data[key]) for key in sub_score_keys]
+        except (TypeError, ValueError):
+            return data
+
+        computed_score = sum(sub_scores)
+        stated_score = data.get("reliability_score")
+        if stated_score != computed_score:
+            logger.warning(
+                "wiki_reliability_score_derived_mismatch",
+                extra={"stated_score": stated_score, "derived_score": computed_score},
+            )
+
+        derived_level = next(
+            (
+                level_value
+                for level_value, (low, high) in RELIABILITY_LEVELS.items()
+                if low <= computed_score <= high
+            ),
+            None,
+        )
+        stated_level = data.get("reliability_level")
+        if derived_level is not None and stated_level != derived_level:
+            logger.warning(
+                "wiki_reliability_level_derived_mismatch",
+                extra={"stated_level": stated_level, "derived_level": derived_level},
+            )
+
+        data = {**data, "reliability_score": computed_score}
+        if derived_level is not None:
+            data["reliability_level"] = derived_level
+        return data
 
 
 class WikiClaim(BaseModel):

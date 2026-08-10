@@ -661,9 +661,9 @@ ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_review_status CHECK (revi
 ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_generated_by  CHECK (generated_by IN ('human','llm'));
 ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_validation_status CHECK (validation_status IN ('pending','passed','failed'));
 ALTER TABLE wiki_page_versions   ADD CONSTRAINT ck_wpv_confidence    CHECK (confidence_score >= 0 AND confidence_score <= 1);
-ALTER TABLE wiki_page_versions ADD CONSTRAINT ck_wpv_page_reliability_score
+ALTER TABLE wiki_page_versions ADD CONSTRAINT wiki_page_versions_page_reliability_score_check
   CHECK (page_reliability_score IS NULL OR (page_reliability_score >= 0 AND page_reliability_score <= 100));
-ALTER TABLE wiki_page_versions ADD CONSTRAINT ck_wpv_page_reliability_level
+ALTER TABLE wiki_page_versions ADD CONSTRAINT wiki_page_versions_page_reliability_level_check
   CHECK (page_reliability_level IS NULL OR page_reliability_level IN ('낮음', '보통', '높음'));
 
 -- [8/07] report_type/status: 리포트 유형이 daily 외로 확장되고, 생성 파이프라인이

@@ -157,7 +157,7 @@ ISSUE_PAGE_REWRITE_SYSTEM_PROMPT = """당신은 SK하이닉스 반도체 산업 
   한 문장 이내로 쓰십시오. 원본에 있던 사실을 누락하지 마십시오.
 - 출처·인용 표기는 이 작업과 무관합니다 — 절대 언급하거나 만들어내지 마십시오.
 - 아래 4개 항목으로 이 페이지 자체의 신뢰도를 직접 판정해 reliability 객체로 반환하십시오.
-  grounding_fidelity(0~40, 가장 중요 — 본문의 각 주장이 [근거 문서] 범위를 벗어나 추론·과장한
+  grounding_fidelity(0~40, 가장 중요 — 본문의 각 주장이 [근거 문서 원문] 범위를 벗어나 추론·과장한
   부분이 있는지), source_reliability(0~20, [이슈 정보]의 "근거 신뢰도" 값을 참고해 원문 자체의
   신뢰도를 반영), evidence_diversity(0~20, 단일 출처에만 의존하는지), currency(0~20, 근거가
   최근 것인지). reliability_score는 4개 항목의 합, reliability_level은 0~39=낮음/40~69=보통/

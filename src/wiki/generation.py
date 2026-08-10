@@ -269,7 +269,7 @@ def _generate_issue_page(
         generated_by="llm",
         page_reliability_score=reliability.reliability_score if reliability is not None else None,
         page_reliability_level=reliability.reliability_level.value if reliability is not None else None,
-        page_reliability_detail=reliability.model_dump() if reliability is not None else None,
+        page_reliability_detail=reliability.model_dump(mode="json") if reliability is not None else None,
     )
     version_id = create_wiki_version(draft, supabase=supabase)
     record_wiki_validation(version_id, "passed", None, supabase=supabase)
@@ -441,7 +441,7 @@ def _generate_topic_page(
         generated_by="llm",
         page_reliability_score=result.reliability.reliability_score,
         page_reliability_level=result.reliability.reliability_level.value,
-        page_reliability_detail=result.reliability.model_dump(),
+        page_reliability_detail=result.reliability.model_dump(mode="json"),
     )
     version_id = create_wiki_version(draft, supabase=supabase)
 
