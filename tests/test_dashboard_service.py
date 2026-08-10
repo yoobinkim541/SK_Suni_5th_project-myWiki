@@ -10,6 +10,9 @@ WORKSPACE_ID = "ws-1"
 # UTC [2026-08-04T15:00:00, 2026-08-05T15:00:00) 이다.
 NOW = datetime(2026, 8, 5, 3, 0, tzinfo=timezone.utc)
 
+# PostgREST 기본 db-max-rows. FakeTable.execute 참조.
+SERVER_MAX_ROWS = 1000
+
 
 class FakeResult:
     def __init__(self, data):
@@ -60,9 +63,18 @@ class FakeTable:
                 rows = [r for r in rows if r.get(field) and r[field] >= value]
             elif op == "in":
                 rows = [r for r in rows if str(r.get(field)) in value]
+        # range를 실제로 잘라야 페이지 조회를 검증할 수 있다. 안 자르면 매 페이지가
+        # 전건을 돌려줘서 "1,000행에서 잘리는가"를 테스트할 수 없다.
+        if self._range is not None:
+            start, end = self._range
+            rows = rows[start : end + 1]
         if self._limit is not None:
             rows = rows[: self._limit]
-        return FakeResult([dict(r) for r in rows])
+        # PostgREST의 db-max-rows를 흉내낸다. 서버가 .limit(5000)을 받아도 한 응답에
+        # 1,000행까지만 주고 **에러도 경고도 없이** 자른다. 이걸 안 흉내내면
+        # pagination 없는 코드가 테스트에서만 멀쩡해 보인다 — #176·#188·#259가
+        # 라이브에서만 드러난 이유다.
+        return FakeResult([dict(r) for r in rows[:SERVER_MAX_ROWS]])
 
 
 class FakeSupabase:
@@ -334,3 +346,75 @@ def test_다른_워크스페이스_문서는_안_보인다():
 
     assert news.items == []
     assert keywords.keywords == []
+
+
+# ------------------------------------------------------------
+# 창 기준 — 카테고리 현황과 같은 창·같은 기준을 본다 (2026-08-10)
+# ------------------------------------------------------------
+
+
+def test_발행일이_창_밖이면_키워드와_뉴스에서_빠진다():
+    """분석은 어제 돌았어도 3주 전 기사면 '최근 7일'이 아니다.
+
+    카테고리 현황과 같은 판정(in_published_window)을 써야 두 화면의 숫자가 맞는다.
+    """
+    analyses = [
+        _analysis("v1", "제품·기술", created_at="2026-08-04T00:00:00+00:00"),
+        _analysis("v2", "제품·기술", created_at="2026-08-04T00:00:00+00:00"),
+    ]
+    documents = [
+        _document("v1", "SK하이닉스 HBM 양산 확대"),
+        _document("v2", "HBM 수요 급증", published_at="2026-07-15T00:00:00+00:00"),
+    ]
+
+    news = service.get_dashboard_news(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents), now=NOW
+    )
+    keywords = service.get_dashboard_keywords(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents), now=NOW
+    )
+
+    assert [item.title for item in news.items] == ["SK하이닉스 HBM 양산 확대"]
+    assert all(k.count == 1 for k in keywords.keywords)
+
+
+def test_발행일이_없으면_수집일로_대체해_남긴다():
+    """published_at이 비는 소스(공시·수동 업로드)가 통째로 사라지면 안 된다."""
+    analyses = [_analysis("v1", "공급망·생산", created_at="2026-08-04T00:00:00+00:00")]
+    documents = [_document("v1", "설비투자 공시", published_at=None)]
+    documents[0]["created_at"] = "2026-08-04T00:00:00+00:00"
+
+    news = service.get_dashboard_news(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents), now=NOW
+    )
+
+    assert len(news.items) == 1
+
+
+def test_prefilter_마진_안의_행도_발행일이_창_안이면_잡는다():
+    """created_at이 창 시작보다 조금 이르지만 published_at은 창 안인 경우.
+
+    published_at <= created_at이 깨지는 건 소스가 미래 시각을 줄 때뿐인데,
+    그때도 하루 마진 안에서는 놓치지 않는다.
+    """
+    analyses = [_analysis("v1", "제품·기술", created_at="2026-07-29T00:00:00+00:00")]
+    documents = [_document("v1", "HBM 양산", published_at="2026-07-29T12:00:00+00:00")]
+
+    news = service.get_dashboard_news(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents), now=NOW
+    )
+
+    assert len(news.items) == 1
+
+
+def test_분석_행이_1000건을_넘어도_전건을_본다():
+    """PostgREST 1,000행 상한. 이 경로만 pagination이 없어 조용히 잘리고 있었다."""
+    analyses = [_analysis(f"v{i:04d}", "제품·기술") for i in range(1200)]
+    documents = [_document(f"v{i:04d}", f"HBM 양산 {i}") for i in range(1200)]
+
+    keywords = service.get_dashboard_keywords(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents), now=NOW
+    )
+
+    by_word = {k.word: k.count for k in keywords.keywords}
+    assert by_word["HBM"] == 1200

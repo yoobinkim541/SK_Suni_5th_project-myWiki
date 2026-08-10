@@ -16,6 +16,9 @@ WORKSPACE_ID = "ws-1"
 # KST 2026-08-05 12:00 == UTC 2026-08-05 03:00. 최근 7일 창은 2026-07-29T03:00 이후.
 NOW = datetime(2026, 8, 5, 3, 0, tzinfo=timezone.utc)
 
+# PostgREST 기본 db-max-rows. FakeTable.execute 참조.
+SERVER_MAX_ROWS = 1000
+
 
 class FakeResult:
     def __init__(self, data):
@@ -73,7 +76,10 @@ class FakeTable:
             rows = rows[start : end + 1]
         if self._limit is not None:
             rows = rows[: self._limit]
-        return FakeResult([dict(r) for r in rows])
+        # PostgREST의 db-max-rows를 흉내낸다. 서버가 .limit(5000)을 받아도 한 응답에
+        # 1,000행까지만 주고 **에러도 경고도 없이** 자른다. 이걸 안 흉내내면
+        # pagination 없는 코드가 테스트에서만 멀쩡해 보인다.
+        return FakeResult([dict(r) for r in rows[:SERVER_MAX_ROWS]])
 
 
 class FakeSupabase:
@@ -672,3 +678,92 @@ def test_reliability_average_ignores_pending_and_failed_rows():
     by_id = {c.id: c for c in stats.categories}
     assert by_id["product-tech"].count == 3
     assert by_id["product-tech"].level == "high"
+
+
+# ------------------------------------------------------------
+# 집계 창 — 분석 시각이 아니라 발행 시각으로 자른다 (2026-08-10)
+# ------------------------------------------------------------
+
+
+def test_발행일이_창_밖이면_분석이_최근이어도_빠진다():
+    """이 변경의 핵심.
+
+    분석이 수집보다 뒤처져서, created_at으로 자르면 3주 전 기사가 '최근 7일' 카드에
+    들어온다. 2026-08-10 실측으로 1,306행 중 130행(10%)이 그런 행이었다.
+    """
+    rows = [
+        _analysis("v1", "제품·기술", score=80),
+        _analysis("v2", "제품·기술", score=0),  # 어제 분석됐지만 3주 전 기사
+    ]
+    docs = [
+        _doc("v1", "HBM4 양산"),
+        _doc("v2", "지난달 기사", published_at="2026-07-15T00:00:00+00:00"),
+    ]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].count == 1
+    assert stats.total_documents == 1
+    # 창 밖 기사의 0점이 평균을 끌어내리지 않는다 — 이게 배지가 틀어지던 경로다
+    assert by_id["product-tech"].level == "high"
+
+
+def test_발행일이_없으면_수집일로_대체한다():
+    """published_at이 비는 문서(공시·수동 업로드)가 통째로 사라지면 안 된다."""
+    rows = [_analysis("v1", "공급망·생산", score=80)]
+    docs = [_doc("v1", "설비투자 공시")]
+    # _doc은 published_at에 `or 기본값`을 쓰므로 인자로는 NULL을 못 만든다.
+    docs[0]["published_at"] = None
+    docs[0]["created_at"] = "2026-08-04T00:00:00+00:00"
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["supply-chain"].count == 1
+
+
+def test_발행일이_없고_수집일도_창_밖이면_빠진다():
+    rows = [_analysis("v1", "공급망·생산", score=80)]
+    docs = [_doc("v1", "오래된 공시")]
+    docs[0]["published_at"] = None
+    docs[0]["created_at"] = "2026-07-01T00:00:00+00:00"
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    assert stats.total_documents == 0
+
+
+def test_prefilter_마진_안의_행도_발행일이_창_안이면_잡는다():
+    """created_at이 창 시작보다 이른데 published_at은 창 안인 경우.
+
+    published_at <= created_at이라 원래는 안 생기지만, 소스가 미래 시각을 주면
+    (타임존 오류) 생긴다. 2026-08-10 실측으로 문서 1,386건 중 5건이 그랬고 최대
+    7.3일 앞섰다 — PREFILTER_MARGIN_DAYS는 그 폭을 덮어야 한다.
+    """
+    # 수집 7.3일 뒤 발행으로 기록된 문서. 마진이 1일이면 여기서 떨어진다.
+    rows = [_analysis("v1", "제품·기술", score=80, created_at="2026-07-25T00:00:00+00:00")]
+    docs = [_doc("v1", "HBM 양산", published_at="2026-08-01T08:00:00+00:00")]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].count == 1
+
+
+def test_창_기준이_바뀌어도_최신_문서가_모달에_남는다():
+    """관련 뉴스 모달은 발행일 내림차순이다. 창 필터가 정렬을 뒤집지 않는지 본다."""
+    rows = [
+        _analysis("v1", "제품·기술", score=50),
+        _analysis("v2", "제품·기술", score=50),
+    ]
+    docs = [
+        _doc("v1", "먼저 나온 기사", published_at="2026-08-01T00:00:00+00:00"),
+        _doc("v2", "나중에 나온 기사", published_at="2026-08-04T00:00:00+00:00"),
+    ]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    titles = [d.title for d in by_id["product-tech"].recent_documents]
+    assert titles == ["나중에 나온 기사", "먼저 나온 기사"]
