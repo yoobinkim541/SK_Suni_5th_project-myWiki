@@ -6,11 +6,17 @@ from supabase import Client
 
 from ..analysis.repository import get_supabase
 from ..categories.documents import (
+    ANALYSIS_WINDOW_DAYS,
+    PREFILTER_MARGIN_DAYS,
     display_title,
     documents_by_version,
+    fetch_analysis_rows,
+    in_published_window,
+    parse_timestamp as _parse_timestamp,
     quote_for,
     source_label,
     unique_documents,
+    window_start,
 )
 from ..categories.keywords import (
     CATEGORY_SLUGS,
@@ -34,7 +40,9 @@ from .models import (
 RELIABILITY_LOW_THRESHOLD = 40
 RELIABILITY_MEDIUM_THRESHOLD = 70
 
-WINDOW_DAYS = 7
+# 창 길이는 categories/documents.py가 단일 출처다 — 카테고리 현황과 대시보드가
+# 같은 값을 봐야 한다. 이름은 유지한다(기존 import와 테스트가 이 이름을 참조한다).
+WINDOW_DAYS = ANALYSIS_WINDOW_DAYS
 
 # 문서가 "채택됐다"의 기준. 랭킹까지 끝나 보고서 후보로 확정된 상태다.
 ADOPTED_RANKING_STATUS = "completed"
@@ -111,12 +119,6 @@ def _reliability_label(avg_score: float | None) -> str:
     return "높음"
 
 
-def _parse_timestamp(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-
-
 def _count_in_today_window(rows: list[dict], field: str, *, today_start: datetime, today_end: datetime) -> int:
     count = 0
     for row in rows:
@@ -137,6 +139,10 @@ def get_dashboard_summary(
     수집 문서·생성 보고서는 최근 7일 누적(+오늘 신규), 위키 문서는 현재 published
     전체 누적(+오늘 신규 발행), 평균 신뢰도는 최근 7일 분석분의 reliability_score
     평균을 기존 프론트 라벨 기준(<40 낮음, <70 보통, 그 외 높음)으로 변환한다.
+
+    ⚠ 평균 신뢰도의 창은 여기만 **created_at 기준**으로 남아 있다. 카테고리 카드
+    배지와 아래 키워드·최신 뉴스는 발행일 기준으로 바뀌었으므로(2026-08-10), 같은
+    임계값을 쓰면서도 표본이 다르다. KPI 라벨의 기준 변경은 별건으로 협의한다.
     """
     db = supabase or get_supabase()
     now = now or datetime.now(timezone.utc)
@@ -333,29 +339,42 @@ def _trend_day(
 def _analysis_rows_with_titles(
     db: Client, workspace_id: str, now: datetime
 ) -> tuple[list[dict], dict[str, dict]]:
-    """최근 7일 분석 행 + document_version_id -> documents 행.
+    """최근 7일 **발행분** 분석 행 + document_version_id -> documents 행.
 
-    카테고리 현황과 같은 창(WINDOW_DAYS)을 쓴다. 두 화면이 다른 기간을 보면
-    같은 낱말에 다른 숫자가 붙는다.
+    카테고리 현황과 같은 창(WINDOW_DAYS)을, 같은 기준(발행일)으로 쓴다. 두 화면이
+    다른 기간을 보면 같은 낱말에 다른 숫자가 붙는다. 그래서 창 판정도 카테고리와
+    같은 함수(categories.documents.in_published_window)를 부른다.
+
+    ⚠ 이 함수는 2026-08-10까지 pagination 없이 .limit()만 걸고 있어서 7일 분석 행
+    1,306건 중 1,000건만 보고 있었다. 같은 파일의 _fetch_all은 #188에서 고쳐졌는데
+    이 경로만 남아 있었다 — '오늘의 키워드' 칩과 '최신 뉴스' 카드가 조용히 300건을
+    빼고 집계됐다는 뜻이다. 공용 fetch_analysis_rows가 페이지로 받는다.
     """
-    window_start = (now - timedelta(days=WINDOW_DAYS)).isoformat()
-    rows = (
-        db.table("document_analysis_results")
-        .select(
+    start = window_start(now, days=WINDOW_DAYS)
+    rows = fetch_analysis_rows(
+        db,
+        workspace_id,
+        columns=(
             "primary_category, document_version_id, created_at, "
             "core_summary, summary_evidence_refs"
-        )
-        .eq("workspace_id", workspace_id)
-        .gte("created_at", window_start)
-        .limit(_ANALYSIS_FETCH_LIMIT)
-        .execute()
-        .data
+        ),
+        # created_at은 발행일 창의 prefilter다. categories/service.py와 같은 이유.
+        since=start - timedelta(days=PREFILTER_MARGIN_DAYS),
+        limit=_ANALYSIS_FETCH_LIMIT,
     )
     rows = [r for r in rows if r.get("primary_category") in CATEGORY_SLUGS]
     version_ids = [
         str(r["document_version_id"]) for r in rows if r.get("document_version_id")
     ]
-    return rows, documents_by_version(db, workspace_id, version_ids)
+    documents = documents_by_version(db, workspace_id, version_ids)
+
+    in_window = [
+        r
+        for r in rows
+        if (document := documents.get(str(r.get("document_version_id")))) is not None
+        and in_published_window(document, start)
+    ]
+    return in_window, documents
 
 
 def get_dashboard_keywords(

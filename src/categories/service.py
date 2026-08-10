@@ -23,14 +23,18 @@ from ..dashboard.service import (
 )
 from .documents import (
     _IN_CLAUSE_CHUNK_SIZE,
+    PREFILTER_MARGIN_DAYS,
     QUOTE_MAX_LEN,
     TOP_ISSUE_MAX_LEN,
     display_title,
     documents_by_version,
+    fetch_analysis_rows,
+    in_published_window,
     quote_for,
     source_label,
     sources_by_id,
     unique_documents,
+    window_start,
 )
 from .keywords import (
     CATEGORY_ORDER,
@@ -58,33 +62,12 @@ MAX_RECENT_DOCUMENTS = 10
 
 # 조회 상한. 워크스페이스 하나에 7일치라 현재는 수백 건 규모지만, 무한정 긁지 않는다.
 _FETCH_LIMIT = 5000
-_PAGE_SIZE = 1000
 
-
-def _fetch_analysis_rows(db: Client, workspace_id: str, window_start: str) -> list[dict]:
-    """Fetch every recent analysis row instead of trusting PostgREST's 1,000 row cap."""
-    rows: list[dict] = []
-    offset = 0
-    while offset < _FETCH_LIMIT:
-        page = (
-            db.table("document_analysis_results")
-            .select(
-                "primary_category, reliability_status, reliability_score, importance_score, "
-                "document_version_id, created_at, reliability_evaluated_at, core_summary, "
-                "summary_evidence_refs"
-            )
-            .eq("workspace_id", workspace_id)
-            .gte("created_at", window_start)
-            .order("id")
-            .range(offset, min(offset + _PAGE_SIZE - 1, _FETCH_LIMIT - 1))
-            .execute()
-            .data
-        )
-        rows.extend(page)
-        if len(page) < _PAGE_SIZE:
-            break
-        offset += _PAGE_SIZE
-    return rows
+_ANALYSIS_COLUMNS = (
+    "primary_category, reliability_status, reliability_score, importance_score, "
+    "document_version_id, created_at, reliability_evaluated_at, core_summary, "
+    "summary_evidence_refs"
+)
 
 
 def _level(avg_score: float | None) -> CategoryLevel:
@@ -175,7 +158,11 @@ def get_category_stats(
     supabase: Client | None = None,
     now: datetime | None = None,
 ) -> CategoryStats:
-    """최근 7일 분석분을 primary_category로 묶어 카드 6장을 만든다.
+    """최근 7일 **발행분**을 primary_category로 묶어 카드 6장을 만든다.
+
+    창의 기준은 documents.published_at이다(문서에 값이 없으면 documents.created_at).
+    분석 시각이 아니라 발행 시각으로 자르는 이유는 documents.in_published_window 참조 —
+    한 줄로 줄이면, 분석이 뒤처져서 3주 전 기사가 '최근 7일'에 섞여 들어오기 때문이다.
 
     필드별 산출
         count             해당 카테고리 문서 수 (원그래프 왼쪽도 이 값을 쓴다)
@@ -191,25 +178,38 @@ def get_category_stats(
     """
     db = supabase or get_supabase()
     now = now or datetime.now(timezone.utc)
-    window_start = (now - timedelta(days=WINDOW_DAYS)).isoformat()
+    start = window_start(now, days=WINDOW_DAYS)
 
-    rows = _fetch_analysis_rows(db, workspace_id, window_start)
+    # DB 필터는 created_at이다. 발행 후에 수집하므로 published_at <= created_at이고,
+    # 그래서 이 조건은 발행일 창의 무손실 상위집합이다 — 문서를 먼저 조회해
+    # 버전->분석 행을 역추적하면 7일치가 3,000건을 넘어 왕복이 40회가 된다.
+    # 실제 창 판정은 문서를 붙인 뒤 아래에서 한다.
+    rows = fetch_analysis_rows(
+        db,
+        workspace_id,
+        columns=_ANALYSIS_COLUMNS,
+        since=start - timedelta(days=PREFILTER_MARGIN_DAYS),
+        limit=_FETCH_LIMIT,
+    )
 
-    grouped: dict[str, list[dict]] = collections.defaultdict(list)
-    for row in rows:
-        category = row.get("primary_category")
-        if category in CATEGORY_SLUGS:
-            grouped[category].append(row)
-
+    categorized = [r for r in rows if r.get("primary_category") in CATEGORY_SLUGS]
     version_ids = [
         str(row["document_version_id"])
-        for group in grouped.values()
-        for row in group
+        for row in categorized
         if row.get("document_version_id")
     ]
     documents = documents_by_version(db, workspace_id, version_ids)
     titles = {vid: (doc.get("title") or "") for vid, doc in documents.items()}
     sources = sources_by_id(db, workspace_id)
+
+    grouped: dict[str, list[dict]] = collections.defaultdict(list)
+    for row in categorized:
+        document = documents.get(str(row.get("document_version_id")))
+        # 문서를 못 찾은 행은 다른 workspace 것이거나 버전이 지워진 것이다.
+        # 어차피 아래 unique_documents가 버리므로 여기서 미리 뺀다.
+        if document is None or not in_published_window(document, start):
+            continue
+        grouped[row["primary_category"]].append(row)
 
     categories: list[CategoryStat] = []
     total = 0

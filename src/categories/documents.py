@@ -11,6 +11,7 @@ categories/service.py는 dashboard/service.py를 import하고 있어서(RELIABIL
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from supabase import Client
@@ -32,9 +33,130 @@ _IN_CLAUSE_CHUNK_SIZE = 150
 src/analysis/repository.py, src/pipeline_common/repository.py의 동일 상수와 같은 값.
 """
 
+ANALYSIS_WINDOW_DAYS = 7
+"""
+카테고리 현황·대시보드가 '최근'이라고 부르는 기간. 두 화면이 같은 값을 쓴다
+(dashboard/service.py의 WINDOW_DAYS가 이걸 재노출한다).
+
+일일 리포트의 24시간(report/candidate_provider.get_report_time_range)을 따라가지
+않는다. 리포트는 '어제 하루에 무슨 일이 있었나'를 묻고, 이 두 화면은 분포와 추세를
+본다 — 표본이 1/7로 줄면 카드 배지가 하루 단위로 요동친다. 목적이 다르다.
+"""
+
+PREFILTER_MARGIN_DAYS = 8
+"""
+created_at prefilter에 주는 여유. 아래 fetch_analysis_rows 참조.
+
+기사는 발행된 뒤에 수집되므로 보통 published_at <= created_at이고, 그러면
+`created_at >= 창시작`은 `published_at >= 창시작`의 무손실 상위집합이 된다.
+문제는 소스가 미래 시각을 줄 때다 — 그때만 부등식이 깨지고, 발행일 창 안인데
+prefilter에서 떨어지는 행이 생긴다. 놓치지 않으려면 마진이 그 **앞선 폭**을
+덮어야 한다.
+
+2026-08-10 실측 (문서 1,386건): published_at이 created_at보다 앞선 문서가 5건,
+앞선 폭은 중앙 10.2시간 / 최대 175.4시간(7.3일)이었다. 처음에 1일로 잡았던 값은
+그 5건 중 2건을 놓친다. 최대치에 여유를 붙여 8일로 둔다.
+
+비용은 같은 날 측정으로 0이다 — 마진 1·8·14·30일 모두 prefilter 행 수가 1,386으로
+같았다(분석 행 자체가 최근 며칠에 몰려 있다). 나중에 분석 백로그가 풀려 오래된
+행이 쌓이면 이 값이 조회량에 그대로 반영되므로 그때 다시 잰다.
+"""
+
+_PAGE_SIZE = 1000
+
 
 def chunked(items: list, size: int = _IN_CLAUSE_CHUNK_SIZE) -> list[list]:
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def window_start(now: datetime, *, days: int = ANALYSIS_WINDOW_DAYS) -> datetime:
+    """화면이 보여줄 발행일 창의 시작."""
+    return now - timedelta(days=days)
+
+
+def fetch_analysis_rows(
+    db: Client,
+    workspace_id: str,
+    *,
+    columns: str,
+    since: datetime,
+    limit: int = 5000,
+) -> list[dict]:
+    """분석 행을 페이지로 나눠 전건 받는다.
+
+    ⚠ PostgREST는 한 응답에 1,000행까지만 주고 넘으면 **에러도 경고도 없이 자른다.**
+    이 계층은 받은 목록을 len()으로 세고 평균을 내므로 잘리면 KPI가 조용히 틀린다.
+    이 저장소는 같은 버그에 세 번 당했다(#176 수집 문서 수, #188 오늘 증가분,
+    #259 카테고리 집계). 목록을 세는 코드는 반드시 이 함수를 거친다.
+
+    `since`는 **created_at** 기준이다 — published_at 창의 prefilter일 뿐 최종 필터가
+    아니다. 최종 판정은 문서를 붙인 뒤 in_published_window()가 한다. 이유는
+    PREFILTER_MARGIN_DAYS와 in_published_window() 독스트링 참조.
+    """
+    since_iso = since.isoformat()
+    rows: list[dict] = []
+    offset = 0
+    while offset < limit:
+        page = (
+            db.table("document_analysis_results")
+            .select(columns)
+            .eq("workspace_id", workspace_id)
+            .gte("created_at", since_iso)
+            # 순서를 고정해야 페이지가 겹치거나 빠지지 않는다.
+            .order("id")
+            .range(offset, min(offset + _PAGE_SIZE - 1, limit - 1))
+            .execute()
+            .data
+        ) or []
+        rows.extend(page)
+        if len(page) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+    return rows
+
+
+def parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    # DB 컬럼은 timestamptz지만 Fake/구 데이터에 naive 값이 섞일 수 있다. 창 비교가
+    # TypeError로 죽지 않게 UTC로 본다.
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def effective_published_at(document: dict) -> datetime | None:
+    """문서의 발행 시각. 없으면 수집 시각으로 대체한다.
+
+    published_at이 비는 소스가 있다(공시·수동 업로드). 그런 문서를 창 밖으로
+    떨어뜨리면 화면에서 통째로 사라지므로, 그 경우에만 documents.created_at을
+    대신 쓴다 — 수집 시각은 발행 시각의 상한이라 '실제보다 최신으로 보이는' 쪽으로만
+    틀리고, 그건 원래 created_at 기준이 하던 것과 같다.
+    """
+    return parse_timestamp(document.get("published_at")) or parse_timestamp(
+        document.get("created_at")
+    )
+
+
+def in_published_window(document: dict, start: datetime) -> bool:
+    """문서가 발행일 기준 창 안인가.
+
+    집계 기준을 documents.published_at으로 잡는 이유: 분석은 수집보다 뒤처지므로
+    (2026-08-10 실측: 08-08 발행분 369건 중 7건만 분석됨) created_at으로 자르면
+    3주 전 기사라도 어제 분석됐다는 이유로 '최근 7일'에 들어온다. 2026-08-10 실측
+    1,306행 중 130행(10%)이 그런 행이었다.
+
+    ⚠ 이 기준으로 바꾸면 분석 백로그가 화면에 드러난다 — 최근 며칠이 희박해 보인다.
+    가려져 있던 것이 보이는 것이지 집계가 나빠진 게 아니다.
+
+    발행 시각을 모르는 문서는 남긴다(effective_published_at 참조).
+    """
+    published = effective_published_at(document)
+    if published is None:
+        return True
+    return published >= start
 
 
 def truncate(text: str, max_len: int) -> str:
@@ -87,7 +209,7 @@ def quote_for(row: dict) -> str:
 def documents_by_version(
     db: Client, workspace_id: str, version_ids: list[str]
 ) -> dict[str, dict]:
-    """document_version_id -> documents 행(document_id/title/canonical_url/published_at).
+    """document_version_id -> documents 행(title/canonical_url/published_at/created_at).
 
     document_versions에는 workspace_id 컬럼이 없다. 그래서 documents 조회에
     workspace_id를 반드시 직접 건다 — 여기가 격리가 성립하는 유일한 지점이다.
@@ -115,7 +237,8 @@ def documents_by_version(
     for chunk in chunked(document_ids):
         documents.extend(
             db.table("documents")
-            .select("id, title, canonical_url, published_at, source_id")
+            # created_at은 published_at이 빈 문서의 대체값이다(effective_published_at).
+            .select("id, title, canonical_url, published_at, created_at, source_id")
             .eq("workspace_id", workspace_id)
             .in_("id", chunk)
             .execute()
