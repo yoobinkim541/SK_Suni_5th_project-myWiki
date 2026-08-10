@@ -1510,14 +1510,15 @@ a.fn:hover{text-decoration:underline}
 .pie-hd .s{font-size:10.5px;font-weight:300;color:var(--muted)}
 .pie{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
 .pie svg{width:168px;height:auto;flex:none}
-/* 조각 진입 애니메이션 — 중심에서 scale 0.4→1 + fade로 튀어나오며, 각 조각의 각도
-   순서대로 딜레이를 흩뿌려(KeywordPie.jsx가 style로 넣어준다) 한 바퀴 돌면서 채워지는
-   인상을 준다. 회전/pulse처럼 계속 반복되는 애니메이션은 아니고 진입 시 한 번만. */
-@keyframes pie-fill{
-  from{opacity:0;transform:scale(.4)}
-  to{opacity:1;transform:scale(1)}
-}
-.pie .sl{transform-origin:84px 84px;opacity:0;animation:pie-fill .5s var(--ease) both;
+/* 진입 애니메이션 — 도넛 전체가 12시 방향에서 시작해 시계방향으로 한 바퀴 쓸려가며
+   그려진다(KeywordPie.jsx의 <mask> + stroke-dashoffset 스윕). 여기서는 그 스윕 원의
+   stroke-dashoffset을 둘레→0으로 애니메이션하는 것만 담당 — 조각(.sl) 쪽은 애니메이션
+   없이 항상 완성된 상태로 두고, 마스크가 드러내는 영역만 시계방향으로 넓어진다.
+   회전/pulse처럼 계속 반복되지는 않고 진입 시 한 번만(둘레 값은 JS가 stroke-dasharray로
+   이미 넣어줬으니 여기선 0까지만 보내면 끝). */
+@keyframes pie-sweep-in{ to{ stroke-dashoffset:0; } }
+.pie-sweep{animation:pie-sweep-in .9s var(--ease) both}
+.pie .sl{transform-origin:84px 84px;
   transition:transform var(--dur-fast) var(--ease),filter var(--dur-fast) var(--ease)}
 .pie .sl.clickable{cursor:pointer}
 /* hover는 그 조각만 살짝(4%) 커지고 밝아진다 — 다른 조각·전체 그래프는 그대로 둔다. */
