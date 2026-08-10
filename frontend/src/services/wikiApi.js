@@ -99,10 +99,27 @@ function toDoc(content) {
   };
 }
 
+// GET /wiki/pages는 한 번에 최대 200건(limit<=200)만 준다 — 트리는 전체가 보여야 하므로
+// 페이지를 다 받을 때까지 반복 조회한다(대시보드 KPI가 이미 겪은 것과 같은 truncation 버그,
+// src/dashboard/service.py의 _fetch_all() 패턴과 동일).
+const WIKI_TREE_PAGE_SIZE = 200;
+
+async function fetchAllWikiPages() {
+  const all = [];
+  let offset = 0;
+  for (;;) {
+    const batch = await wikiApi.fetchWikiPages({ limit: WIKI_TREE_PAGE_SIZE, offset });
+    all.push(...batch);
+    if (batch.length < WIKI_TREE_PAGE_SIZE) break;
+    offset += WIKI_TREE_PAGE_SIZE;
+  }
+  return all;
+}
+
 /** WikiPage 좌측 트리 전체. */
 export async function fetchWikiTree() {
   if (USE_MOCK) return MOCK_WIKI_TREE;
-  const pages = await wikiApi.fetchWikiPages();
+  const pages = await fetchAllWikiPages();
   return toTree(pages);
 }
 
