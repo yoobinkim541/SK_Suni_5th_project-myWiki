@@ -20,15 +20,19 @@ from typing import Callable, Optional
 
 from openai import OpenAI
 
+from ..analysis.classifier import get_openrouter_settings
 from ..pipeline_common import dart_lookup
 from ..wiki.citation_text import strip_orphaned_citation_markers
 from .wiki_tools import WikiTools
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# 팀 확정 모델(analysis/classifier.py, report/composer.py와 통일)
-MODEL_NAME = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
+# 모델 기본값을 여기서 다시 os.getenv로 읽지 않고 analysis/classifier.py의
+# OpenRouterSettings에서 그대로 가져온다 — 두 곳에 각자 하드코딩된 기본값이 어긋난 적이
+# 실제로 있었다(2026-08-04, 한쪽에만 잘못된 기본 모델이 남아있던 사고). 단일 출처로 통일.
+_settings = get_openrouter_settings()
+MODEL_NAME = _settings.model
 # 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
-FALLBACK_MODEL_NAME = os.getenv("OPENROUTER_FALLBACK_MODEL", "").strip() or "deepseek/deepseek-v4-pro"
+FALLBACK_MODEL_NAME = _settings.fallback_model
 # OpenAI SDK 기본 read timeout(600초)을 그대로 두면, primary 모델이 막혔을 때 폴백으로
 # 넘어가기까지 라운드 하나가 몇 분씩 걸릴 수 있다(실측: 2026-08-09, primary 반복 실패로
 # 답변 하나에 190~200초+ 소요 — 프론트가 기다릴 수 있는 시간을 훨씬 넘겨 "완전 무응답"
