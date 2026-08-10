@@ -135,15 +135,15 @@ def _doc(version_id, title, workspace_id=WORKSPACE_ID, url=None, published_at=No
 # ------------------------------------------------------------
 
 
-def test_level_thresholds_대시보드와_같다():
+def test_level_thresholds_match_real_score_buckets():
     assert service._level(39) == "low"
     assert service._level(40) == "mid"
     assert service._level(69) == "mid"
     assert service._level(70) == "high"
 
 
-def test_점수가_없으면_low로_내린다():
-    """근거 없이 높게 보이는 쪽이 더 위험하다."""
+def test_missing_score_displays_as_low():
+    """Missing score remains low because the Category page reflects real buckets."""
     assert service._level(None) == "low"
 
 
@@ -520,8 +520,8 @@ def test_다른_workspace_문서는_뉴스에도_안_나온다():
     assert by_id["product-tech"].recent_documents == []
 
 
-def test_level은_소문자_3종만_나온다():
-    """CategoryCard의 LEVEL_LABEL이 이 세 값만 인식한다."""
+def test_level_emits_three_known_values():
+    """CategoryCard LEVEL_LABEL recognizes these three values."""
     rows = [_analysis(f"v{i}", "제품·기술", score=s) for i, s in enumerate([0, 45, 95])]
     docs = [_doc(f"v{i}", f"기사 {i}") for i in range(3)]
 

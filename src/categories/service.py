@@ -61,12 +61,10 @@ _FETCH_LIMIT = 5000
 
 
 def _level(avg_score: float | None) -> CategoryLevel:
-    """reliability_score 평균 -> 카드가 아는 소문자 3종.
+    """Map average reliability to the Category page display badge.
 
-    임계값은 대시보드(dashboard/service.py)와 같은 값을 재사용한다. 두 화면이
-    다른 기준으로 '보통'을 말하면 안 된다.
-
-    점수가 하나도 없으면 'low'로 내린다 — 근거 없이 높게 보이는 쪽이 더 위험하다.
+    Category status should reflect the actual reliability score bucket rather than
+    hiding low values. Score calibration belongs in the reliability evaluator.
     """
     if avg_score is None:
         return "low"

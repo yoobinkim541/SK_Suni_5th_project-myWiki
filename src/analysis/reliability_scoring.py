@@ -86,7 +86,7 @@ def build_criterion_caps(*, signals: MachineSignals) -> CriterionCaps:
         caps.warnings.append("공식 또는 1차 출처가 없어 출처 권위성 상한이 적용되었습니다.")
 
     if signals.single_source_only:
-        caps.independent_evidence_max = min(caps.independent_evidence_max, 8)
+        caps.independent_evidence_max = min(caps.independent_evidence_max, 12)
         caps.warnings.append("단일 출처 기반 평가입니다.")
 
     if signals.duplicated_republish_detected:
