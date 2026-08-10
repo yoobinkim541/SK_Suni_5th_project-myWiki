@@ -199,7 +199,7 @@ function buildPendingReportView(date = getTodayKSTDate()) {
     },
     archive: [archiveItem],
     today: {
-      label: `${label} - ??? ?? ??`,
+      label: `${label} - 생성 대기`,
       date,
       archiveItem,
     },
@@ -280,7 +280,7 @@ async function buildReportView(date = getTodayKSTDate(), { generateOnMissing = f
     },
     archive: [archiveItem],
     today: {
-      label: `${formatDateLabel(report.date)} - ?? ?? ??? - ?? ${issues.length}?`,
+      label: `${formatDateLabel(report.date)} - 생성 완료 - 이슈 ${issues.length}건`,
       date: report.date,
       archiveItem,
     },
