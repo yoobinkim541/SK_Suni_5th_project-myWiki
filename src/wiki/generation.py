@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from supabase import Client
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
+from ..analysis.reliability_models import ReliabilityLevel
 from ..report.candidate_provider import get_recently_analyzed_candidates
 from ..report.composer import compose_report_sections
 from ..report.grouper import group_report_candidates
@@ -355,6 +356,13 @@ def _generate_topic_page(
         # 본문이 비면 빈 페이지가 자동 발행되므로 근거 없음과 동일하게 취급한다.
         return "skip", None, None
 
+    if result.reliability.reliability_level == ReliabilityLevel.LOW:
+        logger.info(
+            "wiki_topic_page_skipped_low_reliability",
+            extra={"issue_key": section.issue_key, "reliability_score": result.reliability.reliability_score},
+        )
+        return "skip", None, None
+
     sources = [
         WikiSourceInput(
             document_version_id=claim.document_version_id,
@@ -416,6 +424,9 @@ def _generate_topic_page(
         change_summary=result.change_summary,
         created_by=requested_by,
         generated_by="llm",
+        page_reliability_score=result.reliability.reliability_score,
+        page_reliability_level=result.reliability.reliability_level.value,
+        page_reliability_detail=result.reliability.model_dump(),
     )
     version_id = create_wiki_version(draft, supabase=supabase)
 
