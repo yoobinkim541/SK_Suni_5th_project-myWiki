@@ -51,6 +51,55 @@ def test_build_source_rows_still_dedupes_identical_repeats():
     assert rows[0]["claim_text"] == "같은 주장"
 
 
+def test_build_source_rows_keeps_distinct_web_sources_separate():
+    """document_version_id가 없는(웹검색 근거) 소스는 전부 None이 같은 값이라, document_version_id만
+    묶음 키로 쓰면 서로 다른 웹 출처 두 개가 한 행으로 뭉개진다 — source_url이 다르면 별도 행이어야 한다."""
+    rows = _build_source_rows(
+        "version-1",
+        [
+            WikiSourceInput(
+                document_version_id=None, source_url="https://a.example/1", source_title="기사 A",
+                published_at="2026-08-01", claim_text="주장 A", citation_order=1,
+            ),
+            WikiSourceInput(
+                document_version_id=None, source_url="https://b.example/2", source_title="기사 B",
+                published_at="2026-08-02", claim_text="주장 B", citation_order=2,
+            ),
+        ],
+    )
+
+    assert len(rows) == 2
+    row_a = next(r for r in rows if r["source_url"] == "https://a.example/1")
+    row_b = next(r for r in rows if r["source_url"] == "https://b.example/2")
+    assert row_a["document_version_id"] is None
+    assert row_a["source_title"] == "기사 A"
+    assert row_a["published_at"] == "2026-08-01"
+    assert row_a["claim_text"] == "주장 A"
+    assert row_b["claim_text"] == "주장 B"
+
+
+def test_build_source_rows_merges_identical_web_source_repeats():
+    """같은 source_url을 가리키는 웹 근거가 여러 번 들어오면(같은 문서 다른 정보) 문서 근거와
+    동일하게 한 행으로 합쳐지고 claim_text가 이어붙는지 확인한다."""
+    rows = _build_source_rows(
+        "version-1",
+        [
+            WikiSourceInput(
+                document_version_id=None, source_url="https://a.example/1", source_title="기사 A",
+                claim_text="주장 A",
+            ),
+            WikiSourceInput(
+                document_version_id=None, source_url="https://a.example/1", source_title="기사 A",
+                claim_text="주장 A-2",
+            ),
+        ],
+    )
+
+    assert len(rows) == 1
+    assert "주장 A" in rows[0]["claim_text"]
+    assert "주장 A-2" in rows[0]["claim_text"]
+
+
 @pytest.fixture(scope="module")
 def workspace_id() -> str:
     if not os.environ.get("SUPABASE_URL") or not (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SECRET_KEY")):

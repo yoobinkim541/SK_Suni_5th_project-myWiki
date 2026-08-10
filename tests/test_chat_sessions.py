@@ -973,6 +973,55 @@ def test_save_to_wiki_with_citations_creates_wiki_version(make_client, monkeypat
     assert draft.sources[0].claim_text == SAMPLE_CITATION["quoted_text"]
 
 
+WEB_CITATION = {
+    "document_version_id": None,
+    "document_title": "SK하이닉스 HBM4 로드맵 - 어떤매체",
+    "source_url": "https://example.com/news/1",
+    "published_at": "2026-08-01T00:00:00Z",
+    "quoted_text": "HBM4는 6.4Gbps 이상을 목표로 한다.",
+    "source_start_line": None,
+    "source_end_line": None,
+    "citation_order": 1,
+}
+
+
+def test_save_to_wiki_with_web_search_citation_succeeds(make_client, monkeypatch):
+    """웹검색/DART 그라운딩 답변(document_version_id가 없는 citation)도 저장이 성공해야 한다 —
+    document_version_id NOT NULL 제약 위반으로 실패하던 버그의 회귀 테스트."""
+    monkeypatch.setattr(db, "get_chat_session", lambda sid, wid, uid: PRIVATE_SESSION if uid == OWNER_ID else None)
+    monkeypatch.setattr(db, "get_chat_message", lambda mid: ASSISTANT_MESSAGE if mid == ASSISTANT_MESSAGE["id"] else None)
+    monkeypatch.setattr(db, "list_message_citations", lambda mid: [WEB_CITATION])
+    monkeypatch.setattr(db, "get_preceding_user_message", lambda sid, before: USER_QUESTION)
+    monkeypatch.setattr(
+        main_module, "compose_chat_wiki_draft",
+        lambda question, answer, citations: chat_wiki.ChatWikiDraft(title="t", markdown="m"),
+    )
+    monkeypatch.setattr(main_module, "upsert_wiki_page", lambda workspace_id, slug, title, page_type: "page-1")
+    monkeypatch.setattr(main_module, "update_wiki_page_title", lambda page_id, title: None)
+
+    captured = {}
+
+    def fake_create_wiki_version(draft):
+        captured["draft"] = draft
+        return "version-1"
+
+    monkeypatch.setattr(main_module, "create_wiki_version", fake_create_wiki_version)
+    monkeypatch.setattr(main_module, "record_wiki_validation", lambda *a, **kw: None)
+    monkeypatch.setattr(main_module, "review_wiki_version", lambda *a, **kw: None)
+    monkeypatch.setattr(main_module, "publish_wiki_version", lambda *a, **kw: None)
+
+    res = make_client(OWNER_ID).post(
+        f"/chat/sessions/{PRIVATE_SESSION['id']}/messages/{ASSISTANT_MESSAGE['id']}/save-to-wiki"
+    )
+
+    assert res.status_code == 200
+    source = captured["draft"].sources[0]
+    assert source.document_version_id is None
+    assert source.source_url == "https://example.com/news/1"
+    assert source.source_title == "SK하이닉스 HBM4 로드맵 - 어떤매체"
+    assert source.published_at == "2026-08-01T00:00:00Z"
+
+
 def test_save_to_wiki_auto_publishes_version(make_client, monkeypatch):
     """
     save-to-wiki는 사람 검수를 거치지 않으므로, 저장 직후 자동으로

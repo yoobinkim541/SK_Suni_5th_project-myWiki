@@ -30,8 +30,11 @@ ReviewDecision = Literal["approved", "rejected"]
 class WikiSourceInput:
     """Input row for `wiki_page_sources`."""
 
-    document_version_id: str
     claim_text: str
+    document_version_id: Optional[str] = None
+    source_url: Optional[str] = None
+    source_title: Optional[str] = None
+    published_at: Optional[str] = None
     source_start_line: Optional[int] = None
     source_end_line: Optional[int] = None
     support_type: SupportType = "supports"
@@ -84,7 +87,7 @@ class WikiVersionSummary:
 class WikiSource:
     """Traceable source attached to a wiki claim."""
 
-    document_version_id: str
+    document_version_id: Optional[str]
     citation_order: Optional[int]
     claim_text: Optional[str]
     support_type: Optional[str]

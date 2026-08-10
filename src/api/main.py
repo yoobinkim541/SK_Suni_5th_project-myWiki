@@ -374,6 +374,9 @@ def save_message_to_wiki(session_id: str, message_id: str, profile: dict = Depen
         sources=[
             WikiSourceInput(
                 document_version_id=c["document_version_id"],
+                source_url=c.get("source_url"),
+                source_title=c.get("document_title"),
+                published_at=c.get("published_at"),
                 claim_text=c.get("quoted_text") or "",
                 source_start_line=c.get("source_start_line"),
                 source_end_line=c.get("source_end_line"),
