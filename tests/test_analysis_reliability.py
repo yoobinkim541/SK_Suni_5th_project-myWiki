@@ -4,7 +4,7 @@ import pytest
 
 from src.analysis.classifier import parse_json_response
 from src.analysis.exceptions import InvalidJsonResponseError, InvalidScoreError, MissingApiKeyError
-from src.analysis.reliability import evaluate_reliability
+from src.analysis.reliability import build_machine_signals, evaluate_reliability
 from src.analysis.reliability_models import (
     EvidenceDocument,
     MachineSignals,
@@ -107,8 +107,36 @@ def test_invalid_total_score_rejected() -> None:
 def test_single_source_cap_rule() -> None:
     signals = _signals().model_copy(update={"single_source_only": True})
     breakdown, caps = apply_machine_score_caps(llm_result=_llm_result(), signals=signals)
-    assert breakdown.independent_evidence_score == 8
+    assert breakdown.independent_evidence_score == 12
     assert any("단일 출처" in warning for warning in caps.warnings)
+
+
+def test_no_official_source_caps_source_authority_to_16() -> None:
+    signals = _signals().model_copy(update={"has_official_source": False})
+    breakdown, caps = apply_machine_score_caps(llm_result=_llm_result(), signals=signals)
+    assert breakdown.source_authority_score == 16
+    assert any("\uacf5\uc2dd \ub610\ub294 1\ucc28 \ucd9c\ucc98" in warning for warning in caps.warnings)
+
+
+def test_disclosure_source_type_counts_as_official_source() -> None:
+    document = EvidenceDocument(
+        document_version_id="doc-1",
+        document_id="d-1",
+        title="Disclosure title",
+        canonical_url="https://dart.fss.or.kr/1",
+        source_name="DART",
+        source_type="disclosure",
+        source_reliability_score=0.95,
+        published_at="2026-08-01T00:00:00+09:00",
+        markdown="Disclosure body",
+        version_no=1,
+        source_id="source-1",
+        markdown_object_key="processed/ws/d/1.md",
+    )
+
+    signals = build_machine_signals([document])
+
+    assert signals.has_official_source is True
 
 
 def test_duplicate_republish_cap_rule() -> None:

@@ -953,3 +953,51 @@ def test_fetch_disclosure_sends_corp_code_and_date_range(
     assert params["corp_code"] == "00164779"
     assert params["bgn_de"] == "20260701"
     assert params["crtfc_key"] == "test-key-not-real"
+
+
+def test_gnews_skips_non_english_or_korean_language_before_fetch(
+    monkeypatch: pytest.MonkeyPatch, gnews_source: dict, request_obj: CollectRequest, stub_article
+) -> None:
+    payload = {
+        "totalArticles": 1,
+        "articles": [
+            {
+                "title": "Vietnam semiconductor update",
+                "url": "https://example.com/vi-news",
+                "publishedAt": "2026-08-02T13:50:15Z",
+                "lang": "vi",
+            }
+        ],
+    }
+    _stub_gnews_api(monkeypatch, payload)
+    article_calls = stub_article()
+
+    outcome = fetchers.fetch_gnews(gnews_source, request_obj)
+
+    assert outcome.items == []
+    assert outcome.skip_reasons == {"unsupported_language": 1}
+    assert article_calls == []
+
+
+def test_fetch_rss_skips_non_english_or_korean_article_language(
+    monkeypatch: pytest.MonkeyPatch, request_obj: CollectRequest
+) -> None:
+    feed = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Feed</title>
+<item><title>Vietnam semiconductor update</title><link>https://example.com/vi-news</link>
+<pubDate>Mon, 03 Aug 2026 07:04:00 GMT</pubDate></item>
+</channel></rss>"""
+    article_html = b'<html lang="vi"><body><article>Vietnam semiconductor update</article></body></html>'
+
+    def fake_http_get(url: str, source: dict):
+        if url == "https://example.com/rss":
+            return feed.encode(), "application/xml", 200, url
+        return article_html, "text/html", 200, url
+
+    monkeypatch.setattr(fetchers, "_http_get", fake_http_get)
+    source = {"name": "RSS", "source_type": "rss", "base_url": "https://example.com/rss"}
+
+    outcome = fetchers.fetch_rss(source, request_obj)
+
+    assert outcome.items == []
+    assert outcome.skip_reasons == {"unsupported_language": 1}

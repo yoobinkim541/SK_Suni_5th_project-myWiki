@@ -73,6 +73,12 @@ NAVER_DISPLAY_MAX = 100
 
 # 검색 API는 검색어와 일치하는 부분을 <b> 태그로 감싸 돌려준다.
 _HTML_TAG = re.compile(r"<[^>]+>")
+_HTML_LANG = re.compile(r"<html[^>]+lang=[\"']?([A-Za-z]{2,3})(?:[-_][A-Za-z]{2,4})?", re.IGNORECASE)
+_ALLOWED_ARTICLE_LANGUAGES = frozenset({"en", "ko"})
+_HANGUL_CHARS = re.compile(r"[\uAC00-\uD7A3]")
+_BASIC_LATIN_LETTERS = re.compile(r"[A-Za-z]")
+_EXTENDED_LATIN_LETTERS = re.compile(r"[\u00C0-\u024F]")
+_NON_KOREAN_CJK_CHARS = re.compile(r"[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]")
 
 
 class FetchError(Exception):
@@ -334,6 +340,9 @@ def fetch_rss(source: dict, request: CollectRequest) -> FetchOutcome:
         if item is None:
             outcome.skip("blocked_or_empty")
             continue
+        if not _is_allowed_article_language(item):
+            outcome.skip("unsupported_language")
+            continue
         outcome.items.append(item)
     return outcome
 
@@ -354,6 +363,48 @@ def fetch_website(source: dict, request: CollectRequest) -> FetchOutcome:
     else:
         outcome.items.append(item)
     return outcome
+
+
+def _is_allowed_language_code(language: str | None) -> bool:
+    if not language:
+        return True
+    return language.strip().split("-", 1)[0].split("_", 1)[0].lower() in _ALLOWED_ARTICLE_LANGUAGES
+
+
+def _is_allowed_article_language(item: RawFetchResult) -> bool:
+    lang = _html_language(item.body) if _looks_like_html(item.content_type) else None
+    if lang is not None:
+        return _is_allowed_language_code(lang)
+
+    sample = _article_text_sample(item)
+    if _HANGUL_CHARS.search(sample):
+        return True
+
+    basic_latin = len(_BASIC_LATIN_LETTERS.findall(sample))
+    extended_latin = len(_EXTENDED_LATIN_LETTERS.findall(sample))
+    non_korean_cjk = len(_NON_KOREAN_CJK_CHARS.findall(sample))
+    if non_korean_cjk >= 5:
+        return False
+    if extended_latin >= 3 and extended_latin / max(basic_latin + extended_latin, 1) > 0.03:
+        return False
+    return basic_latin >= 3
+
+
+def _html_language(body: bytes) -> str | None:
+    head = body[:4096].decode("utf-8", errors="ignore")
+    match = _HTML_LANG.search(head)
+    return match.group(1).lower() if match else None
+
+
+def _looks_like_html(content_type: str) -> bool:
+    return "html" in (content_type or "").lower()
+
+
+def _article_text_sample(item: RawFetchResult) -> str:
+    body = item.body[:12000].decode("utf-8", errors="ignore")
+    if _looks_like_html(item.content_type):
+        body = _HTML_TAG.sub(" ", body)
+    return f"{item.title_hint or ''} {body}"[:4000]
 
 
 def strip_html(text: str | None) -> str | None:
@@ -535,6 +586,9 @@ def fetch_naver_news(source: dict, request: CollectRequest) -> FetchOutcome:
         if item is None:
             outcome.skip("blocked_or_empty")
             continue
+        if not _is_allowed_article_language(item):
+            outcome.skip("unsupported_language")
+            continue
         outcome.items.append(item)
     return outcome
 
@@ -596,6 +650,9 @@ def fetch_gnews(source: dict, request: CollectRequest) -> FetchOutcome:
     for entry in payload.get("articles", []):
         if len(outcome.items) >= limit:
             break
+        if not _is_allowed_language_code(entry.get("lang")):
+            outcome.skip("unsupported_language")
+            continue
         url = (entry.get("url") or "").strip()
         if not url:
             outcome.skip("no_canonical_url")
@@ -623,6 +680,9 @@ def fetch_gnews(source: dict, request: CollectRequest) -> FetchOutcome:
             continue
         if item is None:
             outcome.skip("blocked_or_empty")
+            continue
+        if not _is_allowed_article_language(item):
+            outcome.skip("unsupported_language")
             continue
         outcome.items.append(item)
 

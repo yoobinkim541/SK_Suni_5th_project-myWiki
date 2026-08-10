@@ -221,7 +221,7 @@ def _is_official_source(source_type: str | None) -> bool:
     if not source_type:
         return False
     normalized = source_type.lower()
-    return any(token in normalized for token in ["official", "government", "regulator", "filing", "press", "research", "conference"])
+    return any(token in normalized for token in ["official", "government", "regulator", "filing", "press", "research", "conference", "disclosure"])
 
 
 def _normalize_text(value: str) -> str:
