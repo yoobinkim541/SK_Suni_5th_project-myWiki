@@ -17,6 +17,18 @@ function isAuthError(error) {
   return error?.status === 401;
 }
 
+// MOCK_WIKI_TREE의 items는 문자열 slug 배열이다(['hbm4', 'dram', ...]) — USE_MOCK=true일
+// 때는 resolveWikiId()의 목업 전용 분기(DEFAULT_WIKI_DOC 폴백)가 이 shape 차이를 가려 준다.
+// 하지만 401 폴백은 USE_MOCK=false(실백엔드 모드) 그대로 두고 데이터만 목업으로 바꾸는
+// 것이라, WikiSideNav가 기대하는 {id, title} 객체 배열(toTree()와 같은 shape)로 미리
+// 맞춰 둬야 한다 — 안 그러면 item.id가 undefined가 되어 문서 선택 로직이 멈춘다.
+function mockTreeAsRealShape() {
+  return MOCK_WIKI_TREE.map(({ group, items }) => ({
+    group,
+    items: items.map((id) => ({ id, title: MOCK_WIKI_DOCS[id]?.title || id })),
+  }));
+}
+
 // 출처 원문 정의(공시/뉴스 등) 조회 — CitationTag.jsx, AgentPage.jsx가 그대로 씁니다.
 // 위키 화면 자체는 이제 실제 문서 출처(document_title/canonical_url)를 직접 쓰므로
 // 이 조회를 거치지 않습니다.
@@ -129,7 +141,7 @@ export async function fetchWikiTree() {
     const pages = await fetchAllWikiPages();
     return toTree(pages);
   } catch (error) {
-    if (isAuthError(error)) return MOCK_WIKI_TREE;
+    if (isAuthError(error)) return mockTreeAsRealShape();
     throw error;
   }
 }
