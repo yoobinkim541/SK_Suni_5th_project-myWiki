@@ -149,13 +149,17 @@ CREATE TABLE `wiki_page_versions` (
 CREATE TABLE `wiki_page_sources` (
     `id`                    UUID         NOT NULL DEFAULT gen_random_uuid(),
     `wiki_version_id`       UUID         NOT NULL,
-    `document_version_id`   UUID         NOT NULL,
+    `document_version_id`   UUID,
+    `source_url`            TEXT,
+    `source_title`          TEXT,
+    `published_at`          TEXT,
     `claim_text`            TEXT,
     `source_start_line`     INTEGER,
     `source_end_line`       INTEGER,
     `support_type`          VARCHAR(20),
     `citation_order`        INTEGER,
-    `created_at`            TIMESTAMPTZ  NOT NULL DEFAULT now()
+    `created_at`            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT `ck_wps_has_identifier` CHECK (`document_version_id` IS NOT NULL OR `source_url` IS NOT NULL)
 );
 
 
@@ -243,14 +247,18 @@ CREATE TABLE `chat_messages` (
 CREATE TABLE `message_citations` (
     `id`                    UUID          NOT NULL DEFAULT gen_random_uuid(),
     `message_id`            UUID          NOT NULL,
-    `document_version_id`   UUID          NOT NULL,
+    `document_version_id`   UUID,
+    `source_url`            TEXT,
+    `source_title`          TEXT,
+    `published_at`          TEXT,
     `qmd_uri`               TEXT,
     `source_start_line`     INTEGER,
     `source_end_line`       INTEGER,
     `quoted_text`           TEXT,
     `relevance_score`       NUMERIC(5,4),
     `citation_order`        INTEGER,
-    `created_at`            TIMESTAMPTZ   NOT NULL DEFAULT now()
+    `created_at`            TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    CONSTRAINT `ck_mc_has_identifier` CHECK (`document_version_id` IS NOT NULL OR `source_url` IS NOT NULL)
 );
 
 
@@ -345,6 +353,7 @@ ALTER TABLE `wiki_page_versions`  ADD CONSTRAINT `fk_wpv_reviewed_by`           
 
 ALTER TABLE `wiki_page_sources`   ADD CONSTRAINT `fk_wps_wiki_version`            FOREIGN KEY (`wiki_version_id`) REFERENCES `wiki_page_versions`(`id`);
 ALTER TABLE `wiki_page_sources`   ADD CONSTRAINT `fk_wps_document_version`        FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
+-- 위 FK는 document_version_id가 NULL인 행(웹검색 근거)에는 적용되지 않는다 — Postgres FK는 NULL을 항상 통과시킨다.
 
 ALTER TABLE `reports`              ADD CONSTRAINT `fk_reports_workspace`          FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
 ALTER TABLE `reports`              ADD CONSTRAINT `fk_reports_requested_by`       FOREIGN KEY (`requested_by`) REFERENCES `profiles`(`id`) ON DELETE SET NULL;
@@ -364,6 +373,7 @@ ALTER TABLE `chat_messages`        ADD CONSTRAINT `fk_cm_session`               
 
 ALTER TABLE `message_citations`    ADD CONSTRAINT `fk_mc_message`                 FOREIGN KEY (`message_id`) REFERENCES `chat_messages`(`id`);
 ALTER TABLE `message_citations`    ADD CONSTRAINT `fk_mc_document_version`        FOREIGN KEY (`document_version_id`) REFERENCES `document_versions`(`id`);
+-- 위 FK는 document_version_id가 NULL인 행(웹검색 근거)에는 적용되지 않는다 — Postgres FK는 NULL을 항상 통과시킨다.
 
 ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `fk_pj_workspace`               FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`);
 ALTER TABLE `pipeline_jobs`        ADD CONSTRAINT `fk_pj_requested_by`            FOREIGN KEY (`requested_by`) REFERENCES `profiles`(`id`) ON DELETE SET NULL;
