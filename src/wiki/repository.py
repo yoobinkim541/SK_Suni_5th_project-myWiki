@@ -161,10 +161,13 @@ def _group_source_document_version_ids(rows: Iterable[dict[str, object]]) -> dic
     seen: dict[str, set[str]] = {}
     for row in rows:
         version_id = str(row["wiki_version_id"])
-        document_version_id = str(row["document_version_id"])
         if version_id not in grouped:
             grouped[version_id] = []
             seen[version_id] = set()
+        raw_document_version_id = row["document_version_id"]
+        if raw_document_version_id is None:
+            continue
+        document_version_id = str(raw_document_version_id)
         if document_version_id in seen[version_id]:
             continue
         grouped[version_id].append(document_version_id)

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def _has_duplicate_document(sources) -> bool:
-    document_ids = [source.document_version_id for source in sources]
+    document_ids = [source.document_version_id for source in sources if source.document_version_id is not None]
     return len(document_ids) != len(set(document_ids))
 
 
@@ -73,6 +73,9 @@ def clean_duplicate_sources_for_workspace(
             sources=[
                 WikiSourceInput(
                     document_version_id=source.document_version_id,
+                    source_url=source.canonical_url,
+                    source_title=source.document_title,
+                    published_at=source.published_at,
                     claim_text=source.claim_text or "",
                     source_start_line=source.source_start_line,
                     source_end_line=source.source_end_line,

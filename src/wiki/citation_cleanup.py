@@ -67,6 +67,9 @@ def clean_orphaned_citations_for_workspace(
             sources=[
                 WikiSourceInput(
                     document_version_id=source.document_version_id,
+                    source_url=source.canonical_url,
+                    source_title=source.document_title,
+                    published_at=source.published_at,
                     claim_text=source.claim_text or "",
                     source_start_line=source.source_start_line,
                     source_end_line=source.source_end_line,

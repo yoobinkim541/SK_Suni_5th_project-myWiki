@@ -583,30 +583,31 @@ def test_published_page_sources_include_web_source_metadata(workspace_id):
     page_id = ver.data["page_id"]
     obj_key = ver.data["markdown_object_key"]
 
-    record_wiki_validation(version_id, "passed", 0.95)
-    profile = db.table("profiles").select("id").limit(1).execute()
-    if not profile.data:
-        pytest.skip("profiles 데이터 없음")
-    review_wiki_version(version_id, profile.data[0]["id"], "approved")
-    publish_wiki_version(page_id, version_id)
+    try:
+        record_wiki_validation(version_id, "passed", 0.95)
+        profile = db.table("profiles").select("id").limit(1).execute()
+        if not profile.data:
+            pytest.skip("profiles 데이터 없음")
+        review_wiki_version(version_id, profile.data[0]["id"], "approved")
+        publish_wiki_version(page_id, version_id)
 
-    published = get_published_wiki_page(workspace_id, slug)
-    assert published is not None
-    assert len(published.sources) == 2
+        published = get_published_wiki_page(workspace_id, slug)
+        assert published is not None
+        assert len(published.sources) == 2
 
-    doc_source = next(s for s in published.sources if s.document_version_id == str(doc_ver_id))
-    assert doc_source.document_title is not None
-    assert doc_source.reliability_score is not None
+        doc_source = next(s for s in published.sources if s.document_version_id == str(doc_ver_id))
+        assert doc_source.document_title is not None
+        assert doc_source.reliability_score is not None
 
-    web_source = next(s for s in published.sources if s.document_version_id is None)
-    assert web_source.canonical_url == "https://example.com/web-src"
-    assert web_source.document_title == "웹 기사 제목"
-    assert web_source.published_at == "2026-08-01T00:00:00Z"
-    assert web_source.source_name is None
-    assert web_source.reliability_score is None
-
-    db.table("wiki_pages").update({"current_version_id": None}).eq("id", page_id).execute()
-    db.storage.from_("wiki").remove([obj_key])
-    db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
-    db.table("wiki_page_versions").delete().eq("id", version_id).execute()
-    db.table("wiki_pages").delete().eq("id", page_id).execute()
+        web_source = next(s for s in published.sources if s.document_version_id is None)
+        assert web_source.canonical_url == "https://example.com/web-src"
+        assert web_source.document_title == "웹 기사 제목"
+        assert web_source.published_at == "2026-08-01T00:00:00Z"
+        assert web_source.source_name is None
+        assert web_source.reliability_score is None
+    finally:
+        db.table("wiki_pages").update({"current_version_id": None}).eq("id", page_id).execute()
+        db.storage.from_("wiki").remove([obj_key])
+        db.table("wiki_page_sources").delete().eq("wiki_version_id", version_id).execute()
+        db.table("wiki_page_versions").delete().eq("id", version_id).execute()
+        db.table("wiki_pages").delete().eq("id", page_id).execute()
