@@ -185,7 +185,11 @@ def find_pending_documents(workspace_id: UUID) -> tuple[list[UUID], list[UUID]]:
             continue
         collected_at = _job_finished_at(collect_jobs.get(key))
         processed_at = _last_processed_at(version, parse_jobs.get(key))
-        if collected_at and processed_at and collected_at > processed_at:
+        # collected_at == processed_at도 재정제 대상에 포함한다(>=) — 두 시각 다
+        # datetime.now()로 찍히는데, 해상도가 낮은 환경(예: Windows)에서는 collect와
+        # 그 직후 정제가 같은 tick에 찍혀 완전히 동일한 값이 될 수 있다. 엄격한 ">"만
+        # 쓰면 그런 경우 방금 재수집된 문서가 재정제 대상에서 누락된다.
+        if collected_at and processed_at and collected_at >= processed_at:
             recollected.append(document_id)
     return new_targets, recollected
 

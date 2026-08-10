@@ -52,6 +52,9 @@ class ReportSelectionConfig(BaseModel):
     # 요구하는 게 사실상 "전부 거부"와 같았음). 채점 로직 자체는 설계대로 정상 동작 중이므로,
     # 로직을 고치는 대신 기준을 MEDIUM 이상(40)으로 낮췄다 — LOW(명백히 부실한 단일신호/충돌
     # 정황 등으로 캡이 걸린 건)만 걸러내고 MEDIUM 이상은 통과시킨다.
+    # 2026-08-07 재조정(#154): 40도 여전히 후보가 부족해 20으로 더 낮췄다. LOW 구간
+    # (0-39) 하한 절반까지 허용하는 셈이라 위 문단의 "LOW만 거른다"는 더 이상 정확하지
+    # 않다 — 지금은 "명백한 결측·모순 신호로 더 깊이 캡이 걸린 건"만 거른다.
     min_reliability_score: int = Field(default=20, ge=0, le=100)
     min_importance_score: int = Field(default=20, ge=0, le=100)
     min_ranking_score: Decimal | None = Field(default=None, ge=0, le=100)
