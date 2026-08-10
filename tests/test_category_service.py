@@ -27,6 +27,8 @@ class FakeTable:
         self.rows = rows
         self.filters = []
         self._limit = None
+        self._orders = []
+        self._range = None
 
     def select(self, _fields):
         return self
@@ -47,6 +49,14 @@ class FakeTable:
         self._limit = n
         return self
 
+    def order(self, field, desc=False):
+        self._orders.append((field, desc))
+        return self
+
+    def range(self, start, end):
+        self._range = (start, end)
+        return self
+
     def execute(self):
         rows = self.rows
         for op, field, value in self.filters:
@@ -56,6 +66,11 @@ class FakeTable:
                 rows = [r for r in rows if r.get(field) and r[field] >= value]
             elif op == "in":
                 rows = [r for r in rows if str(r.get(field)) in value]
+        for field, desc in reversed(self._orders):
+            rows = sorted(rows, key=lambda r: str(r.get(field) or ""), reverse=desc)
+        if self._range is not None:
+            start, end = self._range
+            rows = rows[start : end + 1]
         if self._limit is not None:
             rows = rows[: self._limit]
         return FakeResult([dict(r) for r in rows])
@@ -71,11 +86,14 @@ class FakeSupabase:
 
 def _analysis(version_id, category, *, score=None, importance=None,
               created_at="2026-08-04T00:00:00+00:00", workspace_id=WORKSPACE_ID,
-              core_summary=None, quoted=None):
+              core_summary=None, quoted=None, reliability_status="completed",
+              reliability_evaluated_at=None):
     return {
         "document_version_id": version_id,
         "primary_category": category,
         "reliability_score": score,
+        "reliability_status": reliability_status,
+        "reliability_evaluated_at": reliability_evaluated_at or created_at,
         "importance_score": importance,
         "created_at": created_at,
         "workspace_id": workspace_id,
@@ -593,3 +611,64 @@ def test_분할해서_조회해도_건수가_맞는다():
     by_id = {c.id: c for c in stats.categories}
     assert stats.total_documents == count
     assert by_id["product-tech"].count == count
+
+
+def test_fetches_more_than_postgrest_default_page_size():
+    rows = [_analysis(f"v{i:04d}", "\uc81c\ud488\u00b7\uae30\uc220", score=80) for i in range(1001)]
+    docs = [_doc(f"v{i:04d}", f"HBM article {i}") for i in range(1001)]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].count == 1001
+    assert by_id["product-tech"].level == "high"
+
+
+def test_reliability_average_uses_latest_completed_score_per_document():
+    rows = [
+        _analysis(
+            "v-old",
+            "\uc81c\ud488\u00b7\uae30\uc220",
+            score=0,
+            created_at="2026-08-03T00:00:00+00:00",
+            reliability_evaluated_at="2026-08-03T00:00:00+00:00",
+        ),
+        _analysis(
+            "v-new",
+            "\uc81c\ud488\u00b7\uae30\uc220",
+            score=80,
+            created_at="2026-08-04T00:00:00+00:00",
+            reliability_evaluated_at="2026-08-04T00:00:00+00:00",
+        ),
+        _analysis("v-other", "\uc81c\ud488\u00b7\uae30\uc220", score=80),
+    ]
+    versions = [
+        {"id": "v-old", "document_id": "doc-same"},
+        {"id": "v-new", "document_id": "doc-same"},
+        {"id": "v-other", "document_id": "doc-other"},
+    ]
+    docs = [
+        _doc("v-new", "HBM same article", document_id="doc-same"),
+        _doc("v-other", "HBM other article", document_id="doc-other"),
+    ]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs, versions=versions), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].count == 2
+    assert by_id["product-tech"].level == "high"
+
+
+def test_reliability_average_ignores_pending_and_failed_rows():
+    rows = [
+        _analysis("v1", "\uc81c\ud488\u00b7\uae30\uc220", score=80),
+        _analysis("v2", "\uc81c\ud488\u00b7\uae30\uc220", score=None, reliability_status="pending"),
+        _analysis("v3", "\uc81c\ud488\u00b7\uae30\uc220", score=None, reliability_status="failed"),
+    ]
+    docs = [_doc("v1", "HBM one"), _doc("v2", "HBM two"), _doc("v3", "HBM three")]
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=_db(rows, docs), now=NOW)
+
+    by_id = {c.id: c for c in stats.categories}
+    assert by_id["product-tech"].count == 3
+    assert by_id["product-tech"].level == "high"

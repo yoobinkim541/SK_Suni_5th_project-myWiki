@@ -4,7 +4,7 @@ import pytest
 
 from src.analysis.classifier import parse_json_response
 from src.analysis.exceptions import InvalidJsonResponseError, InvalidScoreError, MissingApiKeyError
-from src.analysis.reliability import build_machine_signals, evaluate_reliability
+from src.analysis.reliability import _detect_official_correction, build_machine_signals, evaluate_reliability
 from src.analysis.reliability_models import (
     EvidenceDocument,
     MachineSignals,
@@ -164,13 +164,62 @@ def test_official_correction_caps_current_validity() -> None:
     assert any("정정" in warning for warning in caps.warnings)
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "후속 정정이나 반박은 확인되지 않음",
+        "공식적인 정정은 없었다",
+        "철회 사실을 확인할 수 없음",
+        "반박 내용 없음",
+        "후속 정정 또는 취소 여부는 확인되지 않았다",
+    ],
+)
+def test_official_correction_detection_ignores_negated_context(reason: str) -> None:
+    llm_result = _llm_result().model_copy(
+        update={
+            "current_validity": ReliabilityCriterionResult(
+                score=18,
+                reason=reason,
+                evidence_document_ids=["doc-1"],
+                warnings=[],
+            )
+        }
+    )
+
+    assert _detect_official_correction(llm_result) is False
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "회사는 해당 발표를 공식 정정했다",
+        "기존 보도 내용을 철회했다",
+        "정부가 해당 수치를 정정했다",
+        "당사자가 기존 주장을 공식 반박했다",
+    ],
+)
+def test_official_correction_detection_keeps_positive_context(reason: str) -> None:
+    llm_result = _llm_result().model_copy(
+        update={
+            "current_validity": ReliabilityCriterionResult(
+                score=18,
+                reason=reason,
+                evidence_document_ids=["doc-1"],
+                warnings=[],
+            )
+        }
+    )
+
+    assert _detect_official_correction(llm_result) is True
+
+
 def test_invalid_json_response() -> None:
     with pytest.raises(InvalidJsonResponseError):
         parse_json_response("not-json")
 
 
 def test_missing_api_key_fails_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
     monkeypatch.setenv("OPENROUTER_MODEL", "")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
