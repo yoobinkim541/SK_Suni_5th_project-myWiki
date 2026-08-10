@@ -113,13 +113,17 @@ const JUST_LOGGED_OUT_KEY = 'mywiki-just-logged-out';
 const SURVEY_SEEN_KEY = 'mywiki-survey-seen-this-login';
 
 // [시연용 하드코딩] 소속 팀 — 실제 워크스페이스 이름 API(getWorkspace)는 그대로 호출하고
-// 구조도 안 건드린다. 다만 지금 단계에서는 화면에 보여줄 "소속 팀" 표시값을 계정과
-// 무관하게 전부 "5팀" 하나로 고정한다(시연용). 실제 팀 데이터가 준비되면
-// getDemoTeamName 호출부만 ws?.name으로 되돌리면 된다(아래 useEffect 주석 참고) —
-// 이 함수 자체를 지우거나 API 호출을 없애지는 않았다, 반환값만 고정.
-const DEMO_TEAM_NAME = '5팀';
-function getDemoTeamName(_userId) {
-  return DEMO_TEAM_NAME;
+// 구조도 안 건드린다. 다만 지금 단계에서는 화면에 보여줄 "소속 팀" 표시값만 1~5팀 중
+// 하나로 고정한다. 사용자 id를 해시해서 같은 사람은 새로고침해도 항상 같은 팀으로 보이게
+// 했다 — 매번 랜덤으로 바뀌면 "이 사람 팀이 뭐였지"가 화면마다 달라 보여서 시연 때 이상하다.
+// 실제 팀 데이터가 준비되면 getDemoTeamName 호출부만 ws?.name으로 되돌리면 된다(아래
+// useEffect 주석 참고) — 이 상수/함수 자체를 지우거나 API 호출을 없애지는 않았다.
+const DEMO_TEAMS = ['1팀', '2팀', '3팀', '4팀', '5팀'];
+function getDemoTeamName(userId) {
+  if (!userId) return DEMO_TEAMS[0];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i += 1) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
+  return DEMO_TEAMS[hash % DEMO_TEAMS.length];
 }
 
 function getInitial(key, fallback) {
@@ -314,7 +318,7 @@ export default function App() {
     }
     let alive = true;
     getWorkspace()
-      // [시연용 하드코딩] 실제로는 ws?.name을 써야 한다 — DEMO_TEAM_NAME 설명 참고.
+      // [시연용 하드코딩] 실제로는 ws?.name을 써야 한다 — DEMO_TEAMS 설명 참고.
       // 실백엔드 워크스페이스명이 준비되면 아래 두 줄을 `ws?.name ?? null` /
       // `null`로 되돌리기만 하면 된다.
       .then((_ws) => alive && setWorkspaceName(getDemoTeamName(profile?.id)))
