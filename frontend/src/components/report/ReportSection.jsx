@@ -118,7 +118,6 @@ export default function ReportSection({ archive, today, summary, historyError, o
       <section className="sec sr-2">
         <div className="sh big">
           <span className="t">오늘 리포트</span>
-          <span className="s">카드를 누르면 전체 리포트와 출처를 볼 수 있습니다</span>
         </div>
 
         {/* ── 분류 · 오늘의 키워드 ── 오늘 리포트 제목과 큰 카드 사이 */}
@@ -186,7 +185,6 @@ export default function ReportSection({ archive, today, summary, historyError, o
         <div className="sh big">
           <span className="t">리포트 히스토리</span>
           <span className="c">{history.length}건</span>
-          <span className="s">날짜를 누르면 그 날짜 리포트가 열립니다</span>
         </div>
 
         <div className="arch">

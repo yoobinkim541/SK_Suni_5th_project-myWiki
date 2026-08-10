@@ -50,7 +50,6 @@ export default function CategoryKeywordChart({ categories }) {
     <section className="sec">
       <div className="sh">
         <span className="t">수집 키워드 분포</span>
-        <span className="s">분류별 비중 · 분류 내부 키워드 구성</span>
         <span className="r">최근 7일 채택 문서 기준</span>
       </div>
 
@@ -79,7 +78,6 @@ export default function CategoryKeywordChart({ categories }) {
         <div className="pie-box">
           <div className="pie-hd">
             <span className="t">분류별 비중</span>
-            <span className="s">조각을 누르면 오른쪽이 바뀝니다</span>
           </div>
           <KeywordPie
             items={totals}
@@ -93,16 +91,9 @@ export default function CategoryKeywordChart({ categories }) {
         <div className="pie-box">
           <div className="pie-hd">
             <span className="t">{active?.name} 내부 키워드</span>
-            <span className="s">우리가 걸어둔 수집 키워드 기준</span>
           </div>
           <KeywordPie items={activeKeywords} title={active?.name} total={activeTotal} />
         </div>
-      </div>
-
-      <div className="legend">
-        <span>읽는 법</span>
-        <span>왼쪽 = 6개 분류가 전체 수집량에서 차지하는 비중</span>
-        <span><b>오른쪽</b> 선택한 분류 안에서 어떤 수집 키워드가 문서를 끌어왔는지</span>
       </div>
     </section>
   );

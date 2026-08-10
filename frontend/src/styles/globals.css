@@ -894,7 +894,8 @@ a.cite:hover .ex{color:var(--green)}
 .ag-seg button.on .c{color:var(--green)}
 .ag-ctx{display:flex;align-items:center;gap:12px;margin:16px 0 18px;padding:12px 15px;
   border:1px solid var(--hair);border-radius:12px;background:var(--tint)}
-.ag-ctx.team{background:var(--green-tint);border-color:color-mix(in srgb,var(--green) 24%,transparent)}
+.ag-ctx.team{background:#F5F6F4;border-color:color-mix(in srgb,var(--green) 24%,transparent)}
+:root[data-theme="dark"] .ag-ctx.team{background:var(--tint)}
 .ag-ctx .ic{flex:none;font-size:9px;font-weight:900;letter-spacing:.12em;padding:5px 8px;border-radius:5px;
   background:var(--panel);color:var(--muted);border:1px solid var(--hair)}
 .ag-ctx.team .ic{color:var(--green);border-color:color-mix(in srgb,var(--green) 30%,transparent)}
@@ -1794,7 +1795,7 @@ a.fn:hover{text-decoration:underline}
 .kwchip.on .h{color:var(--green)}
 
 /* ---------- 대시보드 "최근 산업 이슈" — 최신 뉴스와 시각적으로 구분되는 패널 ---------- */
-.sec-issues{background:#EFF4F1;border-radius:14px;padding:26px 28px;border:1px solid #D9E2DE}
+.sec-issues{background:#F5F6F4;border-radius:14px;padding:26px 28px;border:1px solid #D9E2DE}
 .sec-issues .sh{flex-wrap:wrap;row-gap:6px}
 .sec-issues .sh .t{font-size:16px;font-weight:800;letter-spacing:-.01em;color:#17201E}
 .sec-issues .sh .c{font-size:13px;font-weight:700;color:#17201E}
