@@ -6,7 +6,9 @@ from typing import Callable, TypeVar
 T = TypeVar("T")
 R = TypeVar("R")
 
-MAX_WORKERS = 5
+MAX_WORKERS = 12  # PR #270 도입 초기값(5)에서 상향 — OpenRouter 429/레이트리밋 신호 없이
+# 8/11 야간분석 배치가 순조롭게 처리된 것을 보고 운영하며 올리기로 한 원래 계획대로 조정.
+# 여전히 429 백오프는 없으므로(design doc 참고) 만약 레이트리밋이 걸리면 이 값을 낮춘다.
 
 
 def run_concurrently(items: list[T], fn: Callable[[T], R], *, max_workers: int = MAX_WORKERS) -> list[R]:
