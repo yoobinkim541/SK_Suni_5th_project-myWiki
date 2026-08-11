@@ -103,6 +103,9 @@ def _build_refetch_policy(workspace_id: UUID):
     문서 목록과 job을 미리 한 번씩만 받아 캐시한다 — 항목마다 조회하면 N+1이고,
     아끼려는 시간을 DB 왕복으로 도로 쓴다.
     """
+    if REFETCH_INTERVAL_HOURS <= 0:
+        return lambda url: True
+
     documents = repository.list_active_documents(workspace_id)
     document_ids = [UUID(str(doc["id"])) for doc in documents]
     collect_jobs = repository.latest_completed_collect_jobs_by_document(
@@ -301,10 +304,18 @@ def _resolve_document(
     """
     title = _resolve_title(item, url)
     published_at = item.published_at_hint
+    disclosure_type_code, disclosure_type_name = _disclosure_type_from(item)
 
     existing = repository.find_document_by_url(workspace_id, url)
     if existing is not None:
-        patched = _sync_meta(existing, workspace_id, title, published_at)
+        patched = _sync_meta(
+            existing,
+            workspace_id,
+            title,
+            published_at,
+            disclosure_type_code,
+            disclosure_type_name,
+        )
         return patched, False
 
     try:
@@ -314,6 +325,8 @@ def _resolve_document(
             title=title,
             canonical_url=url,
             published_at=published_at,
+            disclosure_type_code=disclosure_type_code,
+            disclosure_type_name=disclosure_type_name,
         )
         return created, True
     except Exception as exc:  # noqa: BLE001
@@ -327,14 +340,32 @@ def _resolve_document(
 
 
 def _sync_meta(
-    document: dict, workspace_id: UUID, title: str, published_at: datetime | None
+    document: dict,
+    workspace_id: UUID,
+    title: str,
+    published_at: datetime | None,
+    disclosure_type_code: str | None = None,
+    disclosure_type_name: str | None = None,
 ) -> dict:
     """원문 제목·발행일이 정정된 경우에만 UPDATE한다."""
     title_changed = bool(title) and title != document.get("title")
     published_changed = published_at is not None and not _same_moment(
         published_at, document.get("published_at")
     )
-    if not (title_changed or published_changed):
+    disclosure_type_code_changed = (
+        disclosure_type_code is not None
+        and disclosure_type_code != document.get("disclosure_type_code")
+    )
+    disclosure_type_name_changed = (
+        disclosure_type_name is not None
+        and disclosure_type_name != document.get("disclosure_type_name")
+    )
+    if not (
+        title_changed
+        or published_changed
+        or disclosure_type_code_changed
+        or disclosure_type_name_changed
+    ):
         return document
 
     updated = repository.update_document_meta(
@@ -342,8 +373,19 @@ def _sync_meta(
         workspace_id,
         title if title_changed else document["title"],
         published_at if published_changed else None,
+        disclosure_type_code if disclosure_type_code_changed else None,
+        disclosure_type_name if disclosure_type_name_changed else None,
     )
     return updated or document
+
+
+def _disclosure_type_from(item: RawFetchResult) -> tuple[str | None, str | None]:
+    metadata = item.metadata or {}
+    code = metadata.get("dart_disclosure_type_code")
+    name = metadata.get("dart_disclosure_type_name")
+    code = str(code).strip().upper() if code is not None else ""
+    name = str(name).strip() if name is not None else ""
+    return code or None, name or None
 
 
 def _same_moment(left: datetime, right: Any) -> bool:

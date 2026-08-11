@@ -9,6 +9,7 @@ collectors / preprocessing 파이프라인 5케이스.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
@@ -87,6 +88,28 @@ def test_collect_creates_new_document(
     assert again[0].is_new_document is False
     assert again[0].document_id == document.document_id
     assert len(supabase.rows("documents")) == 1
+
+
+def test_collect_persists_dart_disclosure_type_metadata(
+    supabase: FakeSupabase, workspace_id: UUID, source_id: UUID, feed: StubFeed
+) -> None:
+    feed.items = [
+        replace(
+            feed.items[0],
+            url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260812000001",
+            title_hint="Major issue report",
+            metadata={
+                "dart_disclosure_type_code": "B",
+                "dart_disclosure_type_name": "주요사항보고",
+            },
+        )
+    ]
+
+    _collect_once(workspace_id, source_id)
+
+    row = supabase.rows("documents")[0]
+    assert row["disclosure_type_code"] == "B"
+    assert row["disclosure_type_name"] == "주요사항보고"
 
 
 # ------------------------------------------------------------

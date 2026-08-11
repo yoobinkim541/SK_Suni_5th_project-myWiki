@@ -6,13 +6,15 @@ GNEWS_SEARCH_RESPONSE / GNEWS_EMPTY_RESPONSE는 2026-08-03에 실제 GNews API�
 """
 from __future__ import annotations
 
+import io
+import zipfile
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 
 from src.collectors import fetchers
-from src.pipeline_common.models import CollectRequest
+from src.pipeline_common.models import CollectRequest, RawFetchResult
 
 # 실제 응답: q=semiconductor&lang=en&max=3
 GNEWS_SEARCH_RESPONSE = {
@@ -88,6 +90,13 @@ class _FakeResponse:
 
     def json(self) -> dict:
         return self._payload
+
+
+def _zip_bytes(inner_name: str, content: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(inner_name, content)
+    return buffer.getvalue()
 
 
 @pytest.fixture
@@ -1001,3 +1010,70 @@ def test_fetch_rss_skips_non_english_or_korean_article_language(
 
     assert outcome.items == []
     assert outcome.skip_reasons == {"unsupported_language": 1}
+
+
+def test_fetch_disclosure_attaches_request_type_metadata(
+    monkeypatch: pytest.MonkeyPatch, request_obj: CollectRequest
+) -> None:
+    import httpx
+
+    captured_types: list[str | None] = []
+
+    def fake_get(url: str, **kwargs):
+        url = str(url)
+        params = kwargs.get("params", {})
+        if url == fetchers.DART_LIST_URL:
+            disclosure_type = params.get("pblntf_ty")
+            captured_types.append(disclosure_type)
+            if disclosure_type == "B":
+                return _FakeResponse({
+                    "status": "000",
+                    "list": [{
+                        "rcept_no": "20260812000001",
+                        "report_nm": "Major issue report",
+                        "rcept_dt": "20260812",
+                    }],
+                })
+            if disclosure_type == "D":
+                return _FakeResponse({
+                    "status": "000",
+                    "list": [{
+                        "rcept_no": "20260812000002",
+                        "report_nm": "Equity disclosure",
+                        "rcept_dt": "20260811",
+                    }],
+                })
+            return _FakeResponse({"status": "013", "message": "no data"})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setenv("DART_API_KEY", "test-key")
+    def fake_document(source, api_key, rcept_no, report_name, published_at, disclosure_type_code=None):
+        return RawFetchResult(
+            source_name=source["name"],
+            url=f"{fetchers.DART_VIEWER_URL}?rcpNo={rcept_no}",
+            fetched_at=datetime.now(timezone.utc),
+            content_type="text/html",
+            body=b"<p>body</p>",
+            title_hint=report_name,
+            published_at_hint=published_at,
+            metadata={
+                "dart_rcept_no": rcept_no,
+                "dart_disclosure_type_code": disclosure_type_code,
+                "dart_disclosure_type_name": fetchers.DART_DISCLOSURE_TYPE_NAMES.get(disclosure_type_code or ""),
+            },
+        )
+
+    monkeypatch.setattr(fetchers, "_fetch_disclosure_document", fake_document)
+    source = {
+        "id": str(uuid4()),
+        "name": "DART",
+        "source_type": "disclosure",
+        "config": {"corp_code": "00164779", "request_delay_sec": 0},
+    }
+
+    outcome = fetchers.fetch_disclosure(source, request_obj)
+
+    assert captured_types == list(fetchers.DART_DISCLOSURE_TYPES)
+    assert [item.metadata["dart_disclosure_type_code"] for item in outcome.items] == ["B", "D"]
+    assert [item.metadata["dart_disclosure_type_name"] for item in outcome.items] == ["주요사항보고", "지분공시"]

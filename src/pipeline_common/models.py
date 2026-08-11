@@ -8,8 +8,9 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, HttpUrl
@@ -30,6 +31,7 @@ class RawFetchResult:
     body: bytes
     title_hint: str | None = None
     published_at_hint: datetime | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

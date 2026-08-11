@@ -418,3 +418,28 @@ def test_분석_행이_1000건을_넘어도_전건을_본다():
 
     by_word = {k.word: k.count for k in keywords.keywords}
     assert by_word["HBM"] == 1200
+
+
+def test_dashboard_news_filters_explicit_equity_disclosures():
+    category = next(iter(service.CATEGORY_SLUGS))
+    analyses = [
+        _analysis("v1", category),
+        _analysis("v2", category),
+        _analysis("v3", category),
+    ]
+    documents = [
+        _document("v1", "equity disclosure", url="https://dart.fss.or.kr/1", source_id="src-dart"),
+        _document("v2", "major issue report", url="https://dart.fss.or.kr/2", source_id="src-dart"),
+        _document("v3", "exchange disclosure", url="https://dart.fss.or.kr/3", source_id="src-dart"),
+    ]
+    documents[0]["disclosure_type_code"] = "D"
+    documents[1]["disclosure_type_code"] = "B"
+    documents[2]["disclosure_type_code"] = "I"
+    sources = [{"id": "src-dart", "source_type": "disclosure", "name": "DART",
+                "config": {}, "base_url": "", "workspace_id": WORKSPACE_ID}]
+
+    news = service.get_dashboard_news(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents, sources), now=NOW
+    )
+
+    assert [item.title for item in news.items] == ["major issue report", "exchange disclosure"]

@@ -719,6 +719,20 @@ _DART_STATUS_NO_DATA = "013"
 
 DEFAULT_DART_LOOKBACK_DAYS = 30
 
+DART_DISCLOSURE_TYPE_NAMES = {
+    "A": "정기공시",
+    "B": "주요사항보고",
+    "C": "발행공시",
+    "D": "지분공시",
+    "E": "기타공시",
+    "F": "외부감사관련",
+    "G": "펀드공시",
+    "H": "자산유동화",
+    "I": "거래소공시",
+    "J": "공정위공시",
+}
+DART_DISCLOSURE_TYPES = tuple(DART_DISCLOSURE_TYPE_NAMES)
+
 
 def _dart_date(dt: datetime) -> str:
     return dt.strftime("%Y%m%d")
@@ -759,7 +773,12 @@ def _extract_disclosure_html(zip_bytes: bytes) -> bytes:
 
 
 def _fetch_disclosure_document(
-    source: dict, api_key: str, rcept_no: str, report_name: str | None, published_at: datetime | None
+    source: dict,
+    api_key: str,
+    rcept_no: str,
+    report_name: str | None,
+    published_at: datetime | None,
+    disclosure_type_code: str | None = None,
 ) -> RawFetchResult | None:
     """공시 1건의 원문(document.xml)을 가져와 RawFetchResult로 만든다. 실패/빈 응답이면 None."""
     import httpx
@@ -795,7 +814,26 @@ def _fetch_disclosure_document(
         body=html_body,
         title_hint=(report_name or "").strip() or None,
         published_at_hint=published_at,
+        metadata={
+            "dart_rcept_no": rcept_no,
+            "dart_disclosure_type_code": disclosure_type_code,
+            "dart_disclosure_type_name": DART_DISCLOSURE_TYPE_NAMES.get(disclosure_type_code or ""),
+        },
     )
+
+
+def _configured_dart_disclosure_types(conf: dict[str, Any]) -> tuple[str | None, ...]:
+    configured = conf.get("pblntf_ty")
+    if configured:
+        if isinstance(configured, str):
+            values = configured.split(",")
+        else:
+            values = list(configured)
+        normalized = tuple(str(value).strip().upper() for value in values if str(value).strip())
+        return normalized or (None,)
+    # OpenDART 공시검색의 pblntf_ty는 응답 필드가 아니라 요청 필터다. 유형 코드를
+    # 저장하려면 유형별로 조회하고, 해당 요청에서 받은 결과에 그 코드를 붙여야 한다.
+    return DART_DISCLOSURE_TYPES
 
 
 def fetch_disclosure(source: dict, request: CollectRequest) -> FetchOutcome:
@@ -828,38 +866,54 @@ def fetch_disclosure(source: dict, request: CollectRequest) -> FetchOutcome:
     end_de = _dart_date(now)
 
     limit = _max_items(source, request)
-    params: dict[str, Any] = {
-        "crtfc_key": api_key,
-        "corp_code": corp_code,
-        "bgn_de": bgn_de,
-        "end_de": end_de,
-        "page_count": max(1, min(limit, 100)),
-    }
-    if conf.get("pblntf_ty"):
-        params["pblntf_ty"] = conf["pblntf_ty"]
-
-    try:
-        response = httpx.get(
-            DART_LIST_URL, params=params, timeout=_conf_number(source, "timeout_sec", DEFAULT_TIMEOUT_SEC)
-        )
-        payload = response.json()
-    except Exception as exc:  # noqa: BLE001
-        raise FetchError(f"DART 공시검색 API 호출 실패: {exc}") from exc
-
-    status = payload.get("status")
-    if status == _DART_STATUS_NO_DATA:
-        return FetchOutcome()
-    if status != _DART_STATUS_OK:
-        raise FetchError(f"DART 공시검색 API 응답 오류 {status}: {payload.get('message')}")
-
     outcome = FetchOutcome()
-    for entry in payload.get("list", []):
+    typed_entries: list[tuple[str | None, dict[str, Any]]] = []
+    for disclosure_type_code in _configured_dart_disclosure_types(conf):
+        params: dict[str, Any] = {
+            "crtfc_key": api_key,
+            "corp_code": corp_code,
+            "bgn_de": bgn_de,
+            "end_de": end_de,
+            "page_count": max(1, min(limit, 100)),
+        }
+        if disclosure_type_code:
+            params["pblntf_ty"] = disclosure_type_code
+
+        try:
+            response = httpx.get(
+                DART_LIST_URL, params=params, timeout=_conf_number(source, "timeout_sec", DEFAULT_TIMEOUT_SEC)
+            )
+            payload = response.json()
+        except Exception as exc:  # noqa: BLE001
+            raise FetchError(f"DART 공시검색 API 호출 실패: {exc}") from exc
+
+        status = payload.get("status")
+        if status == _DART_STATUS_NO_DATA:
+            continue
+        if status != _DART_STATUS_OK:
+            raise FetchError(f"DART 공시검색 API 응답 오류 {status}: {payload.get('message')}")
+
+        for entry in payload.get("list", []):
+            typed_entries.append((disclosure_type_code, entry))
+
+    typed_entries.sort(
+        key=lambda pair: (
+            str(pair[1].get("rcept_dt") or ""),
+            str(pair[1].get("rcept_no") or ""),
+        ),
+        reverse=True,
+    )
+    seen_rcept_no: set[str] = set()
+    for disclosure_type_code, entry in typed_entries:
         if len(outcome.items) >= limit:
             break
         rcept_no = (entry.get("rcept_no") or "").strip()
         if not rcept_no:
             outcome.skip("no_canonical_url")
             continue
+        if rcept_no in seen_rcept_no:
+            continue
+        seen_rcept_no.add(rcept_no)
         published_at = _parse_dart_date(entry.get("rcept_dt"))
         if since and published_at and published_at < since:
             outcome.skip("older_than_since")
@@ -873,7 +927,14 @@ def fetch_disclosure(source: dict, request: CollectRequest) -> FetchOutcome:
             continue
         _sleep_between_requests(source)
         try:
-            item = _fetch_disclosure_document(source, api_key, rcept_no, entry.get("report_nm"), published_at)
+            item = _fetch_disclosure_document(
+                source,
+                api_key,
+                rcept_no,
+                entry.get("report_nm"),
+                published_at,
+                disclosure_type_code,
+            )
         except FetchError:
             outcome.skip("fetch_failed")
             continue

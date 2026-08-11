@@ -152,6 +152,8 @@ CREATE TABLE documents (
     title          VARCHAR       NOT NULL,
     canonical_url  TEXT,
     published_at   TIMESTAMPTZ,
+    disclosure_type_code VARCHAR,
+    disclosure_type_name TEXT,
     status         VARCHAR       NOT NULL,
     uploaded_by    UUID,
     created_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
