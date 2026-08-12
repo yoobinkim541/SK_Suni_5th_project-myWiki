@@ -238,7 +238,10 @@ def documents_by_version(
         documents.extend(
             db.table("documents")
             # created_at은 published_at이 빈 문서의 대체값이다(effective_published_at).
-            .select("id, title, canonical_url, published_at, created_at, source_id")
+            .select(
+                "id, title, canonical_url, published_at, created_at, source_id, "
+                "disclosure_type_code, disclosure_type_name"
+            )
             .eq("workspace_id", workspace_id)
             .in_("id", chunk)
             .execute()

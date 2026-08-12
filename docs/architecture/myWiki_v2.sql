@@ -88,6 +88,8 @@ CREATE TABLE `documents` (
     `title`          VARCHAR(500)  NOT NULL,
     `canonical_url`  TEXT,
     `published_at`   TIMESTAMPTZ,
+    `disclosure_type_code` VARCHAR(1),
+    `disclosure_type_name` TEXT,
     `status`         VARCHAR(30)   NOT NULL,
     `uploaded_by`    UUID,
     `created_at`     TIMESTAMPTZ   NOT NULL DEFAULT now(),

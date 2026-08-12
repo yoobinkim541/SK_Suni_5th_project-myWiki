@@ -50,6 +50,8 @@ ADOPTED_RANKING_STATUS = "completed"
 # sources.source_type -> 추이 차트의 계열. rss는 구글 뉴스 RSS라 뉴스로 묶는다.
 NEWS_SOURCE_TYPES = frozenset({"news", "rss"})
 DISCLOSURE_SOURCE_TYPES = frozenset({"disclosure"})
+INDUSTRY_DISCLOSURE_TYPE_CODES = frozenset({"B", "I"})
+EXCLUDED_DISCLOSURE_TYPE_CODES = frozenset({"D"})
 
 # 최신 뉴스 카드 수. 화면은 기본 4장을 보여주고 '더보기'로 펼친다.
 MAX_NEWS_ITEMS = 20
@@ -445,8 +447,13 @@ def get_dashboard_news(
     unique = unique_documents(rows, documents)
     source_types = _source_types_by_id(db, workspace_id)
 
+    candidates = [
+        entry
+        for entry in unique.values()
+        if _is_dashboard_news_candidate(entry["document"], source_types)
+    ]
     picked = sorted(
-        unique.values(),
+        candidates,
         key=lambda entry: str(entry["document"].get("published_at") or ""),
         reverse=True,
     )[:limit]
@@ -470,3 +477,18 @@ def get_dashboard_news(
             for entry in picked
         ]
     )
+
+
+def _is_dashboard_news_candidate(document: dict, source_types: dict[str, str]) -> bool:
+    source_type = source_types.get(str(document.get("source_id")))
+    if source_type not in DISCLOSURE_SOURCE_TYPES:
+        return True
+
+    disclosure_type_code = str(document.get("disclosure_type_code") or "").strip().upper()
+    # 기존 수집분은 backfill 전까지 유형 코드가 비어 있을 수 있다. 그런 레거시 공시는
+    # 화면을 갑자기 비우지 않도록 남겨 두고, 코드가 채워진 공시부터 산업 이슈 필터를 적용한다.
+    if not disclosure_type_code:
+        return True
+    if disclosure_type_code in EXCLUDED_DISCLOSURE_TYPE_CODES:
+        return False
+    return disclosure_type_code in INDUSTRY_DISCLOSURE_TYPE_CODES

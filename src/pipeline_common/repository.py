@@ -182,6 +182,8 @@ def insert_document(
     title: str,
     canonical_url: str,
     published_at: datetime | None,
+    disclosure_type_code: str | None = None,
+    disclosure_type_name: str | None = None,
 ) -> dict:
     row: dict[str, Any] = {
         "workspace_id": str(workspace_id),
@@ -194,17 +196,30 @@ def insert_document(
         row["source_id"] = str(source_id)
     if published_at is not None:
         row["published_at"] = published_at.isoformat()
+    if disclosure_type_code is not None:
+        row["disclosure_type_code"] = disclosure_type_code
+    if disclosure_type_name is not None:
+        row["disclosure_type_name"] = disclosure_type_name
     res = db.get_client().table("documents").insert(row).execute()
     return _rows(res)[0]
 
 
 def update_document_meta(
-    document_id: UUID, workspace_id: UUID, title: str, published_at: datetime | None
+    document_id: UUID,
+    workspace_id: UUID,
+    title: str,
+    published_at: datetime | None,
+    disclosure_type_code: str | None = None,
+    disclosure_type_name: str | None = None,
 ) -> dict | None:
     """원문 제목 정정 등을 반영한다. 호출 전에 값이 실제로 달라졌는지 확인할 것 (명세 §4-2)."""
     patch: dict[str, Any] = {"title": title}
     if published_at is not None:
         patch["published_at"] = published_at.isoformat()
+    if disclosure_type_code is not None:
+        patch["disclosure_type_code"] = disclosure_type_code
+    if disclosure_type_name is not None:
+        patch["disclosure_type_name"] = disclosure_type_name
     res = (
         db.get_client()
         .table("documents")
