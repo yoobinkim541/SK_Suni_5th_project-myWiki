@@ -296,6 +296,35 @@ class DashboardNewsOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 최근 산업 이슈 — GET /dashboard/issues 전용
+#
+# DashboardNewsItemOut을 재사용하지 않는다. 모양이 겹쳐 보여도 담는 것이 다르다 —
+# 저쪽은 기사 흐름(quote·tags 중심)이고 이쪽은 공시 전용이라 level·summary가 핵심이다.
+# 묶으면 한쪽 화면 요구로 필드가 늘 때 다른 쪽이 조용히 끌려간다.
+# ---------------------------------------------------------------------------
+
+
+class DashboardIssueOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    level: str
+    category: str
+    title: str
+    summary: str
+    source_label: str
+    source_url: str
+    published_at: datetime | None
+    is_doc: bool
+
+
+class DashboardIssuesOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    items: list[DashboardIssueOut]
+
+
+# ---------------------------------------------------------------------------
 # 카테고리 현황 — GET /categories/stats 전용
 # ---------------------------------------------------------------------------
 

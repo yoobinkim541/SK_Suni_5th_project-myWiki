@@ -15,6 +15,7 @@ from ..categories.documents import (
     parse_timestamp as _parse_timestamp,
     quote_for,
     source_label,
+    truncate,
     unique_documents,
     window_start,
 )
@@ -28,6 +29,8 @@ from ..report.candidate_provider import get_report_time_range
 from ..report.candidate_provider import REPORT_TIMEZONE
 from ..report.models import ReportStatus
 from .models import (
+    DashboardIssue,
+    DashboardIssues,
     DashboardKeyword,
     DashboardKeywords,
     DashboardNews,
@@ -338,8 +341,27 @@ def _trend_day(
 # ------------------------------------------------------------
 
 
+_NEWS_ANALYSIS_COLUMNS = (
+    "primary_category, document_version_id, created_at, core_summary, summary_evidence_refs"
+)
+
+# 산업 이슈는 등급을 매겨야 해서 신뢰도 컬럼이 더 필요하다. 키워드·최신 뉴스가
+# 쓰지 않는 컬럼을 그쪽 조회에까지 얹지 않으려고 목록을 나눠 둔다.
+_ISSUE_ANALYSIS_COLUMNS = (
+    "primary_category, document_version_id, created_at, core_summary, "
+    "summary_evidence_refs, reliability_status, reliability_score"
+)
+
+# 이슈 행은 제목 아래 한 문단이다. 카드가 세로로 늘어나면 목록이 스크롤만 길어진다.
+ISSUE_SUMMARY_MAX_LEN = 200
+
+
 def _analysis_rows_with_titles(
-    db: Client, workspace_id: str, now: datetime
+    db: Client,
+    workspace_id: str,
+    now: datetime,
+    *,
+    columns: str = _NEWS_ANALYSIS_COLUMNS,
 ) -> tuple[list[dict], dict[str, dict]]:
     """최근 7일 **발행분** 분석 행 + document_version_id -> documents 행.
 
@@ -356,10 +378,7 @@ def _analysis_rows_with_titles(
     rows = fetch_analysis_rows(
         db,
         workspace_id,
-        columns=(
-            "primary_category, document_version_id, created_at, "
-            "core_summary, summary_evidence_refs"
-        ),
+        columns=columns,
         # created_at은 발행일 창의 prefilter다. categories/service.py와 같은 이유.
         since=start - timedelta(days=PREFILTER_MARGIN_DAYS),
         limit=_ANALYSIS_FETCH_LIMIT,
@@ -475,6 +494,101 @@ def get_dashboard_news(
                 in DISCLOSURE_SOURCE_TYPES,
             )
             for entry in picked
+        ]
+    )
+
+
+# ------------------------------------------------------------
+# 최근 산업 이슈 — GET /dashboard/issues
+#
+# '최신 뉴스'와 같은 창·같은 조회를 쓰지만 담는 것이 다르다. 저쪽은 기사 흐름이고
+# 이쪽은 **회사가 공식 신고한 사실**만 모은다. 공시 유형은 #276이 정한 기준을 그대로
+# 쓴다(INDUSTRY_DISCLOSURE_TYPE_CODES) — 같은 판정을 두 곳에서 따로 정의하면
+# '최신 뉴스에는 뜨는데 산업 이슈에는 없는' 공시가 생긴다.
+# ------------------------------------------------------------
+
+MAX_ISSUE_ITEMS = 20
+
+
+def _issue_level(score: int | float | None) -> str:
+    """신뢰도 점수 -> 화면 배지 3종.
+
+    카테고리 현황(categories/service._level)과 같은 임계값을 쓴다. 두 화면이 다른
+    기준으로 '보통'을 말하면 안 된다. 여기서 다시 정의하는 이유는 categories를
+    import하면 순환이 되기 때문이고, 값은 같은 상수(RELIABILITY_*_THRESHOLD)에서 온다.
+    """
+    if score is None:
+        return "low"
+    if score < RELIABILITY_LOW_THRESHOLD:
+        return "low"
+    if score < RELIABILITY_MEDIUM_THRESHOLD:
+        return "mid"
+    return "high"
+
+
+def get_dashboard_issues(
+    workspace_id: str,
+    *,
+    supabase: Client | None = None,
+    now: datetime | None = None,
+    limit: int = MAX_ISSUE_ITEMS,
+) -> DashboardIssues:
+    """'최근 산업 이슈' — 최근 7일 발행 공시 중 분석이 끝난 것만 발행일 내림차순.
+
+    목록에서 빼는 것과 그 이유
+        기사(news/rss)      '최신 뉴스'가 이미 보여준다. 이 섹션은 공시 전용이다
+        D(지분공시)          임원 주식 매매 신고라 산업 동향이 아니다 (#276 기준)
+        분석 미완료 공시      level·summary가 분석 산출물이다. 넣으면 근거 없이 등급이
+                            붙는다(절대원칙 1). 분석이 끝나면 자동으로 올라온다
+        요약이 빈 공시        제목만 두 번 나오는 행이 된다
+
+    ⚠ 그래서 이 목록은 수집된 공시 전부가 아니라 **분석까지 끝난 공시**만 보여준다.
+    분석 백로그가 밀리면 건수가 적게 보이는데, 그건 집계 오류가 아니라 처리 진척도다.
+    """
+    db = supabase or get_supabase()
+    now = now or datetime.now(timezone.utc)
+
+    rows, documents = _analysis_rows_with_titles(
+        db, workspace_id, now, columns=_ISSUE_ANALYSIS_COLUMNS
+    )
+    source_types = _source_types_by_id(db, workspace_id)
+    unique = unique_documents(rows, documents)
+
+    picked = []
+    for entry in unique.values():
+        document, row = entry["document"], entry["row"]
+        if source_types.get(str(document.get("source_id"))) not in DISCLOSURE_SOURCE_TYPES:
+            continue
+        if not _is_dashboard_news_candidate(document, source_types):
+            continue
+        if row.get("reliability_status") != "completed":
+            continue
+        summary = (row.get("core_summary") or "").strip()
+        if not summary:
+            continue
+        picked.append(entry)
+
+    picked.sort(
+        key=lambda e: str(e["document"].get("published_at") or ""), reverse=True
+    )
+
+    return DashboardIssues(
+        items=[
+            DashboardIssue(
+                id=str(entry["document"]["id"]),
+                level=_issue_level(entry["row"].get("reliability_score")),
+                category=entry["row"]["primary_category"],
+                title=display_title(entry["document"].get("title") or ""),
+                summary=truncate(entry["row"]["core_summary"], ISSUE_SUMMARY_MAX_LEN),
+                # 도메인(dart.fss.or.kr) 대신 공시 유형을 보여준다. 어느 사이트에서
+                # 왔는지는 공시라는 것만으로 자명하고, '거래소공시'인지 '주요사항보고'
+                # 인지가 사용자에게 실제 정보다.
+                source_label=(entry["document"].get("disclosure_type_name") or "공시 원문"),
+                source_url=entry["document"].get("canonical_url") or "",
+                published_at=entry["document"].get("published_at"),
+                is_doc=True,
+            )
+            for entry in picked[:limit]
         ]
     )
 

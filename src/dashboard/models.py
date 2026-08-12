@@ -76,3 +76,36 @@ class DashboardNewsItem(BaseModel):
 
 class DashboardNews(BaseModel):
     items: list[DashboardNewsItem]
+
+
+class DashboardIssue(BaseModel):
+    """'최근 산업 이슈' 행 하나.
+
+    최신 뉴스와 달리 **공시만** 담는다. 기사는 '최신 뉴스'가 이미 보여주고 있고,
+    이 섹션은 "회사가 공식적으로 신고한 사실"을 모으는 자리다(DashboardNewsItem과
+    분리해 둔 이유이기도 하다 — 모양이 비슷해도 뜻이 다르다).
+
+    id는 document_id다. 화면이 key로만 쓰고 라우팅에는 안 쓴다.
+
+    level은 카드 배지와 같은 3종(high/mid/low)이고, 신뢰도 점수를 카테고리 현황과
+    **같은 임계값**으로 변환한다. 두 화면이 다른 기준으로 '보통'을 말하면 안 된다.
+    분석이 아직 안 끝난 공시는 이 목록에 넣지 않는다 — level·summary가 분석
+    산출물이라, 넣으면 근거 없이 등급이 붙는다(절대원칙 1).
+
+    summary는 core_summary다. 비면 그 공시는 목록에서 뺀다. 제목만 있고 요약이 없는
+    행을 이슈 카드로 만들면 화면에 제목이 두 번 나올 뿐이다.
+    """
+
+    id: str
+    level: str
+    category: str
+    title: str
+    summary: str
+    source_label: str
+    source_url: str
+    published_at: datetime | None
+    is_doc: bool = True
+
+
+class DashboardIssues(BaseModel):
+    items: list[DashboardIssue]

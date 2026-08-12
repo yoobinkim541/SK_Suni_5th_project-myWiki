@@ -12,7 +12,13 @@ from src.api import db
 from src.api.auth import get_current_user
 from src.api.main import app
 from src.dashboard import service as dashboard_service
-from src.dashboard.models import DashboardSummary, DashboardTrend, TrendDay
+from src.dashboard.models import (
+    DashboardIssue,
+    DashboardIssues,
+    DashboardSummary,
+    DashboardTrend,
+    TrendDay,
+)
 
 WORKSPACE_ID = "11111111-1111-1111-1111-111111111111"
 
@@ -75,3 +81,41 @@ def test_get_trend_requires_workspace(client, monkeypatch):
     res = client.get("/dashboard/trend")
 
     assert res.status_code == 403
+
+
+def test_get_issues_returns_service_result(client, monkeypatch):
+    """'최근 산업 이슈' 응답 계약 — 화면(IssueList)이 level로 필터링하므로 그 값이 살아 와야 한다."""
+    issues = DashboardIssues(
+        items=[
+            DashboardIssue(
+                id="doc-1",
+                level="high",
+                category="공급망·생산",
+                title="청주 M15X 신규 설비 투자",
+                summary="신규 설비 투자 관련 공시가 접수됐다.",
+                source_label="거래소공시",
+                source_url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=1",
+                published_at=None,
+                is_doc=True,
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        dashboard_service, "get_dashboard_issues", lambda workspace_id: issues
+    )
+
+    response = client.get("/dashboard/issues")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["level"] == "high"
+    assert item["source_label"] == "거래소공시"
+    assert item["is_doc"] is True
+
+
+def test_get_issues_requires_workspace(client, monkeypatch):
+    monkeypatch.setattr(db, "get_default_workspace_id", lambda user_id: None)
+
+    assert client.get("/dashboard/issues").status_code == 403
