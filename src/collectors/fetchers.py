@@ -36,6 +36,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from ..pipeline_common import timeutil
 from ..pipeline_common.models import CollectRequest, RawFetchResult
@@ -47,6 +48,29 @@ DEFAULT_MAX_ITEMS = 30
 
 # 응답이 이 코드면 수집 대상이 아니라고 보고 건너뛴다 (robots·저작권·차단).
 _BLOCKED_STATUS = {401, 403, 429, 451}
+
+# 상태 코드로는 안 잡히는 차단('소프트 차단')을 주소로 잡는다.
+#
+# 일부 국내 언론사는 봇을 막을 때 403을 주는 대신 안내 페이지로 리다이렉트하고
+# 그 페이지를 200으로 돌려준다. 그러면 위 _BLOCKED_STATUS도 `status >= 400`도
+# 걸리지 않아서, 안내 페이지가 기사 본문으로 저장된다. 2026-08-12 대시보드
+# '최신 뉴스'에 뜬 se-cu.com 기사가 그 경우였다.
+#
+#   요청  http://se-cu.com/news/articleView.html?idxno=...
+#   최종  http://se-cu.com/ndsoft/error.html   (HTTP 200)
+#   본문  ![](403.jpg)
+#
+# 피해가 본문에서 끝나지 않는다. final_url이 documents.canonical_url이 되는데
+# (_fetch_article docstring), 그 도메인에서 차단당한 기사가 전부 같은 error.html
+# 주소를 갖게 된다. canonical_url은 uq_documents_workspace_url이 걸린 문서
+# 식별자라서, 서로 다른 기사 수십 건이 한 문서로 뭉친다. 구글 경유 주소를
+# 막아둔 것과 같은 이유다 (아래 news.google.com 검사).
+#
+# 판정은 경로 마지막 조각의 **이름 전체**로만 한다. 'error'를 부분 문자열로 찾으면
+# /news/error-correction-code-hbm 같은 멀쩡한 기사 주소가 걸린다.
+_ERROR_PAGE_NAMES = frozenset(
+    {"error", "errorpage", "error_page", "denied", "accessdenied", "blocked", "forbidden"}
+)
 
 # 네이버 검색 API 호출 경로. 응답 바디 구조는 두 경로가 같고, 호스트·경로·헤더
 # 이름만 다르다. 그래서 items 파싱 로직은 공유하고 여기서 차이만 갈라둔다.
@@ -205,6 +229,12 @@ def _http_get(url: str, source: dict) -> tuple[bytes, str, int, str]:
     return response.content, content_type, response.status_code, final_url
 
 
+def _is_error_page_url(url: str) -> bool:
+    """주소가 오류·차단 안내 페이지를 가리키면 True (_ERROR_PAGE_NAMES 참조)."""
+    name = urlsplit(url).path.rsplit("/", 1)[-1].lower()
+    return name.rsplit(".", 1)[0] in _ERROR_PAGE_NAMES
+
+
 def _sleep_between_requests(source: dict) -> None:
     """외부 요청은 간격을 지킨다 (프로젝트 지침 §7)."""
     delay = _conf_number(source, "request_delay_sec", DEFAULT_REQUEST_DELAY_SEC)
@@ -265,6 +295,9 @@ def _fetch_article(
 
     body, content_type, status, final_url = _http_get(url, source)
     if status in _BLOCKED_STATUS or status >= 400 or not body:
+        return None
+    if final_url != url and _is_error_page_url(final_url):
+        # 200으로 위장한 차단. 기사를 달라고 했는데 안내 페이지로 보내진 경우다.
         return None
     if "news.google.com" in final_url:
         # 디코딩은 됐는데 리다이렉트가 다시 구글로 돌아온 경우. 저장하면 안 되는
