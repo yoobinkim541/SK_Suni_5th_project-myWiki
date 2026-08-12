@@ -3,7 +3,7 @@
 // 항목별 연동 현황 (2026-08-11):
 //   [LIVE] fetchCategories()       GET /categories/stats -> src/api/category_router.py
 //                                  카드 + 원그래프 키워드 + 관련 뉴스가 한 응답에 들어온다
-//   [LIVE] fetchCategorySummary()  같은 응답을 나눠 쓴다 (KPI 4장 중 2장은 아래 참고)
+//   [LIVE] fetchCategorySummary()  같은 응답을 나눠 쓴다 (KPI 4장 전부 실데이터)
 //
 // 관련 뉴스의 인용문(quote)은 이제 대체로 채워집니다 — 2026-08-11 실측 60건 중 54건(90%).
 // 2026-08-06 시점에는 분석 백로그 때문에 최신 문서에 인용문이 없어 빈칸이 기본이었는데,
@@ -97,13 +97,54 @@ export function fetchCategories() {
     });
 }
 
+// 두 KPI가 "전일 대비"가 아니라 "직전 대비"인 이유.
+//
+// 분석이 수집을 못 따라가고(2026-08-12 실측 하루 수집 1,407건 대 분석 287건),
+// 최신순으로 처리하기 때문에 **오늘 발행분만 유독 커버리지가 낮다**(3.7% vs 어제 16.9%).
+// 전일 대비로 계산하면 뉴스량과 무관하게 전 카테고리가 감소로 나온다 — 실측으로
+// '증가 폭 최대'가 -9건이라는 값이 나왔다.
+//
+// 그래서 백엔드가 분석이 굳은 두 날(D-2 vs D-3)을 비교한다. 커버리지가 서로 같아
+// (18.1% / 18.8%) 배율이 상쇄되고 실제 발행량 변화가 남는다.
+//
+// 화면 문구를 "직전 대비(분석 완료 기준)"로 쓰는 것은 그래서다. "전일 대비"라고
+// 적으면 값과 라벨이 어긋난다.
+function toComparisonKpis(comparison) {
+  // 근거가 부실하면 백엔드가 available=false를 준다(두 날의 분석 진행률 차이가
+  // 크거나 발행 문서가 없을 때). 그때는 숫자를 지어내지 않고 준비 중으로 표시한다.
+  if (!comparison?.available) {
+    const desc = comparison?.reason ?? '집계 준비 중';
+    return {
+      maxIncrease: { value: '집계 준비 중', desc },
+      newCategory: { value: '집계 준비 중', desc },
+    };
+  }
+
+  const basis = `직전 대비(분석 완료 기준) · ${formatDay(comparison.baseline_date)} → ${formatDay(comparison.current_date)}`;
+  const delta = comparison.max_increase_delta ?? 0;
+  return {
+    maxIncrease: {
+      value: `${delta > 0 ? '+' : ''}${delta}건`,
+      desc: comparison.max_increase_name ? `${comparison.max_increase_name} · ${basis}` : basis,
+    },
+    newCategory: comparison.new_category_name
+      ? {
+          value: comparison.new_category_name,
+          desc: `직전 미분류 → ${comparison.new_category_count}건`,
+        }
+      : { value: '없음', desc: basis },
+  };
+}
+
+// '2026-08-10' -> '08-10'. 카드 desc가 한 줄이라 연도까지 넣으면 넘친다.
+function formatDay(iso) {
+  return typeof iso === 'string' && iso.length >= 10 ? iso.slice(5) : '';
+}
+
 // KpiCard 4장. CategoryDetail이 {value, desc} 중첩 구조를 그대로 읽으므로
 // 네 칸을 항상 채운다 — 한 칸이라도 비면 화면이 빈 카드로 남는다.
 //
-// [LIVE] 최다 분류 / 평균 신뢰도
-// [목업] 증가 폭 최대 / 신규 이슈 분류
-//   -> 둘 다 "전일 대비" 개념인데 카테고리별 일별 스냅샷이 DB에 없다.
-//      만들려면 어제 구간을 다시 집계해야 해서 이번 범위에서 뺐다.
+// [LIVE] 최다 분류 / 평균 신뢰도 / 증가 폭 최대 / 신규 이슈 분류  (전 항목 실연동)
 function toSummary(stats) {
   const categories = stats.categories ?? [];
   const top = categories.reduce(
@@ -118,8 +159,7 @@ function toSummary(stats) {
     topCategory: top
       ? { value: top.name, desc: `${percent}% · ${top.count}건` }
       : { value: '-', desc: '분류된 문서 없음' },
-    maxIncrease: MOCK_SUMMARY.maxIncrease, // [목업]
-    newCategory: MOCK_SUMMARY.newCategory, // [목업]
+    ...toComparisonKpis(stats.comparison),
     avgConfidence: { value: overallLevelLabel(categories), desc: '체크리스트 기준' },
   };
 }
