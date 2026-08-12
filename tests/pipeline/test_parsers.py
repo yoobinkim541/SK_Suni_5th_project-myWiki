@@ -118,3 +118,32 @@ def test_작은_빈_문서는_JS_힌트를_붙이지_않는다() -> None:
 
     assert "정제 결과가 비어 있다" in str(exc.value)
     assert "JS로 렌더링" not in str(exc.value)
+
+
+def test_이미지뿐인_차단_페이지는_본문으로_받지_않는다() -> None:
+    """
+    2026-08-12 대시보드 '최신 뉴스'에 `![](403.jpg)`가 인용문으로 떴다.
+    se-cu.com이 봇을 403이 아니라 안내 이미지 한 장짜리 200 페이지로 막은 결과다.
+
+    html 파서는 replace_images_with_alt가 alt 없는 <img>를 지워서 '비어 있다'로
+    걸리지만, text·json 파서는 그 단계를 안 거쳐서 그대로 통과했다.
+    """
+    for body, content_type in (
+        (b"![](403.jpg)", "text/plain"),
+        (b'{"title": "\\ud558", "description": "![](403.jpg)"}', "application/json"),
+    ):
+        with pytest.raises(ParseError) as exc:
+            parse(body, content_type)
+        assert "읽을 텍스트가 없다" in str(exc.value)
+
+
+def test_alt가_있는_사진은_본문으로_인정한다() -> None:
+    """alt는 사진 설명이라 뜻이 있다. URL만 버리고 alt는 본문으로 친다."""
+    parsed = parse(b"![\xed\x98\x84\xec\x9e\xa5 \xec\x82\xac\xec\xa7\x84](x.jpg)", "text/plain")
+
+    assert parsed.markdown == "![현장 사진](x.jpg)"
+
+
+def test_짧아도_글자가_있으면_통과시킨다() -> None:
+    """길이 하한을 두면 짧은 속보·단신까지 잃는다. 검사는 '읽을 게 있는가'만 본다."""
+    assert parse("속보".encode("utf-8"), "text/plain").markdown == "속보"

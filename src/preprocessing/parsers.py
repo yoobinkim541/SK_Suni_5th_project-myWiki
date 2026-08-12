@@ -29,6 +29,7 @@ import re
 from datetime import datetime, timezone
 
 from ..pipeline_common.models import ParsedContent
+from ..pipeline_common.text import has_readable_text
 from ..pipeline_common.timeutil import parse_datetime  # noqa: F401 - 하위 호환 re-export
 from .boilerplate import replace_images_with_alt, strip_boilerplate
 
@@ -326,6 +327,13 @@ def parse(
     markdown = normalize_markdown(markdown)
     if not markdown:
         raise ParseError(f"정제 결과가 비어 있다 (parser={name}){_empty_reason_hint(name, body)}")
+    # 빈 문자열은 아닌데 읽을 글자가 없는 경우 — 차단 안내 이미지 한 장짜리 페이지다.
+    # html 파서는 replace_images_with_alt가 alt 없는 <img>를 지워서 위 검사에 걸리지만,
+    # text·json 파서는 그 단계를 안 거치므로 `![](403.jpg)`가 그대로 통과한다.
+    if not has_readable_text(markdown):
+        raise ParseError(
+            f"정제 결과에 읽을 텍스트가 없다 (parser={name}) — 이미지뿐인 차단·오류 페이지로 보임"
+        )
 
     published_at = parse_datetime(published_raw) or published_at_hint
     if published_at is not None and published_at.tzinfo is None:

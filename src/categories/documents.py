@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from supabase import Client
 
+from ..pipeline_common.text import has_readable_text
 from ..pipeline_common.titles import normalize_title
 
 # 카드에 말줄임 처리가 없어서(globals.css .top-issue) 긴 제목이 오면 카드가 세로로
@@ -197,13 +198,19 @@ def quote_for(row: dict) -> str:
 
     비어 있을 때 본문 첫 문장 같은 걸로 채우지 않는다. 그건 인용이 아니라 원문 조각이고,
     인용문 자리에 놓이는 순간 근거 없는 인용이 된다(절대원칙 1·2).
+
+    빈 값 판정에 .strip()이 아니라 has_readable_text를 쓴다. 차단 페이지를 본문으로
+    저장해버린 문서는 인용문이 `![](403.jpg)`인데, 이건 공백이 아니라서 .strip()을
+    통과해 카드에 그대로 노출됐다(2026-08-12 se-cu.com). 수집·정제 쪽을 막아도 이미
+    저장된 행은 남으므로 화면에서도 걸러야 한다.
     """
     refs = row.get("summary_evidence_refs") or []
     if isinstance(refs, list):
         for ref in refs:
-            if isinstance(ref, dict) and (ref.get("quoted_text") or "").strip():
+            if isinstance(ref, dict) and has_readable_text(ref.get("quoted_text") or ""):
                 return truncate(ref["quoted_text"], QUOTE_MAX_LEN)
-    return truncate(row.get("core_summary") or "", QUOTE_MAX_LEN)
+    core_summary = row.get("core_summary") or ""
+    return truncate(core_summary, QUOTE_MAX_LEN) if has_readable_text(core_summary) else ""
 
 
 def documents_by_version(

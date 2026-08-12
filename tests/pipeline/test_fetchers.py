@@ -1077,3 +1077,36 @@ def test_fetch_disclosure_attaches_request_type_metadata(
     assert captured_types == list(fetchers.DART_DISCLOSURE_TYPES)
     assert [item.metadata["dart_disclosure_type_code"] for item in outcome.items] == ["B", "D"]
     assert [item.metadata["dart_disclosure_type_name"] for item in outcome.items] == ["주요사항보고", "지분공시"]
+
+
+def test_fetch_article_rejects_soft_block_redirect(stub_article) -> None:
+    """
+    200으로 위장한 차단. se-cu.com은 봇에게 403을 주는 대신 안내 페이지로 보내고
+    그걸 200으로 돌려줬다(2026-08-12). 상태 코드 검사로는 안 잡힌다.
+
+    막지 않으면 그 안내 주소가 canonical_url이 되고, 그 도메인에서 차단당한
+    기사가 전부 한 문서로 뭉친다(uq_documents_workspace_url).
+    """
+    article = "http://se-cu.com/news/articleView.html?idxno=1"
+    stub_article({article: "http://se-cu.com/ndsoft/error.html"})
+
+    assert fetchers._fetch_article({"name": "se-cu"}, article, None, None) is None
+
+
+def test_fetch_article_keeps_article_url_that_merely_contains_error(stub_article) -> None:
+    """'error'를 부분 문자열로 찾으면 멀쩡한 기사가 걸린다. 이름 전체로만 판정한다."""
+    article = "https://www.mt.co.kr/news/1"
+    redirected = "https://www.mt.co.kr/news/error-correction-code-hbm"
+    stub_article({article: redirected})
+
+    item = fetchers._fetch_article({"name": "머니투데이"}, article, None, None)
+
+    assert item is not None and item.url == redirected
+
+
+def test_fetch_article_keeps_url_that_was_not_redirected(stub_article) -> None:
+    """리다이렉트가 없었으면 소프트 차단 판정 대상이 아니다."""
+    article = "https://www.mt.co.kr/news/error.html"
+    stub_article()
+
+    assert fetchers._fetch_article({"name": "머니투데이"}, article, None, None) is not None

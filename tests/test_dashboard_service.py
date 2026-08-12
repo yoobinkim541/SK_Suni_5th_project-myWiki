@@ -288,6 +288,32 @@ def test_인용문은_quoted_text_core_summary_순으로_고른다():
     assert news.items[1].quote == "요약만 있음"
 
 
+def test_이미지_문법뿐인_인용문은_보여주지_않는다():
+    """
+    2026-08-12 카드에 `![](403.jpg)`가 인용문으로 떴다. 차단 페이지를 본문으로
+    저장한 문서라 인용문이 이미지 한 줄뿐이었는데, 공백이 아니라서 기존
+    .strip() 검사를 통과했다.
+
+    수집·정제를 막아도 이미 저장된 행은 남으므로 화면에서도 걸러야 한다.
+    v1은 core_summary로 물러나고, 둘 다 이미지뿐인 v2는 빈 인용문이 된다.
+    """
+    analyses = [
+        _analysis("v1", "제품·기술", quoted="![](403.jpg)", core_summary="실제 요약"),
+        _analysis("v2", "경쟁사", quoted="![](403.jpg)", core_summary="![](403.jpg)"),
+    ]
+    documents = [
+        _document("v1", "기사1", published_at="2026-08-04T02:00:00+00:00"),
+        _document("v2", "기사2", published_at="2026-08-04T01:00:00+00:00"),
+    ]
+
+    news = service.get_dashboard_news(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents), now=NOW
+    )
+
+    assert news.items[0].quote == "실제 요약"
+    assert news.items[1].quote == ""
+
+
 def test_뉴스는_발행일_내림차순이다():
     analyses = [_analysis("v1", "제품·기술"), _analysis("v2", "경쟁사")]
     documents = [
