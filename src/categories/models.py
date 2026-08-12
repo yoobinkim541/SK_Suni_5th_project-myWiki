@@ -62,6 +62,10 @@ class CategoryComparison(BaseModel):
     ⚠ 그 전제가 깨지는 날이 있다. 스케줄러가 실패한 날은 커버리지가 튄다(08-08은
     나흘이 지나도 1.9%). 두 날의 커버리지 차가 크면 값을 만들지 않고 available=False로
     돌려준다 — 틀린 숫자를 보여주는 것보다 '집계 준비 중'이 낫다(절대원칙 1).
+
+    그 '크면'의 기준은 service.COMPARISON_COVERAGE_GAP_MAX이고, 통계가 아니라 운영
+    판단으로 정한 값이다(현재 8.0%p, 발표 대응으로 완화). 왜 그 값인지와 언제 되돌릴
+    지는 그쪽 주석에 적어 뒀다.
     """
 
     available: bool

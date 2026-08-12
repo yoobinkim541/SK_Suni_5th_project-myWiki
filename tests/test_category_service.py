@@ -887,3 +887,60 @@ def test_증가_폭_동점이면_항상_같은_분류를_고른다():
     }
 
     assert len(results) == 1  # 매번 같은 답
+
+
+def test_커버리지_차_상한_경계():
+    """상한을 조용히 바꾸지 못하게 잠근다.
+
+    이 값은 통계가 아니라 운영 판단이라(service.COMPARISON_COVERAGE_GAP_MAX 주석)
+    바꿀 때는 근거를 같이 남겨야 한다. 경계 양쪽을 테스트로 고정해 둔다.
+    """
+    assert service.COMPARISON_COVERAGE_GAP_MAX == 8.0
+
+    rows = [
+        _analysis("v1", "시장·경영", score=50),
+        _analysis("v2", "시장·경영", score=50),
+        _analysis("v3", "제품·기술", score=50),
+        _analysis("v4", "제품·기술", score=50),
+        _analysis("v5", "제품·기술", score=50),
+    ]
+    docs = [
+        _doc("v1", "기준 1", published_at=CURRENT_DAY),
+        _doc("v2", "기준 2", published_at=CURRENT_DAY),
+        _doc("v3", "비교 1", published_at=BASELINE_DAY),
+        _doc("v4", "비교 2", published_at=BASELINE_DAY),
+        _doc("v5", "비교 3", published_at=BASELINE_DAY),
+    ]
+    # 기준일 2/20 = 10%, 비교일 3/20 = 15% -> 5%p 차이. 상한 안이라 통과한다.
+    passing = service.get_category_stats(
+        WORKSPACE_ID,
+        supabase=_cmp_db(rows, docs, {CURRENT_DAY: 18, BASELINE_DAY: 17}),
+        now=NOW,
+    ).comparison
+    assert passing.available is True
+
+    # 분자는 그대로 두고 분모만 늘린다: 2/50 = 4% vs 3/20 = 15% -> 11%p. 막힌다.
+    blocked = service.get_category_stats(
+        WORKSPACE_ID,
+        supabase=_cmp_db(rows, docs, {CURRENT_DAY: 48, BASELINE_DAY: 17}),
+        now=NOW,
+    ).comparison
+    assert blocked.available is False
+    assert "분석 진행률" in blocked.reason
+
+
+def test_08_08급_사고는_완화_후에도_걸러진다():
+    """상한을 8%p로 늦춘 뒤에도 막으려던 것(1.9% vs 18%, 약 15%p)은 여전히 막힌다."""
+    rows = [_analysis("v1", "시장·경영", score=50), _analysis("v2", "시장·경영", score=50)]
+    docs = [
+        _doc("v1", "기준일", published_at=CURRENT_DAY),
+        _doc("v2", "비교일", published_at=BASELINE_DAY),
+    ]
+    # 기준일 1/53 = 1.9%, 비교일 1/6 = 16.7%
+    c = service.get_category_stats(
+        WORKSPACE_ID,
+        supabase=_cmp_db(rows, docs, {CURRENT_DAY: 52, BASELINE_DAY: 5}),
+        now=NOW,
+    ).comparison
+
+    assert c.available is False
