@@ -102,9 +102,12 @@ def _keyword_counts(
 def _recent_documents(unique: dict[str, dict]) -> list[CategoryDocument]:
     """발행일 내림차순 상위 N건.
 
-    quote는 25%만 채워져 있고(2026-08-05 실측) 그마저도 오래된 문서에 몰려 있다 —
-    분석이 하루쯤 뒤처져서 최신 문서에는 인용문이 아직 없다. 최신순을 유지하는
-    대신 quote는 대체로 빈칸이 되고, P1(스케줄러 timeout)이 풀리면 채워진다.
+    quote 커버리지는 해소됐다. 2026-08-05에는 25%만 채워져 있어서 "최신순으로 뽑으면
+    인용문이 대체로 빈칸"이었는데, 2026-08-11 실측으로 모달 60건 중 54건(90%)이
+    채워진다. 분석 백로그가 줄면서(importance_score 보유 26% -> 75%) 이 목록이 뽑는
+    최신 문서에도 인용문이 붙기 시작했다.
+
+    비어 있는 문서를 본문 첫 문장 같은 것으로 채우지는 않는다 — quote_for 참조.
     """
     picked = sorted(
         unique.values(),
