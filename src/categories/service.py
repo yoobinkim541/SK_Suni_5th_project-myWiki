@@ -11,11 +11,12 @@ src/dashboard/service.py와 같은 구조다 — supabase/now를 주입받아 �
 from __future__ import annotations
 
 import collections
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from supabase import Client
 
 from ..analysis.repository import get_supabase
+from ..report.candidate_provider import REPORT_TIMEZONE, get_report_time_range
 from ..dashboard.service import (
     RELIABILITY_LOW_THRESHOLD,
     RELIABILITY_MEDIUM_THRESHOLD,
@@ -30,6 +31,7 @@ from .documents import (
     documents_by_version,
     fetch_analysis_rows,
     in_published_window,
+    parse_timestamp,
     quote_for,
     source_label,
     sources_by_id,
@@ -44,6 +46,7 @@ from .keywords import (
     extract_tags,
 )
 from .models import (
+    CategoryComparison,
     CategoryDocument,
     CategoryKeyword,
     CategoryLevel,
@@ -68,6 +71,159 @@ _ANALYSIS_COLUMNS = (
     "document_version_id, created_at, reliability_evaluated_at, core_summary, "
     "summary_evidence_refs"
 )
+
+
+# '증가 폭 최대'·'신규 이슈 분류'가 비교하는 두 날. 오늘(D-0)을 쓰지 않는 이유는
+# CategoryComparison 독스트링 참조 — 오늘치는 분석이 안 끝나 항상 감소로 나온다.
+COMPARISON_CURRENT_LAG_DAYS = 2
+COMPARISON_BASELINE_LAG_DAYS = 3
+
+# TODO(미확정): 두 날의 분석 커버리지 차 상한(%p). 백로그가 해소되면 다시 잡는다.
+#
+# 넘으면 비교를 포기하고 화면에 '집계 준비 중'을 띄운다. 08-08처럼 스케줄러가 실패한
+# 날은 나흘이 지나도 1.9%라, 그 날이 한쪽에 들어오면 발행량 변화가 아니라 배치 실패를
+# 표시하게 되기 때문이다.
+#
+# 값의 근거는 통계가 아니라 **운영 판단**이다. 처음에 5.0으로 잡았는데 2026-08-12
+# 실측이 17.8% vs 19.3%(차이 1.5%p)라 통과 여유가 1.5%p뿐이었다. 커버리지가 하루
+# 단위로 몇 %p씩 흔들리는 상태(08-09~08-11이 18.8/18.1/16.9)라 그대로 두면 아침마다
+# 값이 보였다 안 보였다 한다. 2026-08-13 발표를 앞두고 "숫자가 안 뜨는 것보다 조금
+# 느슨해도 뜨는 편이 낫다"고 판단해 8.0으로 완화했다.
+#
+# 느슨해진 만큼 왜곡 위험은 커진다. 8%p 차이면 한쪽 날의 분석이 상대적으로 덜 끝난
+# 상태로 비교되므로, 증감 폭이 실제보다 과장되거나 축소돼 보일 수 있다. 다만 08-08급
+# 사고(1.9% vs 18%, 16%p)는 여전히 걸러진다 — 막으려던 것은 그 급이다.
+#
+# 백로그가 줄어 커버리지가 안정되면(하루 편차가 2%p 이내로 굳으면) 5.0 이하로
+# 되돌린다. 그 전에 값을 바꾸려면 위 실측을 다시 재고 판단 근거를 여기에 남길 것.
+COMPARISON_COVERAGE_GAP_MAX = 8.0
+
+
+def _kst_date(value: str | None) -> date | None:
+    parsed = parse_timestamp(value)
+    return parsed.astimezone(REPORT_TIMEZONE).date() if parsed else None
+
+
+def _published_totals(db: Client, workspace_id: str, days: list[date]) -> dict[date, int]:
+    """비교 대상 두 날의 **발행 문서 총수**. 커버리지의 분모다.
+
+    분자(분석된 문서)는 이미 받아온 분석 행에서 나오지만 분모는 여기서만 얻는다.
+    두 날치라 수천 건 규모이고, 1,000행 상한에 걸리므로 페이지로 받는다.
+    """
+    if not days:
+        return {}
+    start, _ = get_report_time_range(min(days))
+    _, end = get_report_time_range(max(days))
+
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        page = (
+            db.table("documents")
+            .select("id, published_at")
+            .eq("workspace_id", workspace_id)
+            .eq("status", "active")
+            .gte("published_at", start.isoformat())
+            .lt("published_at", end.isoformat())
+            .order("id")
+            .range(offset, offset + 999)
+            .execute()
+            .data
+        ) or []
+        rows.extend(page)
+        if len(page) < 1000:
+            break
+        offset += 1000
+
+    totals: dict[date, int] = {day: 0 for day in days}
+    for row in rows:
+        day = _kst_date(row.get("published_at"))
+        if day in totals:
+            totals[day] += 1
+    return totals
+
+
+def _daily_counts(
+    grouped: dict[str, list[dict]], documents: dict[str, dict], days: list[date]
+) -> dict[date, dict[str, set[str]]]:
+    """날짜 -> 카테고리 -> 문서 id 집합. 분석 행이 아니라 문서 단위로 센다."""
+    counts: dict[date, dict[str, set[str]]] = {day: {} for day in days}
+    for category, rows in grouped.items():
+        for row in rows:
+            document = documents.get(str(row.get("document_version_id")))
+            if document is None:
+                continue
+            day = _kst_date(document.get("published_at")) or _kst_date(
+                document.get("created_at")
+            )
+            if day in counts:
+                counts[day].setdefault(category, set()).add(str(document["id"]))
+    return counts
+
+
+def _build_comparison(
+    db: Client,
+    workspace_id: str,
+    grouped: dict[str, list[dict]],
+    documents: dict[str, dict],
+    now: datetime,
+) -> CategoryComparison:
+    """'증가 폭 최대'·'신규 이슈 분류' 산출. 근거가 부실하면 값을 만들지 않는다."""
+    today = now.astimezone(REPORT_TIMEZONE).date()
+    current = today - timedelta(days=COMPARISON_CURRENT_LAG_DAYS)
+    baseline = today - timedelta(days=COMPARISON_BASELINE_LAG_DAYS)
+
+    totals = _published_totals(db, workspace_id, [baseline, current])
+    if not totals.get(current) or not totals.get(baseline):
+        return CategoryComparison(
+            available=False,
+            reason="비교 대상일에 발행된 문서가 없습니다",
+            current_date=current,
+            baseline_date=baseline,
+        )
+
+    counts = _daily_counts(grouped, documents, [baseline, current])
+    current_counts = {c: len(v) for c, v in counts[current].items()}
+    baseline_counts = {c: len(v) for c, v in counts[baseline].items()}
+
+    current_coverage = sum(current_counts.values()) / totals[current] * 100
+    baseline_coverage = sum(baseline_counts.values()) / totals[baseline] * 100
+    if abs(current_coverage - baseline_coverage) > COMPARISON_COVERAGE_GAP_MAX:
+        # 발행량 변화가 아니라 분석 진척도 차이를 표시하게 되는 구간이다.
+        return CategoryComparison(
+            available=False,
+            reason="두 날의 분석 진행률 차이가 커서 비교할 수 없습니다",
+            current_date=current,
+            baseline_date=baseline,
+            current_coverage=round(current_coverage, 1),
+            baseline_coverage=round(baseline_coverage, 1),
+        )
+
+    deltas = {
+        name: current_counts.get(name, 0) - baseline_counts.get(name, 0)
+        for name in CATEGORY_ORDER
+    }
+    # 동점이면 CATEGORY_ORDER 순서가 이긴다 — 같은 데이터에 같은 답이 나와야 한다.
+    top = max(CATEGORY_ORDER, key=lambda name: (deltas[name], -CATEGORY_ORDER.index(name)))
+    # '신규'는 비교일에 0건이었다가 기준일에 생긴 분류다. 여럿이면 건수가 가장 많은 것.
+    new_names = [
+        name
+        for name in CATEGORY_ORDER
+        if baseline_counts.get(name, 0) == 0 and current_counts.get(name, 0) > 0
+    ]
+    new_name = max(new_names, key=lambda n: current_counts[n]) if new_names else None
+
+    return CategoryComparison(
+        available=True,
+        current_date=current,
+        baseline_date=baseline,
+        current_coverage=round(current_coverage, 1),
+        baseline_coverage=round(baseline_coverage, 1),
+        max_increase_name=top,
+        max_increase_delta=deltas[top],
+        new_category_name=new_name,
+        new_category_count=current_counts.get(new_name) if new_name else None,
+    )
 
 
 def _level(avg_score: float | None) -> CategoryLevel:
@@ -246,7 +402,11 @@ def get_category_stats(
             )
         )
 
-    return CategoryStats(total_documents=total, categories=categories)
+    return CategoryStats(
+        total_documents=total,
+        categories=categories,
+        comparison=_build_comparison(db, workspace_id, grouped, documents, now),
+    )
 
 
 def _pick_top_issue(group: list[dict], titles: dict[str, str]) -> str:

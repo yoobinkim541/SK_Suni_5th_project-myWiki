@@ -443,3 +443,145 @@ def test_dashboard_news_filters_explicit_equity_disclosures():
     )
 
     assert [item.title for item in news.items] == ["major issue report", "exchange disclosure"]
+
+
+# ------------------------------------------------------------
+# 최근 산업 이슈 — GET /dashboard/issues (2026-08-12)
+# ------------------------------------------------------------
+
+DISCLOSURE_SOURCE = [
+    {"id": "src-dart", "source_type": "disclosure", "name": "DART - SK하이닉스",
+     "config": {}, "base_url": "", "workspace_id": WORKSPACE_ID},
+    {"id": "src-news", "source_type": "news", "name": "네이버 - HBM",
+     "config": {}, "base_url": "", "workspace_id": WORKSPACE_ID},
+]
+
+
+def _issue_analysis(version_id, category, *, summary="설비 투자 공시가 접수됐다.",
+                    score=75, reliability_status="completed",
+                    created_at="2026-08-04T00:00:00+00:00"):
+    return {
+        "document_version_id": version_id,
+        "primary_category": category,
+        "created_at": created_at,
+        "workspace_id": WORKSPACE_ID,
+        "core_summary": summary,
+        "summary_evidence_refs": [],
+        "reliability_status": reliability_status,
+        "reliability_score": score,
+    }
+
+
+def _issue_document(version_id, title, *, source_id="src-dart", type_code="I",
+                    type_name="거래소공시", published_at="2026-08-04T00:00:00+00:00"):
+    return {
+        "id": f"doc-{version_id}",
+        "title": title,
+        "canonical_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={version_id}",
+        "published_at": published_at,
+        "source_id": source_id,
+        "workspace_id": WORKSPACE_ID,
+        "disclosure_type_code": type_code,
+        "disclosure_type_name": type_name,
+    }
+
+
+def test_산업이슈는_공시만_담는다():
+    """기사는 '최신 뉴스'가 이미 보여준다. 이 섹션은 공시 전용이다."""
+    analyses = [_issue_analysis("v1", "공급망·생산"), _issue_analysis("v2", "제품·기술")]
+    documents = [
+        _issue_document("v1", "신규 설비 투자"),
+        _issue_document("v2", "HBM 관련 기사", source_id="src-news", type_code=None,
+                        type_name=None),
+    ]
+
+    issues = service.get_dashboard_issues(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents, DISCLOSURE_SOURCE), now=NOW
+    )
+
+    assert [i.title for i in issues.items] == ["신규 설비 투자"]
+    assert issues.items[0].is_doc is True
+
+
+def test_지분공시는_산업이슈에서_빠진다():
+    """D(지분공시)는 임원 주식 매매 신고라 산업 동향이 아니다 (#276 기준)."""
+    analyses = [_issue_analysis("v1", "시장·경영"), _issue_analysis("v2", "시장·경영")]
+    documents = [
+        _issue_document("v1", "거래소 공시 건", type_code="I", type_name="거래소공시"),
+        _issue_document("v2", "임원 소유상황 보고", type_code="D", type_name="지분공시"),
+    ]
+
+    issues = service.get_dashboard_issues(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents, DISCLOSURE_SOURCE), now=NOW
+    )
+
+    assert [i.title for i in issues.items] == ["거래소 공시 건"]
+
+
+def test_분석이_안_끝난_공시는_넣지_않는다():
+    """level·summary가 분석 산출물이다. 넣으면 근거 없이 등급이 붙는다(절대원칙 1)."""
+    analyses = [
+        _issue_analysis("v1", "정책·규제"),
+        _issue_analysis("v2", "정책·규제", reliability_status="pending", score=None),
+        _issue_analysis("v3", "정책·규제", summary="   "),  # 요약이 빈 행
+    ]
+    documents = [
+        _issue_document("v1", "분석 완료 공시"),
+        _issue_document("v2", "분석 대기 공시"),
+        _issue_document("v3", "요약 없는 공시"),
+    ]
+
+    issues = service.get_dashboard_issues(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents, DISCLOSURE_SOURCE), now=NOW
+    )
+
+    assert [i.title for i in issues.items] == ["분석 완료 공시"]
+
+
+def test_이슈_등급은_카테고리_카드와_같은_임계값이다():
+    assert service._issue_level(39) == "low"
+    assert service._issue_level(40) == "mid"
+    assert service._issue_level(69) == "mid"
+    assert service._issue_level(70) == "high"
+    assert service._issue_level(None) == "low"
+
+
+def test_출처_라벨은_도메인이_아니라_공시_유형이다():
+    """'dart.fss.or.kr'보다 '거래소공시'가 사용자에게 실제 정보다."""
+    analyses = [_issue_analysis("v1", "공급망·생산")]
+    documents = [_issue_document("v1", "설비 투자", type_code="B", type_name="주요사항보고")]
+
+    issues = service.get_dashboard_issues(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents, DISCLOSURE_SOURCE), now=NOW
+    )
+
+    assert issues.items[0].source_label == "주요사항보고"
+    assert issues.items[0].source_url.startswith("https://dart.fss.or.kr/")
+
+
+def test_산업이슈도_발행일_창_밖은_빠진다():
+    analyses = [_issue_analysis("v1", "시장·경영"), _issue_analysis("v2", "시장·경영")]
+    documents = [
+        _issue_document("v1", "이번 주 공시"),
+        _issue_document("v2", "지난달 공시", published_at="2026-07-15T00:00:00+00:00"),
+    ]
+
+    issues = service.get_dashboard_issues(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents, DISCLOSURE_SOURCE), now=NOW
+    )
+
+    assert [i.title for i in issues.items] == ["이번 주 공시"]
+
+
+def test_산업이슈는_발행일_내림차순이다():
+    analyses = [_issue_analysis("v1", "시장·경영"), _issue_analysis("v2", "시장·경영")]
+    documents = [
+        _issue_document("v1", "먼저", published_at="2026-08-01T00:00:00+00:00"),
+        _issue_document("v2", "나중", published_at="2026-08-04T00:00:00+00:00"),
+    ]
+
+    issues = service.get_dashboard_issues(
+        WORKSPACE_ID, supabase=_news_db(analyses, documents, DISCLOSURE_SOURCE), now=NOW
+    )
+
+    assert [i.title for i in issues.items] == ["나중", "먼저"]

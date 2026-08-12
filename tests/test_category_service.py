@@ -44,6 +44,10 @@ class FakeTable:
         self.filters.append(("gte", field, value))
         return self
 
+    def lt(self, field, value):
+        self.filters.append(("lt", field, value))
+        return self
+
     def in_(self, field, values):
         self.filters.append(("in", field, [str(v) for v in values]))
         return self
@@ -67,6 +71,8 @@ class FakeTable:
                 rows = [r for r in rows if str(r.get(field)) == str(value)]
             elif op == "gte":
                 rows = [r for r in rows if r.get(field) and r[field] >= value]
+            elif op == "lt":
+                rows = [r for r in rows if r.get(field) and r[field] < value]
             elif op == "in":
                 rows = [r for r in rows if str(r.get(field)) in value]
         for field, desc in reversed(self._orders):
@@ -767,3 +773,174 @@ def test_창_기준이_바뀌어도_최신_문서가_모달에_남는다():
     by_id = {c.id: c for c in stats.categories}
     titles = [d.title for d in by_id["product-tech"].recent_documents]
     assert titles == ["나중에 나온 기사", "먼저 나온 기사"]
+
+
+# ------------------------------------------------------------
+# 직전 대비(분석 완료 기준) — 증가 폭 최대 / 신규 이슈 분류 (2026-08-12)
+#
+# 전일이 아니라 D-2 vs D-3을 쓴다. NOW가 KST 2026-08-05 12:00이므로
+# 기준일 = 08-03, 비교일 = 08-02다.
+# ------------------------------------------------------------
+
+CURRENT_DAY = "2026-08-03T04:00:00+00:00"   # KST 08-03 13:00
+BASELINE_DAY = "2026-08-02T04:00:00+00:00"  # KST 08-02 13:00
+
+
+def _cmp_db(rows, docs, published_totals):
+    """비교용 DB. published_totals는 커버리지 분모(발행 문서 전수)를 만든다."""
+    db = _db(rows, docs)
+    extra = [
+        {"id": f"pad-{i}", "workspace_id": WORKSPACE_ID, "status": "active",
+         "published_at": day, "created_at": day, "title": f"pad {i}",
+         "canonical_url": f"https://www.example.com/pad{i}", "source_id": "s-hbm"}
+        for day, n in published_totals.items()
+        for i in range(n)
+    ]
+    db.tables["documents"] = docs + extra
+    return db
+
+
+def test_비교는_전일이_아니라_D2_D3다():
+    """오늘치는 분석이 안 끝나 항상 감소로 나온다 — 굳은 두 날을 비교한다."""
+    rows = [
+        _analysis("v1", "시장·경영", score=50),
+        _analysis("v2", "시장·경영", score=50),
+        _analysis("v3", "제품·기술", score=50),
+    ]
+    docs = [
+        _doc("v1", "기준일 기사 A", published_at=CURRENT_DAY),
+        _doc("v2", "기준일 기사 B", published_at=CURRENT_DAY),
+        _doc("v3", "비교일 기사", published_at=BASELINE_DAY),
+    ]
+    # 발행 총수를 맞춰 커버리지를 같게 만든다 (2/10 = 20%, 1/5 = 20%)
+    db = _cmp_db(rows, docs, {CURRENT_DAY: 8, BASELINE_DAY: 4})
+
+    stats = service.get_category_stats(WORKSPACE_ID, supabase=db, now=NOW)
+    c = stats.comparison
+
+    assert c.available is True
+    assert str(c.current_date) == "2026-08-03"
+    assert str(c.baseline_date) == "2026-08-02"
+    assert c.max_increase_name == "시장·경영"
+    assert c.max_increase_delta == 2
+
+
+def test_비교일에_없던_분류가_신규로_잡힌다():
+    rows = [_analysis("v1", "정책·규제", score=50), _analysis("v2", "제품·기술", score=50)]
+    docs = [
+        _doc("v1", "새로 생긴 분류", published_at=CURRENT_DAY),
+        _doc("v2", "원래 있던 분류", published_at=BASELINE_DAY),
+    ]
+    db = _cmp_db(rows, docs, {CURRENT_DAY: 4, BASELINE_DAY: 4})
+
+    c = service.get_category_stats(WORKSPACE_ID, supabase=db, now=NOW).comparison
+
+    assert c.new_category_name == "정책·규제"
+    assert c.new_category_count == 1
+
+
+def test_분석_진행률이_크게_다르면_값을_만들지_않는다():
+    """08-08처럼 배치가 실패한 날이 끼면 발행량이 아니라 처리 진척도를 표시하게 된다."""
+    rows = [_analysis("v1", "시장·경영", score=50), _analysis("v2", "시장·경영", score=50)]
+    docs = [
+        _doc("v1", "기준일", published_at=CURRENT_DAY),
+        _doc("v2", "비교일", published_at=BASELINE_DAY),
+    ]
+    # 기준일 1/2 = 50%, 비교일 1/100 = 1%  -> 49%p 차이
+    db = _cmp_db(rows, docs, {CURRENT_DAY: 1, BASELINE_DAY: 99})
+
+    c = service.get_category_stats(WORKSPACE_ID, supabase=db, now=NOW).comparison
+
+    assert c.available is False
+    assert "분석 진행률" in c.reason
+    assert c.max_increase_name is None
+
+
+def test_비교_대상일에_발행_문서가_없으면_값을_만들지_않는다():
+    rows = [_analysis("v1", "시장·경영", score=50)]
+    docs = [_doc("v1", "기준일만 있음", published_at=CURRENT_DAY)]
+    db = _cmp_db(rows, docs, {CURRENT_DAY: 4})
+
+    c = service.get_category_stats(WORKSPACE_ID, supabase=db, now=NOW).comparison
+
+    assert c.available is False
+    assert "발행된 문서가 없" in c.reason
+
+
+def test_증가_폭_동점이면_항상_같은_분류를_고른다():
+    """같은 데이터에 같은 답이 나와야 한다 — 새로고침마다 카드가 바뀌면 안 된다."""
+    rows = [_analysis("v1", "제품·기술", score=50), _analysis("v2", "경쟁사", score=50)]
+    docs = [
+        _doc("v1", "제품 기사", published_at=CURRENT_DAY),
+        _doc("v2", "경쟁사 기사", published_at=CURRENT_DAY),
+    ]
+    db = _cmp_db(rows, docs, {CURRENT_DAY: 8, BASELINE_DAY: 10})
+    db.tables["documents"].append(
+        {"id": "pad-b", "workspace_id": WORKSPACE_ID, "status": "active",
+         "published_at": BASELINE_DAY, "created_at": BASELINE_DAY, "title": "pad",
+         "canonical_url": "https://www.example.com/padb", "source_id": "s-hbm"}
+    )
+
+    results = {
+        service.get_category_stats(WORKSPACE_ID, supabase=_cmp_db(rows, docs, {CURRENT_DAY: 8, BASELINE_DAY: 10}), now=NOW).comparison.max_increase_name
+        for _ in range(3)
+    }
+
+    assert len(results) == 1  # 매번 같은 답
+
+
+def test_커버리지_차_상한_경계():
+    """상한을 조용히 바꾸지 못하게 잠근다.
+
+    이 값은 통계가 아니라 운영 판단이라(service.COMPARISON_COVERAGE_GAP_MAX 주석)
+    바꿀 때는 근거를 같이 남겨야 한다. 경계 양쪽을 테스트로 고정해 둔다.
+    """
+    assert service.COMPARISON_COVERAGE_GAP_MAX == 8.0
+
+    rows = [
+        _analysis("v1", "시장·경영", score=50),
+        _analysis("v2", "시장·경영", score=50),
+        _analysis("v3", "제품·기술", score=50),
+        _analysis("v4", "제품·기술", score=50),
+        _analysis("v5", "제품·기술", score=50),
+    ]
+    docs = [
+        _doc("v1", "기준 1", published_at=CURRENT_DAY),
+        _doc("v2", "기준 2", published_at=CURRENT_DAY),
+        _doc("v3", "비교 1", published_at=BASELINE_DAY),
+        _doc("v4", "비교 2", published_at=BASELINE_DAY),
+        _doc("v5", "비교 3", published_at=BASELINE_DAY),
+    ]
+    # 기준일 2/20 = 10%, 비교일 3/20 = 15% -> 5%p 차이. 상한 안이라 통과한다.
+    passing = service.get_category_stats(
+        WORKSPACE_ID,
+        supabase=_cmp_db(rows, docs, {CURRENT_DAY: 18, BASELINE_DAY: 17}),
+        now=NOW,
+    ).comparison
+    assert passing.available is True
+
+    # 분자는 그대로 두고 분모만 늘린다: 2/50 = 4% vs 3/20 = 15% -> 11%p. 막힌다.
+    blocked = service.get_category_stats(
+        WORKSPACE_ID,
+        supabase=_cmp_db(rows, docs, {CURRENT_DAY: 48, BASELINE_DAY: 17}),
+        now=NOW,
+    ).comparison
+    assert blocked.available is False
+    assert "분석 진행률" in blocked.reason
+
+
+def test_08_08급_사고는_완화_후에도_걸러진다():
+    """상한을 8%p로 늦춘 뒤에도 막으려던 것(1.9% vs 18%, 약 15%p)은 여전히 막힌다."""
+    rows = [_analysis("v1", "시장·경영", score=50), _analysis("v2", "시장·경영", score=50)]
+    docs = [
+        _doc("v1", "기준일", published_at=CURRENT_DAY),
+        _doc("v2", "비교일", published_at=BASELINE_DAY),
+    ]
+    # 기준일 1/53 = 1.9%, 비교일 1/6 = 16.7%
+    c = service.get_category_stats(
+        WORKSPACE_ID,
+        supabase=_cmp_db(rows, docs, {CURRENT_DAY: 52, BASELINE_DAY: 5}),
+        now=NOW,
+    ).comparison
+
+    assert c.available is False
