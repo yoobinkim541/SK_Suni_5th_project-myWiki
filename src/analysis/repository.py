@@ -6,7 +6,9 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Any
 
+import httpx
 from supabase import Client, create_client
+from supabase.lib.client_options import SyncClientOptions
 
 from .exceptions import (
     ClassificationLoadFailedError,
@@ -38,9 +40,15 @@ from .reliability_models import (
 
 @lru_cache(maxsize=1)
 def get_supabase() -> Client:
+    http_client = httpx.Client(
+        timeout=120,
+        follow_redirects=True,
+        http2=False,
+    )
     return create_client(
         os.environ["SUPABASE_URL"],
         os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+        options=SyncClientOptions(httpx_client=http_client),
     )
 
 
