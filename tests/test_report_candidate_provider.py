@@ -21,6 +21,7 @@ class FakeTable:
         self.ordering = []
         self.lower_bounds = []
         self.upper_bounds = []
+        self.range_bounds = None
 
     def select(self, _fields):
         return self
@@ -45,6 +46,10 @@ class FakeTable:
         self.ordering.append((field, desc))
         return self
 
+    def range(self, start, end):
+        self.range_bounds = (start, end)
+        return self
+
     def execute(self):
         rows = [dict(row) for row in self.rows]
         for field, value in self.filters:
@@ -57,12 +62,18 @@ class FakeTable:
             rows = [row for row in rows if _coerce_value(row.get(field)) < _coerce_value(value)]
         for field, desc in reversed(self.ordering):
             rows.sort(key=lambda row: _coerce_value(row.get(field)), reverse=desc)
+        if self.range_bounds is not None:
+            start, end = self.range_bounds
+            rows = rows[start : end + 1]
+        elif self.supabase.default_limit is not None:
+            rows = rows[: self.supabase.default_limit]
         return FakeResult(rows)
 
 
 class FakeSupabase:
-    def __init__(self, tables):
+    def __init__(self, tables, default_limit=None):
         self.tables = tables
+        self.default_limit = default_limit
 
     def table(self, name):
         return FakeTable(self, name)
@@ -332,6 +343,21 @@ def test_get_report_candidates_does_not_limit_candidate_count() -> None:
     )
 
     assert len(candidates) == 25
+
+
+def test_get_report_candidates_paginates_publication_window_documents() -> None:
+    published_ats = {
+        f"doc-{index:04d}": (datetime(2026, 8, 2, 0, 0, tzinfo=timezone.utc) + timedelta(seconds=index)).isoformat()
+        for index in range(1005)
+    }
+
+    candidates = get_report_candidates(
+        workspace_id="ws-1",
+        report_date=date(2026, 8, 2),
+        supabase=FakeSupabase(_tables_for_candidates(published_ats=published_ats), default_limit=1000),
+    )
+
+    assert len(candidates) == 1005
 
 
 def _tables_for_candidates(*, published_ats: dict[str, str]) -> dict[str, list[dict[str, object]]]:

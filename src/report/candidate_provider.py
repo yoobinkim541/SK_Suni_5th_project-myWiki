@@ -23,6 +23,8 @@ try:
 except ZoneInfoNotFoundError:
     REPORT_TIMEZONE = timezone(timedelta(hours=9))
 
+SUPABASE_PAGE_SIZE = 1000
+
 
 def get_report_time_range(report_date: date) -> tuple[datetime, datetime]:
     start = datetime.combine(report_date, datetime.min.time(), tzinfo=REPORT_TIMEZONE)
@@ -66,14 +68,12 @@ def get_report_candidates(
             if published_from is not None and published_to is not None
             else get_report_time_range(report_date)
         )
-        document_rows = (
-            db.table("documents")
-            .select("id, title, canonical_url, published_at, source_id")
-            .eq("workspace_id", workspace_id)
-            .gte("published_at", window_start.isoformat())
-            .lt("published_at", window_end.isoformat())
-            .execute()
-            .data
+        document_rows = _fetch_documents_in_publication_window(
+            db=db,
+            workspace_id=workspace_id,
+            window_start=window_start,
+            window_end=window_end,
+            fields="id, title, canonical_url, published_at, source_id",
         )
         if not document_rows:
             return []
@@ -89,13 +89,13 @@ def get_report_candidates(
         published_document_rows = []
         for chunk in _chunked(batch_document_ids):
             published_document_rows.extend(
-                db.table("documents")
-                .select("id")
-                .in_("id", chunk)
-                .gte("published_at", published_from.isoformat())
-                .lt("published_at", published_to.isoformat())
-                .execute()
-                .data
+                _fetch_documents_in_publication_window(
+                    db=db,
+                    window_start=published_from,
+                    window_end=published_to,
+                    fields="id",
+                    document_ids=chunk,
+                )
             )
         published_document_ids = {row["id"] for row in published_document_rows}
         version_rows = [
@@ -134,6 +134,37 @@ def get_report_candidates(
     return _build_candidates_from_analysis_rows(
         db, analysis_rows=analysis_rows, workspace_id=workspace_id,
     )
+
+
+def _fetch_documents_in_publication_window(
+    *,
+    db: Client,
+    window_start: datetime,
+    window_end: datetime,
+    fields: str,
+    workspace_id: str | None = None,
+    document_ids: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    start = 0
+    while True:
+        query = db.table("documents").select(fields)
+        if workspace_id is not None:
+            query = query.eq("workspace_id", workspace_id)
+        if document_ids is not None:
+            query = query.in_("id", document_ids)
+        page = (
+            query.gte("published_at", window_start.isoformat())
+            .lt("published_at", window_end.isoformat())
+            .range(start, start + SUPABASE_PAGE_SIZE - 1)
+            .execute()
+            .data
+        )
+        rows.extend(page)
+        if len(page) < SUPABASE_PAGE_SIZE:
+            break
+        start += SUPABASE_PAGE_SIZE
+    return rows
 
 
 def to_report_candidate(*, result: AnalysisResultForReport, document_id: str) -> ReportCandidate:
