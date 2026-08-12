@@ -361,11 +361,36 @@ class CategoryStatOut(BaseModel):
     recent_documents: list[CategoryDocumentOut] = []
 
 
+class CategoryComparisonOut(BaseModel):
+    """'증가 폭 최대'·'신규 이슈 분류' KPI의 산출 근거.
+
+    available=False면 화면은 값 대신 '집계 준비 중'을 표시한다 — 근거가 부실할 때
+    숫자를 만들어내지 않는다(절대원칙 1). reason이 그 사유다.
+
+    비교 기준이 전일이 아니라 D-2 vs D-3인 이유는 categories/models.py의
+    CategoryComparison 독스트링 참조.
+    """
+
+    model_config = {"from_attributes": True}
+
+    available: bool
+    reason: str | None = None
+    current_date: dt_date | None = None
+    baseline_date: dt_date | None = None
+    current_coverage: float | None = None
+    baseline_coverage: float | None = None
+    max_increase_name: str | None = None
+    max_increase_delta: int | None = None
+    new_category_name: str | None = None
+    new_category_count: int | None = None
+
+
 class CategoryStatsOut(BaseModel):
     model_config = {"from_attributes": True}
 
     total_documents: int
     categories: list[CategoryStatOut]
+    comparison: CategoryComparisonOut
 
 
 # ---------------------------------------------------------------------------

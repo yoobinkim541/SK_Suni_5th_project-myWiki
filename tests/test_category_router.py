@@ -5,6 +5,8 @@ tests/test_dashboard_router.py와 같은 방식이다.
 """
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -13,6 +15,7 @@ from src.api.auth import get_current_user
 from src.api.main import app
 from src.categories import service as category_service
 from src.categories.models import (
+    CategoryComparison,
     CategoryDocument,
     CategoryKeyword,
     CategoryStat,
@@ -53,6 +56,18 @@ def test_get_stats_returns_service_result(client, monkeypatch):
                 ],
             ),
         ],
+        # '증가 폭 최대'·'신규 이슈 분류'는 전일이 아니라 D-2 vs D-3 비교다.
+        comparison=CategoryComparison(
+            available=True,
+            current_date=date(2026, 8, 3),
+            baseline_date=date(2026, 8, 2),
+            current_coverage=18.1,
+            baseline_coverage=18.8,
+            max_increase_name="시장·경영",
+            max_increase_delta=50,
+            new_category_name=None,
+            new_category_count=None,
+        ),
     )
     monkeypatch.setattr(
         category_service, "get_category_stats", lambda workspace_id, **k: stats
@@ -86,6 +101,18 @@ def test_get_stats_returns_service_result(client, monkeypatch):
                 ],
             }
         ],
+        "comparison": {
+            "available": True,
+            "reason": None,
+            "current_date": "2026-08-03",
+            "baseline_date": "2026-08-02",
+            "current_coverage": 18.1,
+            "baseline_coverage": 18.8,
+            "max_increase_name": "시장·경영",
+            "max_increase_delta": 50,
+            "new_category_name": None,
+            "new_category_count": None,
+        },
     }
 
 
@@ -102,3 +129,26 @@ def test_토큰이_없으면_401():
     res = TestClient(app).get("/categories/stats")
 
     assert res.status_code == 401
+
+
+def test_비교_결과가_응답에_실린다(client, monkeypatch):
+    """화면이 '직전 대비(분석 완료 기준)' 문구와 값을 이 필드로 만든다."""
+    stats = CategoryStats(
+        total_documents=0,
+        categories=[],
+        comparison=CategoryComparison(
+            available=False,
+            reason="두 날의 분석 진행률 차이가 커서 비교할 수 없습니다",
+            current_date=date(2026, 8, 3),
+            baseline_date=date(2026, 8, 2),
+        ),
+    )
+    monkeypatch.setattr(
+        category_service, "get_category_stats", lambda workspace_id, **k: stats
+    )
+
+    body = client.get("/categories/stats").json()
+
+    assert body["comparison"]["available"] is False
+    assert "분석 진행률" in body["comparison"]["reason"]
+    assert body["comparison"]["current_date"] == "2026-08-03"
