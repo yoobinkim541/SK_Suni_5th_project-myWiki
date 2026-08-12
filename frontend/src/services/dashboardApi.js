@@ -3,7 +3,7 @@
 // 화면 컴포넌트는 이 파일만 봅니다. 나머지 항목을 실제 fetch로 바꿀 때도
 // pages/DashboardPage.jsx는 손댈 필요가 없습니다.
 //
-// 항목별 연동 현황 (2026-08-07 확인):
+// 항목별 연동 현황 (2026-08-12 확인) — **전 항목 실연동 완료**:
 //   [LIVE] kpiSummary   GET /dashboard/summary -> src/api/dashboard_router.py
 //                       수집 문서·생성 보고서·위키 문서·평균 신뢰도 4종
 //   [LIVE] trend        GET /dashboard/trend   -> src/api/dashboard_router.py
@@ -12,12 +12,14 @@
 //                       문서 단위로 접은 뒤 발행일 내림차순
 //   [LIVE] keywords     GET /dashboard/keywords -> src/api/dashboard_router.py
 //                       제목에 등장한 낱말 상위 8개 (최근 7일)
-//   [목업] issues       백엔드 없음 — summary·level이 분석 산출물이라 조회만으로는
-//                       못 만듭니다. 공시 기반이어야 하는데 /dashboard/news 경로에는
-//                       공시가 거의 안 들어옵니다(별도 조회 필요, 이환희 협의 사항).
+//   [LIVE] issues       GET /dashboard/issues  -> src/api/dashboard_router.py
+//                       최근 7일 발행 공시 중 분석이 끝난 것만, 발행일 내림차순
 //
-// 목업 항목은 백엔드가 생기기 전까지 지우지 않습니다 — 지우면 화면이 빕니다.
-// MOCK_NEWS·MOCK_KEYWORDS는 VITE_USE_MOCK 분기에서 계속 쓰므로 남겨 둡니다.
+// ⚠ issues는 건수가 적습니다. level·summary가 분석 산출물이라 **분석까지 끝난
+//   공시만** 올라옵니다(2026-08-12 실측: 창 안 공시 36건 중 3건). 목록이 짧은 것은
+//   장애가 아니라 분석 백로그의 진척도입니다. 분석이 끝나면 자동으로 늘어납니다.
+//
+// 목업은 지우지 않습니다 — VITE_USE_MOCK 분기와 조회 실패 시 폴백에서 계속 씁니다.
 //
 // categoryPreview는 이 파일에서 뺐습니다. #92(대시보드 개편)로 DashboardPage가
 // CategoryPreview를 렌더링하지 않게 됐는데 fetchDashboard()가 값을 계속 반환하고
@@ -31,6 +33,7 @@
 //   agentApi·wikiApi·settingsApi도 함께 실백엔드로 붙습니다.
 
 import {
+  fetchDashboardIssues,
   fetchDashboardKeywords,
   fetchDashboardNews,
   fetchDashboardSummary,
@@ -105,14 +108,36 @@ export function fetchNews() {
 }
 
 // [목업] 백엔드 없음
+// 백엔드 DashboardIssueOut -> 화면(IssueList)이 기대하는 shape.
+//
+// isSample=false를 붙이는 것이 핵심입니다. 목업은 sourceUrl이 개별 원문이 아니라
+// 도메인 루트라(https://dart.fss.or.kr) 링크로 걸면 DART 홈으로 가버려서 #267이
+// 링크를 막아뒀습니다. 실데이터는 rcpNo까지 붙은 개별 공시 주소라 링크가 정상
+// 동작하므로, 이 플래그가 false가 되는 순간 원래 <a> 경로가 되살아납니다.
+//
+// wikiId/wikiTitle은 백엔드가 주지 않습니다. 위키 연결은 wiki_page_sources를
+// 거쳐야 하는 별도 조회라 이번 범위 밖입니다. IssueList가 값이 없으면 위키 링크를
+// 그리지 않으므로 넘기지 않습니다 — 없는 연결을 만들어내지 않습니다.
+function toIssue(item) {
+  return {
+    id: item.id,
+    level: item.level,
+    category: item.category,
+    title: item.title,
+    summary: item.summary,
+    sourceIsDoc: item.is_doc,
+    sourceLabel: item.source_label,
+    sourceUrl: item.source_url,
+    sourceTitle: '전자공시시스템(DART) 원문 열기',
+    isSample: false,
+  };
+}
+
 export function fetchIssues() {
-  // isSample을 여기서 붙입니다. 목업/실데이터를 아는 것은 이 계층이고,
+  // 목업 경로에서만 isSample=true입니다. 목업/실데이터를 아는 것은 이 계층이고,
   // 화면(IssueList)은 플래그만 보고 표시를 정합니다.
-  //
-  // 목업의 sourceUrl이 개별 원문이 아니라 도메인 루트라(https://dart.fss.or.kr)
-  // 그대로 링크로 걸면 눌렀을 때 언론사·DART 홈페이지로 갑니다. 실제로 그렇게
-  // 신고가 들어왔습니다. 백엔드가 붙기 전까지는 링크로 만들지 않습니다.
-  return delay(MOCK_ISSUES.map((issue) => ({ ...issue, isSample: true })));
+  if (USE_MOCK) return delay(MOCK_ISSUES.map((issue) => ({ ...issue, isSample: true })));
+  return fetchDashboardIssues().then((res) => (res.items ?? []).map(toIssue));
 }
 
 // 백엔드 TrendDayOut -> TrendChart가 기대하는 shape.
@@ -217,9 +242,16 @@ export async function fetchDashboard() {
     console.error('[dashboardApi] 키워드 조회 실패(재시도 후에도 실패) — 칩만 빈 상태로 둡니다:', err);
     return [];
   });
+  // 산업 이슈만 실패하면 목업으로 되돌립니다. 다른 섹션과 달리 빈 배열로 두면
+  // "최근 산업 이슈 0건"이 되는데, 이 섹션은 원래 건수가 적어서(분석이 끝난 공시만
+  // 올라옵니다) 사용자가 장애인지 정상인지 구분할 수 없기 때문입니다.
+  const issues = await withRetry(fetchIssues).catch((err) => {
+    console.error('[dashboardApi] 산업 이슈 조회 실패(재시도 후에도 실패) — 목업으로 대체합니다:', err);
+    return MOCK_ISSUES.map((issue) => ({ ...issue, isSample: true }));
+  });
   return {
     news,
-    issues: MOCK_ISSUES,
+    issues,
     trend,
     keywords,
     kpiSummary,

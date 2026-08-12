@@ -69,3 +69,24 @@ export function fetchDashboardKeywords() {
 export function fetchDashboardNews() {
   return apiFetch('/dashboard/news');
 }
+
+/**
+ * '최근 산업 이슈'용 — 최근 7일 발행 공시 중 **분석이 끝난 것만**.
+ *
+ * '최신 뉴스'와 창은 같지만 담는 것이 다릅니다. 저쪽은 기사 흐름이고 이쪽은
+ * 회사가 공식 신고한 사실만 모읍니다(공시 전용, is_doc은 항상 true).
+ *
+ * ⚠ 건수가 수집된 공시 수보다 적습니다. level·summary가 분석 산출물이라
+ *   분석이 끝난 공시만 올라옵니다 — 백로그가 밀리면 목록이 짧아지는데
+ *   집계 오류가 아니라 처리 진척도입니다.
+ *
+ * ⚠ source_label은 도메인이 아니라 공시 유형입니다('거래소공시', '주요사항보고').
+ *
+ * @returns {Promise<{items: {
+ *   id, level: 'high'|'mid'|'low', category, title, summary,
+ *   source_label, source_url, published_at, is_doc,
+ * }[]}>}
+ */
+export function fetchDashboardIssues() {
+  return apiFetch('/dashboard/issues');
+}
