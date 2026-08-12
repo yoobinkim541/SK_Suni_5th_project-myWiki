@@ -39,6 +39,7 @@ import {
   fetchDashboardSummary,
   fetchDashboardTrend,
 } from '../api/dashboard';
+import { withRetry } from './retry';
 import {
   MOCK_NEWS,
   MOCK_ISSUES,
@@ -53,21 +54,11 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 // 하려는 장치라, 실제 백엔드가 생기면 이 함수가 아니라 각 fetch* 함수 안을 바꿉니다.
 const delay = (value) => Promise.resolve(value);
 
-// 대시보드는 App.jsx가 세션을 확인(authChecked=true)한 뒤에만 그려지지만, 그 시점에도
-// Supabase 클라이언트 내부 세션 복원이 완전히 끝나 있다는 보장은 없다 — 실사용에서
-// 로그인된 사용자의 첫 로드에서 apiFetch가 토큰 없이 나가 "missing bearer token"(401)이
-// 나는 게 콘솔에 확인됐다(2026-08-09). 네트워크가 느릴 때 나는 "Failed to fetch"도 같은
-// 증상(반응이 없다가 대시보드만 비어 보임)이라 같이 묶어서 처리한다.
-// 세션은 보통 1~2초 안에 복원되므로, 실패하면 한 번만 짧게 기다렸다가 재시도한다 —
-// 그래도 실패하면(진짜 로그인 안 된 상태 등) 기존처럼 실패로 처리한다(무한 재시도 안 함).
-async function withRetry(fn) {
-  try {
-    return await fn();
-  } catch {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    return fn();
-  }
-}
+// 재시도는 services/retry.js로 옮겼다(카테고리도 같은 정책을 쓴다). 1회 고정
+// 재시도로는 부족해서 3회 + 백오프로 늘렸는데, 사유는 그 파일 상단에 적어 뒀다 —
+// 요약하면 백엔드가 Supabase에 붙을 때 HTTP/2 연결이 끊겨 500이 튀고, DB 왕복이
+// 많은 엔드포인트일수록 실패율이 높다(2026-08-12 실측 keywords 74%).
+
 
 // 발행 시각 -> '12분 전' 같은 상대 시간. 백엔드는 ISO 그대로 주고 여기서 만듭니다 —
 // 서버 시각과 보는 사람의 시각이 다를 수 있어서, 서버가 미리 계산하면 어긋납니다.
@@ -107,7 +98,6 @@ export function fetchNews() {
   return fetchDashboardNews().then((res) => (res.items ?? []).map(toNewsItem));
 }
 
-// [목업] 백엔드 없음
 // 백엔드 DashboardIssueOut -> 화면(IssueList)이 기대하는 shape.
 //
 // isSample=false를 붙이는 것이 핵심입니다. 목업은 sourceUrl이 개별 원문이 아니라
@@ -221,7 +211,7 @@ export function fetchKpiSummary() {
 // 돌려줍니다(차트는 "표시할 추이 데이터가 없습니다"를 그립니다) — 목업으로 덮으면
 // 백엔드가 죽은 걸 정상 화면처럼 보이게 만듭니다.
 export async function fetchDashboard() {
-  const kpiSummary = await withRetry(fetchKpiSummary).catch((err) => {
+  const kpiSummary = await withRetry(fetchKpiSummary, { label: 'fetchKpiSummary' }).catch((err) => {
     console.error('[dashboardApi] KPI 조회 실패(재시도 후에도 실패 — 게스트이거나 인증 만료) — KPI만 빈 상태로 둡니다:', err);
     return {
       collectedDocs: { value: '—', desc: '' },
@@ -230,22 +220,22 @@ export async function fetchDashboard() {
       avgConfidence: { value: '—', desc: '' },
     };
   });
-  const trend = await withRetry(fetchTrend).catch((err) => {
+  const trend = await withRetry(fetchTrend, { label: 'fetchTrend' }).catch((err) => {
     console.error('[dashboardApi] 추이 조회 실패(재시도 후에도 실패) — 차트만 빈 상태로 둡니다:', err);
     return [];
   });
-  const news = await withRetry(fetchNews).catch((err) => {
+  const news = await withRetry(fetchNews, { label: 'fetchNews' }).catch((err) => {
     console.error('[dashboardApi] 뉴스 조회 실패(재시도 후에도 실패) — 뉴스만 빈 상태로 둡니다:', err);
     return [];
   });
-  const keywords = await withRetry(fetchKeywords).catch((err) => {
+  const keywords = await withRetry(fetchKeywords, { label: 'fetchKeywords' }).catch((err) => {
     console.error('[dashboardApi] 키워드 조회 실패(재시도 후에도 실패) — 칩만 빈 상태로 둡니다:', err);
     return [];
   });
   // 산업 이슈만 실패하면 목업으로 되돌립니다. 다른 섹션과 달리 빈 배열로 두면
   // "최근 산업 이슈 0건"이 되는데, 이 섹션은 원래 건수가 적어서(분석이 끝난 공시만
   // 올라옵니다) 사용자가 장애인지 정상인지 구분할 수 없기 때문입니다.
-  const issues = await withRetry(fetchIssues).catch((err) => {
+  const issues = await withRetry(fetchIssues, { label: 'fetchIssues' }).catch((err) => {
     console.error('[dashboardApi] 산업 이슈 조회 실패(재시도 후에도 실패) — 목업으로 대체합니다:', err);
     return MOCK_ISSUES.map((issue) => ({ ...issue, isSample: true }));
   });

@@ -18,6 +18,7 @@
 //   dashboardApi·agentApi·wikiApi·settingsApi도 함께 실백엔드로 붙습니다.
 
 import { fetchCategoryStats } from '../api/category';
+import { withRetry } from './retry';
 import { MOCK_CATEGORIES, MOCK_CATEGORY_KEYWORDS, MOCK_SUMMARY } from '../data/mockCategory';
 import { MOCK_NEWS } from '../data/mockDashboard';
 
@@ -30,9 +31,15 @@ const delay = (value) => Promise.resolve(value);
 // 때마다 새로 만들어야 하므로 결과가 아니라 "진행 중 Promise"만 잠시 붙들어 둔다.
 let inflight = null;
 
+// ⚠ 재시도를 loadStats 안에 둔다. fetchCategories와 fetchCategorySummary가
+// Promise.all로 같이 부르는데, 바깥에서 각자 재시도하면 같은 조회가 두 배로 나간다.
+// 여기서 감싸면 재시도까지 포함해 한 번만 나간다.
+//
+// 재시도가 필요한 이유는 services/retry.js 상단 참조 — /categories/stats는
+// DB 왕복이 많아 실패율이 특히 높다(2026-08-12 실측 63%).
 function loadStats() {
   if (!inflight) {
-    inflight = fetchCategoryStats().finally(() => {
+    inflight = withRetry(fetchCategoryStats, { label: 'fetchCategoryStats' }).finally(() => {
       inflight = null;
     });
   }
