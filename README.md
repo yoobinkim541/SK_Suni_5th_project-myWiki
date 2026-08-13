@@ -75,28 +75,49 @@ myWiki의 주요 목표는 다음과 같습니다.
 > 프로덕션(mywiki.pe.kr, 게스트 모드)에서 2026-08-13 직접 캡처한 화면입니다.
 
 ### 메인 대시보드
-반도체 도메인 관심사 방사형 다이어그램 + 배치 진행 상태(수집/정제·검증/요약/보고서 생성 시각) + 7일 수집·채택 추이
-![메인 대시보드](docs/screenshots/dashboard.png)
+반도체 도메인 관심사 방사형 다이어그램 + 배치 진행 상태(수집/정제·검증/요약/보고서 생성 시각)
+![메인 대시보드 — 관심사 다이어그램·배치 상태](docs/screenshots/dashboard-1.png)
+
+최근 현황(수집 문서·생성 보고서·위키 문서·평균 신뢰도) + 7일 수집·채택 추이
+![메인 대시보드 — 최근 현황·추이 차트](docs/screenshots/dashboard-2.png)
+
+최신 뉴스 카드
+![메인 대시보드 — 최신 뉴스](docs/screenshots/dashboard-3.png)
+
+"최근 산업 이슈" — DART 공시 기반, 신뢰도·제목·출처 순
+![메인 대시보드 — 최근 산업 이슈](docs/screenshots/dashboard-4.png)
 
 ### 일일 리포트
-오늘자 리포트 카드 + Word/PDF/PPT 다운로드 버튼 + 히스토리 목록
-![일일 리포트](docs/screenshots/report.png)
+오늘자 리포트 카드 + Word/PDF/PPT 다운로드 버튼
+![일일 리포트 — 오늘자 카드](docs/screenshots/report-1.png)
+
+리포트 히스토리(날짜별 재다운로드)
+![일일 리포트 — 히스토리](docs/screenshots/report-2.png)
 
 ### 카테고리 현황
-6개 카테고리 분류 요약, 분류별 비중·키워드 도넛 차트, 전일 대비 증가 폭
-![카테고리 현황](docs/screenshots/category.png)
+오늘의 분류 요약 + 수집 키워드 분포(도넛 차트)
+![카테고리 현황 — 요약·도넛 차트](docs/screenshots/category-1.png)
+
+분류별 상세(대표 키워드·대표 이슈·신뢰도)
+![카테고리 현황 — 분류별 상세](docs/screenshots/category-2.png)
 
 ### 위키
 이슈/주제 페이지 본문, 연동 키워드, 근거 출처 목록, 사이드바 카테고리 트리
 ![위키](docs/screenshots/wiki.png)
 
 ### 에이전트
-팀 공유 대화방 목록 + 위키 근거 기반 질의응답
+팀 공유 대화방 목록 + 위키 근거 기반 질의응답(인용 출처 표시)
 ![에이전트](docs/screenshots/agent.png)
 
 ### 설정
+프로필·소속 팀
+![설정 — 프로필·소속 팀](docs/screenshots/settings-1.png)
+
+알림·세션·다크모드
+![설정 — 알림·세션·화면](docs/screenshots/settings-2.png)
+
 데이터 갱신 주기, 리포트 생성 시각, 수집 소스(네이버 검색 API·GNews·구글 뉴스 RSS·OpenDART 4종) 현황
-![설정](docs/screenshots/settings.png)
+![설정 — 데이터·파이프라인](docs/screenshots/settings-3.png)
 
 ---
 
