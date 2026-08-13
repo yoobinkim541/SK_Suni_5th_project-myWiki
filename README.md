@@ -187,8 +187,6 @@ flowchart LR
 | 곽은세 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | [@eunse-kwark](https://github.com/eunse-kwark) |
 | 이환희 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | [@ghkshee24](https://github.com/ghkshee24) |
 
-> 김주현(`jjhhjhjjhh`)은 나머지 5명이 확인된 뒤 소거법으로 추정한 것이라 본인 확인 필요(`?` 표시).
-
 ### Development Responsibilities
 | 구분 | 담당자 | 업무 내용 | 관련 폴더 |
 |---|---|---|---|
