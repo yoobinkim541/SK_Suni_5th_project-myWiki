@@ -181,15 +181,13 @@ flowchart LR
 | 이름 | 직무 트랙 | Sub Role | 주요 업무 | GitHub |
 |---|---|---|---|---|
 | 윤혜민 | AI/DATA | 팀장, 질문 담당 | 프로젝트 진행 총괄, 회의 진행, 질문 취합 및 전달 | [@Hyemin-Youn](https://github.com/Hyemin-Youn) |
-| 김보연 | AI/DATA | 서기 | 회의록 작성, 의사결정 및 진행 내용 기록 | `본인 확인 후 추가` |
-| 김주현 | AI/DATA | Notion 담당 | 공유 Notion 문서와 프로젝트 자료 관리 | `본인 확인 후 추가` |
+| 김보연 | AI/DATA | 서기 | 회의록 작성, 의사결정 및 진행 내용 기록 | [@qhdusrla08](https://github.com/qhdusrla08) |
+| 김주현 | AI/DATA | Notion 담당 | 공유 Notion 문서와 프로젝트 자료 관리 | [@jjhhjhjjhh](https://github.com/jjhhjhjjhh) |
 | 김유빈 | AI/DATA | GitHub 담당 | Repository, Branch, Issue 및 Pull Request 관리 | [@yoobinkim541](https://github.com/yoobinkim541) |
-| 곽은세 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | `본인 확인 후 추가` |
-| 이환희 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | `본인 확인 후 추가` |
+| 곽은세 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | [@eunse-kwark](https://github.com/eunse-kwark) |
+| 이환희 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | [@ghkshee24](https://github.com/ghkshee24) |
 
-> GitHub 열은 커밋 기록으로 확실히 확인된 2명만 채웠습니다. 나머지는 오귀속을 피하려고
-> 추측하지 않았습니다 — 본인이 직접 채워주세요(저장소 Contributors: `ghkshee24`, `qhdusrla08`도
-> 활동 중인 계정입니다).
+> 김주현(`jjhhjhjjhh`)은 나머지 5명이 확인된 뒤 소거법으로 추정한 것이라 본인 확인 필요(`?` 표시).
 
 ### Development Responsibilities
 | 구분 | 담당자 | 업무 내용 | 관련 폴더 |
