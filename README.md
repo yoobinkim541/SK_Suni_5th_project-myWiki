@@ -548,7 +548,7 @@ erDiagram
 - [ ] 결과 품질 평가
 - [x] 사용자 피드백 반영 (실사용자 테스트로 발견한 버그 다수 수정 — 로그인·위키 발행·푸시 알림·리포트 생성 등)
 - [x] 발표 자료 제작 (슬라이드·대본·Q&A 준비자료, 15번 Documentation 참고)
-- [ ] 시연 영상 제작
+- [x] 시연 영상 제작 (15번 Documentation 참고)
 - [x] 최종 README와 기술 문서 정리 (이 문서)
 
 ---
@@ -673,7 +673,7 @@ pytest tests/
 | 데이터 출처 및 수집 기준 | `추후 입력` |
 | 회의록 | `추후 입력` |
 | 발표 자료 | [최종발표 슬라이드(PDF)](docs/presentation/5팀_프로젝트_최종발표.pdf) · [최종발표 슬라이드(PPTX)](docs/presentation/5팀_프로젝트_최종발표.pptx) · [발표 대본(슬라이드별)](docs/presentation/myWiki_최종발표_대본_v5.docx) · [예상 질문·답변 준비자료](docs/presentation/myWiki_발표_QnA_준비자료.docx) |
-| 시연 영상 | `추후 입력` |
+| 시연 영상 | [Supademo](https://app.supademo.com/demo/cmsp04cd4002pza0jrqi1lo3f) |
 
 ---
 
