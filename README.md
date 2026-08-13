@@ -50,7 +50,7 @@ myWiki는 산업 관련 최신 정보를 자동으로 수집·정리하고,
 | 프로젝트 기간 | `2026.07.20 ~ 2026.08.20` |
 | 프로젝트 상태 | `MVP 배포·운영 중` (mywiki.pe.kr, 2026-08-13 기준 — 4번 Key Features 참고) |
 | Repository | `SK_Suni_5th_project-myWiki` |
-| Notion | `추가 요망` |
+| Notion | [myWiki · SK SUNI 5기 Team 5](https://app.notion.com/p/myWiki-SK-SUNI-5-Team-5-3a4f7017cd4081888d04c7a2e6174875) |
 
 ---
 
@@ -197,8 +197,8 @@ flowchart LR
 | Wiki 구축 | 김유빈 | 문서 구조 설계, 지식베이스 연동, 자동 발행 게이트, 중복 병합 | `src/wiki/` |
 | Agent·API 개발 | 윤혜민 | 검색, 질의응답, 근거 기반 답변, API 서버 | `src/agent/`, `src/api/`, `src/pipeline_common/` |
 | 대시보드·카테고리 | (공통) | KPI·카테고리 현황·최근 산업 이슈 집계 | `src/categories/`, `src/dashboard/` |
-| UI/UX | `추후 작성` | 사용자 화면 및 결과 조회 기능 구현 | `frontend/`(`develop-frontend` 브랜치) |
-| 테스트·배포 | `추후 작성` | 기능 테스트, 품질 검증 및 배포 환경 구성 | `tests/`, `scripts/` |
+| UI/UX | 김주현, 곽은세 | 사용자 화면 및 결과 조회 기능 구현 | `frontend/`(`develop-frontend` 브랜치) |
+| 테스트·배포 | 김유빈 | 기능 테스트, 품질 검증 및 배포 환경 구성 | `tests/`, `scripts/` |
 
 > `src/agent/`, `src/api/`는 스캐폴드 코드가 이미 올라가 있습니다. 각 폴더의 `README.md` +
 > `interface.py`를 보면 자기 파트가 반환해야 하는 데이터 형태(함수 시그니처)를 그대로 확인할 수 있습니다.
