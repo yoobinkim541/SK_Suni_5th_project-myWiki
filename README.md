@@ -182,7 +182,7 @@ flowchart LR
 |---|---|---|---|---|
 | 윤혜민 | AI/DATA | 팀장, 질문 담당 | 프로젝트 진행 총괄, 회의 진행, 질문 취합 및 전달 | [@Hyemin-Youn](https://github.com/Hyemin-Youn) |
 | 김보연 | AI/DATA | 서기 | 회의록 작성, 의사결정 및 진행 내용 기록 | [@qhdusrla08](https://github.com/qhdusrla08) |
-| 김주현 | AI/DATA | Notion 담당 | 공유 Notion 문서와 프로젝트 자료 관리 | [@jjhhjhjjhh](https://github.com/jjhhjhjjhh)`?` |
+| 김주현 | AI/DATA | Notion 담당 | 공유 Notion 문서와 프로젝트 자료 관리 | [@jjhhjhjjhh](https://github.com/jjhhjhjjhh) |
 | 김유빈 | AI/DATA | GitHub 담당 | Repository, Branch, Issue 및 Pull Request 관리 | [@yoobinkim541](https://github.com/yoobinkim541) |
 | 곽은세 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | [@eunse-kwark](https://github.com/eunse-kwark) |
 | 이환희 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | [@ghkshee24](https://github.com/ghkshee24) |
