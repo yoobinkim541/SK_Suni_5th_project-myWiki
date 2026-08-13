@@ -374,13 +374,118 @@ myWiki/
 └── LICENSE
 ```
 
-> `src/` 하위 폴더에는 `README.md`(담당 테이블·역할 설명)와 `interface.py`(함수 시그니처)가
-> 들어 있습니다. `frontend/README.md`는 현재 초기 버전 기준으로 오래 갱신되지 않아
-> 실제 연동 상태와 차이가 있을 수 있습니다 — 프론트 담당자 확인 후 별도로 동기화가 필요합니다.
+> `src/` 하위 폴더와 `frontend/`에는 각각 `README.md`(담당 테이블·역할 설명, 폴더 구조)와
+> `interface.py`(함수 시그니처)가 들어 있습니다.
 
 ---
 
-## 12. Development Roadmap
+## 12. ERD
+> Supabase(PostgreSQL) 프로덕션 스키마 기준(2026-08-13, `information_schema`에서 직접 추출).
+> 인터랙티브 원본은 [ERDCloud](https://www.erdcloud.com/d/qgLNBqodLMJAqG9FG)에서 전체 26개
+> 테이블·컬럼·도메인을 볼 수 있고, DDL 전체는 `docs/architecture/myWiki_v2_supabase.sql`에
+> 있습니다. 아래는 핵심 흐름 위주로 추린 요약 다이어그램입니다(모든 컬럼을 담지 않음).
+
+```mermaid
+erDiagram
+    workspaces ||--o{ workspace_members : "소속"
+    workspaces ||--o{ teams : "산하"
+    workspaces ||--o{ sources : "수집 소스"
+    workspaces ||--o{ documents : "보유 문서"
+    workspaces ||--o{ reports : "생성 리포트"
+    workspaces ||--o{ wiki_pages : "위키 문서"
+    workspaces ||--o{ chat_sessions : "에이전트 세션"
+    workspaces ||--o{ workspace_settings : "설정"
+    profiles ||--o{ workspace_members : "참여"
+    teams ||--o{ workspace_members : "팀원"
+
+    sources ||--o{ documents : "수집"
+    documents ||--o{ document_versions : "버전"
+    document_versions ||--o{ document_analysis_results : "분류·신뢰도·중요도·랭킹"
+
+    reports ||--o{ report_sections : "섹션"
+    report_sections ||--o{ report_citations : "인용"
+    report_citations }o--|| document_versions : "근거"
+    report_sections ||--o{ report_wiki_references : "위키 참조"
+    reports ||--o{ artifacts : "Markdown/PDF/DOCX/PPTX"
+
+    wiki_pages ||--o{ wiki_page_versions : "버전"
+    wiki_pages ||--o{ wiki_page_keywords : "연동 키워드"
+    wiki_pages }o--o{ wiki_pages : "상위 주제(parent_page_id)"
+    wiki_page_versions ||--o{ wiki_page_sources : "근거 문서"
+    wiki_page_sources }o--|| document_versions : "근거"
+
+    chat_sessions ||--o{ chat_messages : "메시지"
+    chat_sessions ||--o{ chat_session_participants : "팀 공유 참여자"
+    chat_messages ||--o{ message_citations : "인용"
+    message_citations }o--|| document_versions : "근거"
+
+    profiles ||--o{ push_subscriptions : "Web Push 구독"
+    workspaces ||--o{ pipeline_jobs : "배치 작업 로그"
+
+    workspaces {
+        uuid id PK
+    }
+    profiles {
+        uuid id PK
+        text email
+    }
+    sources {
+        uuid id PK
+        text source_type "news / disclosure"
+    }
+    documents {
+        uuid id PK
+        text content_hash "SHA-256 중복 판별"
+    }
+    document_versions {
+        uuid id PK
+    }
+    document_analysis_results {
+        uuid id PK
+        int reliability_score
+        int importance_score
+        numeric ranking_score
+        boolean selected_for_report
+    }
+    reports {
+        uuid id PK
+        text report_type
+        text status
+    }
+    report_sections {
+        uuid id PK
+        text category
+    }
+    artifacts {
+        uuid id PK
+        text format "md / pdf / docx / pptx"
+    }
+    wiki_pages {
+        uuid id PK
+        uuid parent_page_id FK
+        text page_type
+    }
+    wiki_page_versions {
+        uuid id PK
+        int page_reliability_score
+        text status
+    }
+    chat_sessions {
+        uuid id PK
+        boolean is_team_shared
+    }
+    teams {
+        uuid id PK
+        text name
+    }
+```
+
+> 표시 안 된 테이블(전체는 ERDCloud 참고): `daily_report_analysis_batches`,
+> `qmd_index_entries`, `workspace_settings`, `chat_session_participants` 세부 컬럼 등.
+
+---
+
+## 13. Development Roadmap
 
 ### Phase 1. 프로젝트 기획
 - [x] 해결하려는 문제와 사용자 정의
@@ -417,7 +522,7 @@ myWiki/
 
 ---
 
-## 13. Installation and Usage
+## 14. Installation and Usage
 
 ### Clone Repository
 ```bash
@@ -502,12 +607,13 @@ pytest tests/
 
 ---
 
-## 14. Documentation
+## 15. Documentation
 | 문서 | 링크 |
 |---|---|
 | 프로젝트 기획서 | `추후 입력` |
 | 요구사항 정의서 | `추후 입력` |
 | 시스템 아키텍처 | `docs/architecture/myWiki_v2_supabase.sql`, `docs/architecture/myWiki_v2_snapshot.json` |
+| ERD | 12번 참고 · [ERDCloud(인터랙티브)](https://www.erdcloud.com/d/qgLNBqodLMJAqG9FG) |
 | API 명세서 | `src/api/main.py` (FastAPI 자동 문서: 서버 실행 후 `/docs`) |
 | 데이터 출처 및 수집 기준 | `추후 입력` |
 | 회의록 | `추후 입력` |
@@ -516,7 +622,7 @@ pytest tests/
 
 ---
 
-## 15. Expected Output
+## 16. Expected Output
 - 일일 산업 동향 보고서 (Markdown/PDF/DOCX/PPTX)
 - 산업별·기업별 Wiki 문서
 - 주요 이슈 및 키워드 요약
@@ -527,7 +633,7 @@ pytest tests/
 
 ---
 
-## 16. Evaluation Metrics
+## 17. Evaluation Metrics
 | 평가 항목 | 측정 기준 | 목표 |
 |---|---|---|
 | 정보 수집 정확도 | 지정된 데이터 소스 수집 성공률 | `TBD` |
@@ -540,7 +646,7 @@ pytest tests/
 
 ---
 
-## 17. Future Improvements
+## 18. Future Improvements
 - 기업별·산업별 자동 비교 분석
 - 주간·월간 등 신규 보고서 산출물 생성
 - 보고서 형식 사용자 맞춤 설정
@@ -550,20 +656,51 @@ pytest tests/
 
 ---
 
-## 18. Project Retrospective
+## 19. Project Retrospective
+> 아래는 GitHub PR/커밋 이력(240건 이상)을 근거로 초안을 작성했습니다 — 실제 소회·감상은
+> 팀원분들이 직접 다듬어주세요. "왜 그랬는지"의 배경만 사실 기준으로 남겨둡니다.
 
 ### What Went Well
-- `추후 작성`
+- 6주 기간 안에 MVP를 실제로 배포하고(mywiki.pe.kr) 무인 자동 배치(수집→분석→위키→리포트)가
+  스케줄대로 돌아가는 상태까지 만들었습니다 — 데모용이 아니라 매일 실제로 산출물이 쌓입니다.
+- Google/GitHub/Naver 3개 OAuth + 게스트 모드를 전부 안정화해서, 로그인 없이도 서비스를
+  체험할 수 있는 진입 장벽을 낮췄습니다.
+- 일일 리포트 생성(Markdown/PDF/DOCX/PPTX)이 여러 차례 머지·롤백을 거치긴 했지만, 결국
+  포기하지 않고 끝까지 밀어붙여 매일 07:30 KST 자동 생성까지 안정화했습니다.
+- 분석 파이프라인 동시성 개선(PR #270 → #275)처럼, "일단 동작"에서 멈추지 않고 실측 데이터로
+  후속 개선을 이어간 사례가 여러 번 있었습니다.
+- 워크스페이스·팀 권한 관리, 에이전트 팀 공유 세션 등 원래 MVP 범위를 넘어서는 협업 기능까지
+  구현했습니다.
 
 ### What Could Be Improved
-- `추후 작성`
+- 일일 리포트 생성 기능이 안정화되기까지 머지→롤백을 6회 가까이 반복했습니다(#97→#105,
+  #109→#110, #121→#122, #124→#125, 이후 #128/#132로 안착). `develop`에 머지하기 전에
+  스테이징에서 먼저 검증하는 절차가 있었다면 반복을 줄일 수 있었을 것입니다.
+- Supabase/Postgrest의 기본 1000행 조회 제한에 최소 5곳(카테고리 집계, 대시보드 KPI, 리포트
+  후보 조회, 문서 목록, 전처리 대상 조회)에서 각각 따로 걸렸습니다. 같은 패턴의 버그가
+  반복됐다는 건 공용 페이지네이션 헬퍼나 린트 규칙으로 한 번에 막을 수 있었다는 뜻입니다.
+- 수집 단계(collect)에는 재시도 상한이 없고 실패 알림 체계도 없어서, DART 공시 수집이
+  인증키 문제로 5일간 조용히 실패한 걸 아무도 모르고 지나갔습니다(분석 단계의 `MAX_RETRY`
+  패턴을 수집 단계에도 적용하고, 반복 실패에 대한 알림이 필요합니다).
+- `develop`과 `develop-frontend`의 루트 README가 오랫동안 서로 다른 시점(하나는 최신, 하나는
+  초기 스캐폴드 단계)을 가리키고 있었습니다 — 브랜치가 갈라진 프로젝트는 문서 동기화 주기를
+  더 짧게 가져가야 합니다.
 
 ### What We Learned
-- `추후 작성`
+- Supabase/Postgrest의 암묵적 1000행 캡은 아주 쉽게 걸리는 함정입니다. 명시적 페이지네이션
+  없는 `.select()`는 기본적으로 의심해야 합니다.
+- 배치 작업은 고정 타임아웃 한 번으로 끝내는 대신, 자체 시간예산 + 데드라인까지 반복하는
+  패턴(nightly-analysis, wiki-refresh-gate가 쓰는 방식)이 훨씬 안전합니다 —
+  `scheduled-data-refresh.yml`도 여러 번 중간에 잘린 뒤에야 이 패턴을 적용받았습니다.
+- 외부 API 키 같은 자격증명은 "배선이 맞는지"뿐 아니라 "값이 여전히 유효한지"도 모니터링
+  대상이어야 합니다 — 코드가 맞아도 키가 조용히 만료되면 똑같이 죽습니다.
+- LLM 기반 임계값(위키 자동 발행 신뢰도, 리포트 후보 선정 점수 등)은 가정만으로 정하면
+  틀리기 쉽습니다 — 실제 운영 데이터의 점수 분포를 보고 나서야 기준을 현실적으로 조정할 수
+  있었습니다(예: `reliability_score >= 70` 기준을 실측 후 40으로 낮춤).
 
 ---
 
-## 19. License
+## 20. License
 본 프로젝트는 **SK SUNI 5기 Full-Term Project 교육 목적**으로 제작되었습니다.
 외부 데이터, 라이브러리 및 API를 사용할 경우
 각 서비스의 라이선스와 이용 약관을 준수합니다.
