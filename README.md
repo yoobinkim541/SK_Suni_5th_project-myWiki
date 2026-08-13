@@ -1,11 +1,41 @@
 # myWiki
 > **SK SUNI 5기 Full-Term Project | Team 5 / myWiki | AI/DATA**
 
+![Status](https://img.shields.io/badge/status-MVP%20live-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![React](https://img.shields.io/badge/react-18-61DAFB)
+
 myWiki는 산업 관련 최신 정보를 자동으로 수집·정리하고,
 일일 동향 보고서와 Wiki 형태의 지식 자산으로 축적하는
 **AI 기반 산업 동향 자동 큐레이션 시스템**입니다.
 
 🔗 **서비스**: [mywiki.pe.kr](https://mywiki.pe.kr) — 게스트 모드로 로그인 없이 대시보드·리포트·위키를 둘러볼 수 있습니다(설정 화면 제외).
+
+---
+
+## 목차
+1. [Project Overview](#1-project-overview)
+2. [Background](#2-background)
+3. [Project Goal](#3-project-goal)
+4. [Key Features](#4-key-features)
+5. [Screenshots](#5-screenshots)
+6. [System Flow](#6-system-flow)
+7. [Team](#7-team)
+8. [Ground Rules](#8-ground-rules)
+9. [Git Convention](#9-git-convention)
+10. [Tech Stack](#10-tech-stack)
+11. [Repository Structure](#11-repository-structure)
+12. [ERD](#12-erd)
+13. [Development Roadmap](#13-development-roadmap)
+14. [Installation and Usage](#14-installation-and-usage)
+15. [Documentation](#15-documentation)
+16. [Expected Output](#16-expected-output)
+17. [Evaluation Metrics](#17-evaluation-metrics)
+18. [Future Improvements](#18-future-improvements)
+19. [Project Retrospective](#19-project-retrospective)
+20. [Known Issues / Operational Notes](#20-known-issues--operational-notes)
+21. [License](#21-license)
 
 ---
 
@@ -148,14 +178,18 @@ flowchart LR
 ## 7. Team
 
 ### Team Members and Sub Roles
-| 이름 | 직무 트랙 | Sub Role | 주요 업무 |
-|---|---|---|---|
-| 윤혜민 | AI/DATA | 팀장, 질문 담당 | 프로젝트 진행 총괄, 회의 진행, 질문 취합 및 전달 |
-| 김보연 | AI/DATA | 서기 | 회의록 작성, 의사결정 및 진행 내용 기록 |
-| 김주현 | AI/DATA | Notion 담당 | 공유 Notion 문서와 프로젝트 자료 관리 |
-| 김유빈 | AI/DATA | GitHub 담당 | Repository, Branch, Issue 및 Pull Request 관리 |
-| 곽은세 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 |
-| 이환희 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 |
+| 이름 | 직무 트랙 | Sub Role | 주요 업무 | GitHub |
+|---|---|---|---|---|
+| 윤혜민 | AI/DATA | 팀장, 질문 담당 | 프로젝트 진행 총괄, 회의 진행, 질문 취합 및 전달 | [@Hyemin-Youn](https://github.com/Hyemin-Youn) |
+| 김보연 | AI/DATA | 서기 | 회의록 작성, 의사결정 및 진행 내용 기록 | `본인 확인 후 추가` |
+| 김주현 | AI/DATA | Notion 담당 | 공유 Notion 문서와 프로젝트 자료 관리 | `본인 확인 후 추가` |
+| 김유빈 | AI/DATA | GitHub 담당 | Repository, Branch, Issue 및 Pull Request 관리 | [@yoobinkim541](https://github.com/yoobinkim541) |
+| 곽은세 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | `본인 확인 후 추가` |
+| 이환희 | AI/DATA | 일정·계획 담당 | 프로젝트 일정 수립 및 진행 상황 관리 | `본인 확인 후 추가` |
+
+> GitHub 열은 커밋 기록으로 확실히 확인된 2명만 채웠습니다. 나머지는 오귀속을 피하려고
+> 추측하지 않았습니다 — 본인이 직접 채워주세요(저장소 Contributors: `ghkshee24`, `qhdusrla08`도
+> 활동 중인 계정입니다).
 
 ### Development Responsibilities
 | 구분 | 담당자 | 업무 내용 | 관련 폴더 |
@@ -590,6 +624,30 @@ uvicorn src.api.main:app --reload
 ```
 서버 실행 후 `http://localhost:8000/docs`에서 전체 API 명세(Swagger UI)를 확인할 수 있습니다.
 
+### API 호출 예시
+인증이 필요 없는 헬스체크 — 실제 프로덕션에서 지금 이 응답이 옵니다:
+```bash
+$ curl -s https://api.mywiki.pe.kr/health
+{"status":"ok"}
+```
+
+나머지 엔드포인트는 Supabase JWT(Bearer 토큰)가 필요합니다. 예를 들어 일일 리포트 조회는:
+```bash
+curl -s "https://api.mywiki.pe.kr/reports/daily?date=2026-08-13" \
+  -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>"
+```
+```jsonc
+// 응답 형태 예시(src/api/schemas.py DailyReportOut 기준 — 실제 값 아님)
+{
+  "report_id": "…", "workspace_id": "…", "version": 1,
+  "title": "일일 산업 동향 보고서", "status": "completed", "date": "2026-08-13",
+  "sections": [
+    { "title": "…", "status": "completed", "citations": [ { "document_title": "…", "source_url": "…" } ] }
+  ]
+}
+```
+전체 요청/응답 스키마는 `/docs`(Swagger UI)에서 바로 시도해볼 수 있습니다.
+
 ### Run — Frontend
 프론트엔드는 `develop-frontend` 브랜치의 `frontend/` 디렉터리에 있습니다.
 ```bash
@@ -643,6 +701,11 @@ pytest tests/
 | 검색 정확도 | 질문과 관련된 문서 검색 성공률 | `TBD` |
 | 답변 신뢰성 | 답변의 출처 제공 및 사실 일치도 | `TBD` |
 | 업무 절감 효과 | 수작업 대비 소요 시간 감소율 | `TBD` |
+
+> **참고 스냅샷**(정식 측정치 아님, 2026-08-13 대시보드 화면 기준 — 5번 Screenshots 참고):
+> 최근 7일 누적 수집 문서 7,905건 · 생성 보고서 20건 · 위키 문서 191건(신규 +38) ·
+> 평균 신뢰도 "보통" · 7일 평균 채택률 10%(하루 평균 뉴스 1,055건 중 채택 문서 비율).
+> 정식 목표치·측정 방법론은 여전히 팀 논의가 필요합니다.
 
 ---
 
@@ -700,7 +763,21 @@ pytest tests/
 
 ---
 
-## 20. License
+## 20. Known Issues / Operational Notes
+> 운영하면서 발견한, 아직 완전히 해소되지 않은 이슈입니다. 19번 Retrospective의 서술형
+> 회고와 달리 여기는 "지금 상태 기준 체크리스트"로 유지합니다 — 해소되면 지워주세요.
+
+| 이슈 | 위치 | 영향 | 권장 조치 |
+|---|---|---|---|
+| Postgrest 기본 1000행 조회 제한이 반복적으로 데이터를 누락시킴 | `src/categories/service.py`, `src/dashboard/service.py`, `src/report/candidate_provider.py` 등 최소 5곳에서 각각 발생·수정됨 | 명시적 페이지네이션 없는 대량 조회는 조용히 1000건에서 잘림(예: 대시보드 KPI 과소집계) | 공용 페이지네이션 헬퍼 도입 + 신규 `.select()` 코드리뷰 체크리스트화 |
+| 수집(collect) 단계에 재시도 상한이 없음 | `src/pipeline_common/jobs.py`, `src/collectors/interface.py` | 자격증명 만료 등 영구 실패 상황에서도 30분마다 무한 재시도, 실패 알림도 없어 발견이 늦어짐(DART_API_KEY 만료를 5일간 못 알아챈 사례 있음) | `src/preprocessing`가 쓰는 `MAX_RETRY` 패턴을 collect 단계에도 적용 + 반복 실패 알림 연동 |
+| OpenRouter 호출에 429(rate limit) 백오프가 없음 | `src/analysis/concurrency.py`(`MAX_WORKERS=12`), `src/analysis/composer.py` | 동시성을 더 올리면 레이트리밋 발생 시 배치 전체가 실패할 수 있음 | 429 응답 지수 백오프 재시도 추가 |
+| `requirements.txt`의 `anthropic` 패키지가 실제로는 미사용 | `requirements.txt` | 불필요한 의존성, "Claude API도 쓰는 중"이라는 오인 소지 | 실제 사용 계획 재확인 후 제거 또는 용도 주석 추가 |
+| `frontend/README.md`·루트 `README.md`가 브랜치별로 따로 갱신되며 드리프트한 전례 있음 | `develop` / `develop-frontend` 각 루트 README | 한쪽만 보면 낡은 정보를 사실로 오인 | 큰 기능 변경 시 두 브랜치 README를 같은 PR 세트로 동기화하는 습관화 |
+
+---
+
+## 21. License
 본 프로젝트는 **SK SUNI 5기 Full-Term Project 교육 목적**으로 제작되었습니다.
 외부 데이터, 라이브러리 및 API를 사용할 경우
 각 서비스의 라이선스와 이용 약관을 준수합니다.
