@@ -34,4 +34,5 @@ jobs:
             [ "$status" = "200" ]
           }
           probe "deepseek/deepseek-v4-flash-0731" 1024 || true
-          probe "google/gemma-4-31b-it:free" 512
+          probe "google/gemma-4-31b-it:free" 512 || true
+          probe "openrouter/free" 512
