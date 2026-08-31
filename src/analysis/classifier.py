@@ -99,6 +99,7 @@ def create_json_completion(
     model: str | None = None,
     temperature: float = DEFAULT_TEMPERATURE,
     timeout: int = DEFAULT_TIMEOUT,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> str:
     """기본 모델로 호출하고, API/타임아웃 오류면 fallback_model로 한 번만 더 시도한다.
     (검증 실패 등 응답 자체의 문제는 호출부의 재시도 루프가 처리하므로 여기서 재시도하지 않는다.)"""
@@ -110,7 +111,7 @@ def create_json_completion(
     try:
         return _complete(
             system_prompt=system_prompt, user_prompt=user_prompt,
-            model=primary_model, temperature=temperature, timeout=timeout,
+            model=primary_model, temperature=temperature, timeout=timeout, max_tokens=max_tokens,
         )
     except (OpenRouterApiError, OpenRouterTimeoutError):
         if settings.fallback_model == primary_model:
@@ -121,12 +122,12 @@ def create_json_completion(
         )
         return _complete(
             system_prompt=system_prompt, user_prompt=user_prompt,
-            model=settings.fallback_model, temperature=temperature, timeout=timeout,
+            model=settings.fallback_model, temperature=temperature, timeout=timeout, max_tokens=max_tokens,
         )
 
 
 def _complete(
-    *, system_prompt: str, user_prompt: str, model: str, temperature: float, timeout: int,
+    *, system_prompt: str, user_prompt: str, model: str, temperature: float, timeout: int, max_tokens: int,
 ) -> str:
     if model == "openrouter/free":
         _wait_for_free_model_slot()
@@ -134,7 +135,7 @@ def _complete(
     try:
         response = client.chat.completions.create(
             model=model,
-            max_tokens=DEFAULT_MAX_TOKENS,
+            max_tokens=max_tokens,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
