@@ -30,7 +30,7 @@ DEFAULT_REPORT_MODEL = "deepseek/deepseek-v4-flash-0731"
 # 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
 # 유료 모델이 잔액/한도에 걸리면 OpenRouter가 JSON을 지원하는 무료 모델을 고른다.
 DEFAULT_FALLBACK_MODEL = "openrouter/free"
-REPORT_MAX_TOKENS = 4096
+REPORT_MAX_TOKENS = 1024
 
 logger = logging.getLogger(__name__)
 
