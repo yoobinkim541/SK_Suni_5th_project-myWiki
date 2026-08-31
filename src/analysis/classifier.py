@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
+import time
 from functools import lru_cache
 from typing import Any
 
@@ -35,6 +37,22 @@ DEFAULT_MAX_RETRIES = 1
 DEFAULT_MAX_TOKENS = 1024
 
 logger = logging.getLogger(__name__)
+
+# OpenRouter 무료 라우터는 키당 요청 빈도가 제한될 수 있다. 병렬 분석에서
+# 429가 연쇄적으로 발생하지 않도록 무료 폴백 호출을 프로세스 전역에서 직렬화한다.
+FREE_MODEL_MIN_INTERVAL_SECONDS = 3.2
+_free_model_gate = threading.Lock()
+_free_model_last_started = 0.0
+
+
+def _wait_for_free_model_slot() -> None:
+    global _free_model_last_started
+    with _free_model_gate:
+        now = time.monotonic()
+        delay = FREE_MODEL_MIN_INTERVAL_SECONDS - (now - _free_model_last_started)
+        if delay > 0:
+            time.sleep(delay)
+        _free_model_last_started = time.monotonic()
 
 
 class OpenRouterSettings:
@@ -110,6 +128,8 @@ def create_json_completion(
 def _complete(
     *, system_prompt: str, user_prompt: str, model: str, temperature: float, timeout: int,
 ) -> str:
+    if model == "openrouter/free":
+        _wait_for_free_model_slot()
     client = get_openrouter_client()
     try:
         response = client.chat.completions.create(
