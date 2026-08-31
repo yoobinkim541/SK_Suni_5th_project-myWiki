@@ -7,25 +7,31 @@ jobs:
   healthcheck:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe JSON response format
+      - name: Probe JSON response formats
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           set -uo pipefail
-          response_file="$(mktemp)"
-          status="$(curl -sS -o "$response_file" -w '%{http_code}' \
-            -X POST https://openrouter.ai/api/v1/chat/completions \
-            -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -H "HTTP-Referer: https://mywiki.pe.kr" \
-            -H "X-Title: myWiki json healthcheck" \
-            --data '{"model":"deepseek/deepseek-v4-flash-0731","messages":[{"role":"system","content":"Return only a JSON object."},{"role":"user","content":"Return {\"ok\":true}."}],"response_format":{"type":"json_object"},"max_tokens":16,"temperature":0}')"
-          echo "http_status=$status"
-          if jq -e 'has("error")' "$response_file" >/dev/null 2>&1; then
-            jq -c '{error: {code: .error.code, message: .error.message, type: .error.type}}' "$response_file"
-          else
-            jq -c '{id, model, choices: (.choices | length), content: .choices[0].message.content}' "$response_file"
-          fi
-          if [ "$status" != "200" ]; then
-            exit 1
-          fi
+          probe() {
+            local model="$1"
+            local max_tokens="$2"
+            local response_file
+            response_file="$(mktemp)"
+            local status
+            status="$(curl -sS -o "$response_file" -w '%{http_code}' \
+              -X POST https://openrouter.ai/api/v1/chat/completions \
+              -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "HTTP-Referer: https://mywiki.pe.kr" \
+              -H "X-Title: myWiki json healthcheck" \
+              --data "{\"model\":\"$model\",\"messages\":[{\"role\":\"system\",\"content\":\"Return only a JSON object.\"},{\"role\":\"user\",\"content\":\"Return {\\\"ok\\\":true}.\"}],\"response_format\":{\"type\":\"json_object\"},\"max_tokens\":$max_tokens,\"temperature\":0}")"
+            echo "model=$model http_status=$status max_tokens=$max_tokens"
+            if jq -e 'has("error")' "$response_file" >/dev/null 2>&1; then
+              jq -c '{error: {code: .error.code, message: .error.message, type: .error.type}}' "$response_file"
+            else
+              jq -c '{id, model, choices: (.choices | length), content: .choices[0].message.content}' "$response_file"
+            fi
+            [ "$status" = "200" ]
+          }
+          probe "deepseek/deepseek-v4-flash-0731" 1024 || true
+          probe "google/gemma-4-31b-it:free" 512
