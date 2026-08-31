@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import logging
@@ -20,13 +20,19 @@ from .models import ALLOWED_CATEGORIES, ClassificationResult
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# OpenRouter 모델 목록에 등록된 버전 고정 ID를 기본값으로 사용한다.\n# 짧은 별칭(deepseek/deepseek-v4-flash, ...-pro)은 최신 라우팅 대상과 달라질 수 있어\n# 스케줄러에서 기본·fallback 호출이 함께 실패하는 문제가 있었다.
+# OpenRouter 모델 목록에 등록된 버전 고정 ID를 기본값으로 사용한다.
+# 짧은 별칭(deepseek/deepseek-v4-flash, ...-pro)은 최신 라우팅 대상과 달라질 수 있어
+# 스케줄러에서 기본·fallback 호출이 함께 실패하는 문제가 있었다.
 DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash-0731"
 # 기본 모델 호출이 API/타임아웃 오류로 실패하면 이 모델로 한 번 더 시도한다.
-DEFAULT_FALLBACK_MODEL = "deepseek/deepseek-v4-pro-0813"
+# 유료 모델이 잔액/한도에 걸리면 OpenRouter가 JSON을 지원하는 무료 모델을 고른다.
+DEFAULT_FALLBACK_MODEL = "openrouter/free"
 DEFAULT_TEMPERATURE = 0
 DEFAULT_TIMEOUT = 30
 DEFAULT_MAX_RETRIES = 1
+# OpenRouter는 max_tokens를 생략하면 모델 상한(현재 131,072)을 예약한다.
+# 키 잔액이 작은 환경에서도 분류·평가 JSON이 처리되도록 출력 상한을 명시한다.
+DEFAULT_MAX_TOKENS = 1024
 
 logger = logging.getLogger(__name__)
 
@@ -108,12 +114,15 @@ def _complete(
     try:
         response = client.chat.completions.create(
             model=model,
+            max_tokens=DEFAULT_MAX_TOKENS,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
+            # DeepSeek V4 Flash의 추론 토큰을 끄면 작은 잔액에서도 구조화 응답을 안정적으로 받는다.
+            extra_body={"reasoning": {"enabled": False}},
             timeout=timeout,
         )
     except Exception as exc:  # pragma: no cover
@@ -193,3 +202,4 @@ def _get_openai_exception(name: str):
     except ImportError:
         return None
     return getattr(module, name, None)
+
