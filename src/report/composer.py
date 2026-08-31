@@ -25,9 +25,9 @@ from .prompts import SECTION_PROMPT_VERSION, build_report_section_messages
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # 팀 확정 모델(agent/core.py, analysis/classifier.py와 통일) — 2026-08-04까지
 # openai/gpt-4.1-mini가 잘못 기본값으로 남아있었다.
-DEFAULT_REPORT_MODEL = "deepseek/deepseek-v4-flash"
+DEFAULT_REPORT_MODEL = "deepseek/deepseek-v4-flash-0731"
 # 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
-DEFAULT_FALLBACK_MODEL = "deepseek/deepseek-v4-pro"
+DEFAULT_FALLBACK_MODEL = "deepseek/deepseek-v4-pro-0813"
 
 logger = logging.getLogger(__name__)
 

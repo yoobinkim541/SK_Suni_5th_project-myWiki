@@ -20,12 +20,10 @@ from .models import ALLOWED_CATEGORIES, ClassificationResult
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# 팀 확정 모델(agent/core.py와 통일) — 2026-08-04까지 openai/gpt-4.1-mini가 잘못 기본값으로
-# 남아있어서 분류·신뢰도·중요도 평가가 전부 그 모델로 돌고 있었다(OPENROUTER_MODEL을
-# 아무 환경에도 명시적으로 안 넣어놨던 게 원인).
-DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash"
+# OpenRouter 모델 목록에 등록된 버전 고정 ID를 기본값으로 사용한다.\n# 짧은 별칭(deepseek/deepseek-v4-flash, ...-pro)은 최신 라우팅 대상과 달라질 수 있어\n# 스케줄러에서 기본·fallback 호출이 함께 실패하는 문제가 있었다.
+DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash-0731"
 # 기본 모델 호출이 API/타임아웃 오류로 실패하면 이 모델로 한 번 더 시도한다.
-DEFAULT_FALLBACK_MODEL = "deepseek/deepseek-v4-pro"
+DEFAULT_FALLBACK_MODEL = "deepseek/deepseek-v4-pro-0813"
 DEFAULT_TEMPERATURE = 0
 DEFAULT_TIMEOUT = 30
 DEFAULT_MAX_RETRIES = 1
