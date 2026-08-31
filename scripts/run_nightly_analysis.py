@@ -253,9 +253,11 @@ def run_prioritized_stages_until_exhausted(
     report_window_version_set = set(report_window_version_ids)
     stats = StageRunStats()
     round_no = 0
+    previous_pending_ids: frozenset[str] | None = None
     while datetime.now(timezone.utc) < deadline:
         round_no += 1
         made_progress = False
+        round_pending_ids: set[str] = set()
 
         if datetime.now(timezone.utc) >= deadline:
             break
@@ -271,6 +273,7 @@ def run_prioritized_stages_until_exhausted(
         )
         pending_classify = _merge_priority_candidates(report_window_classify, backlog_classify, limit=STAGE_LIMIT)
         if pending_classify:
+            round_pending_ids.update(f"classification:{item}" for item in pending_classify)
             report_count, backlog_count = _record_stage_stats(
                 stats,
                 stage_name="classification",
@@ -298,6 +301,7 @@ def run_prioritized_stages_until_exhausted(
         )
         pending_reliability = _merge_priority_candidates(report_window_reliability, backlog_reliability, limit=STAGE_LIMIT)
         if pending_reliability:
+            round_pending_ids.update(f"reliability:{item}" for item in pending_reliability)
             report_count, backlog_count = _record_stage_stats(
                 stats,
                 stage_name="reliability",
@@ -325,6 +329,7 @@ def run_prioritized_stages_until_exhausted(
         )
         pending_importance = _merge_priority_candidates(report_window_importance, backlog_importance, limit=STAGE_LIMIT)
         if pending_importance:
+            round_pending_ids.update(f"importance:{item}" for item in pending_importance)
             report_count, backlog_count = _record_stage_stats(
                 stats,
                 stage_name="importance",
@@ -352,6 +357,7 @@ def run_prioritized_stages_until_exhausted(
         )
         pending_ranking = _merge_priority_candidates(report_window_ranking, backlog_ranking, limit=STAGE_LIMIT)
         if pending_ranking:
+            round_pending_ids.update(f"ranking:{item}" for item in pending_ranking)
             report_count, backlog_count = _record_stage_stats(
                 stats,
                 stage_name="ranking",
@@ -364,6 +370,12 @@ def run_prioritized_stages_until_exhausted(
             )
             rank_analysis_results(workspace_id=workspace_id, document_version_ids=pending_ranking)
             made_progress = True
+
+        current_pending_ids = frozenset(round_pending_ids)
+        if previous_pending_ids is not None and current_pending_ids == previous_pending_ids:
+            log(f"[priority] round {round_no} no state change; stopping to avoid retrying the same failures")
+            return stats
+        previous_pending_ids = current_pending_ids
 
         if not made_progress:
             log(f"[priority] round {round_no} no candidates left; stopping")
