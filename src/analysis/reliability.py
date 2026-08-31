@@ -58,6 +58,7 @@ def evaluate_reliability(request: ReliabilityEvaluationRequest) -> ReliabilityEv
         system_prompt=RELIABILITY_SYSTEM_PROMPT,
         user_prompt=build_reliability_user_prompt(request),
         model=settings.model,
+        max_tokens=2048,
     )
 
     llm_result = parse_reliability_response(response_text)
