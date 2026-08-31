@@ -64,6 +64,7 @@ def evaluate_importance(request: ImportanceEvaluationRequest) -> ImportanceEvalu
         system_prompt=IMPORTANCE_SYSTEM_PROMPT,
         user_prompt=build_importance_user_prompt(request),
         model=settings.model,
+        max_tokens=4096,
     )
     llm_result = parse_importance_response(
         response_text,
