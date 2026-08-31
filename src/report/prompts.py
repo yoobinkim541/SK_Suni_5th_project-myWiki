@@ -116,8 +116,9 @@ RULES
 - each watch_points item must cite at least one source ref from NEWS and/or WIKI.
 - Never reference an unavailable source ref.
 - The strings "N1" and "W1" in the schema above are placeholders only. Do not output them unless the prompt provides those exact source refs; copy the actual source refs shown under NEWS SOURCES and WIKI SOURCES.
-- Keep current_summary to 1-3 sentences.
-- Keep each bullet concise and evidence-based.
+- Keep current_summary to 1 sentence and each bullet to 1 sentence.
+- Return at most 2 key_facts, 1 historical_context item, 2 implications, and 2 watch_points.
+- Keep each item concise and evidence-based so the complete JSON stays within a small response budget.
 """
     return SECTION_SYSTEM_PROMPT, user_prompt
 
