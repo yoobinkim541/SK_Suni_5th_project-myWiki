@@ -16,6 +16,7 @@ from scripts.run_analysis_pipeline import get_adaptive_analysis_limit, get_analy
 from scripts.run_pipeline import run_collect, run_preprocess
 
 from src.pipeline_common.db import get_client
+from src.pipeline_common.raw_retention import cleanup_raw_objects, configured_retention_days
 from src.settings.service import get_workspace_settings, mark_data_refreshed
 
 GRACE_MINUTES = 15
@@ -112,6 +113,15 @@ def run_scheduled_refresh(*, now: datetime | None = None, clock: Callable[[], da
             analysis_limit = get_adaptive_analysis_limit(workspace_id)
             log(f"analysis round {round_number}: backlog={backlog_count} limit={analysis_limit}")
             run_analysis_pipeline(workspace_id, limit=analysis_limit)
+
+    try:
+        cleanup = cleanup_raw_objects(retention_days=configured_retention_days())
+        log(
+            f"raw cleanup complete: {cleanup.deleted} objects/{cleanup.deleted_bytes} bytes "
+            f"(retention {configured_retention_days()} days)"
+        )
+    except Exception as exc:  # cleanup must not discard collected analysis results
+        log(f"raw cleanup warning: {exc}")
 
     mark_data_refreshed(workspace_id, at=gate_now)
     log("refresh complete (daily report is generated separately at 08:00 KST)")
