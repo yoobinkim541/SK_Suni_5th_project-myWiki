@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from ..analysis.classifier import _wait_for_free_model_slot
 from ..analysis.importance_models import ImpactDirection, TimeHorizon
 from ..analysis.models import Category
 from .models import (
@@ -29,6 +30,7 @@ DEFAULT_REPORT_MODEL = "deepseek/deepseek-v4-flash-0731"
 # 기본 모델 호출이 실패하면 이 모델로 한 번 더 시도한다.
 # 유료 모델이 잔액/한도에 걸리면 OpenRouter가 JSON을 지원하는 무료 모델을 고른다.
 DEFAULT_FALLBACK_MODEL = "openrouter/free"
+REPORT_MAX_TOKENS = 4096
 
 logger = logging.getLogger(__name__)
 
@@ -557,14 +559,18 @@ def _create_report_json_completion(
 def _complete_report_section(
     *, system_prompt: str, user_prompt: str, model: str, temperature: float,
 ) -> str:
+    if model == "openrouter/free":
+        _wait_for_free_model_slot()
     response = get_openrouter_client().chat.completions.create(
         model=model,
+        max_tokens=REPORT_MAX_TOKENS,
         temperature=temperature,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         response_format={"type": "json_object"},
+        extra_body={"reasoning": {"enabled": False}},
         timeout=30,
     )
     choices = getattr(response, "choices", None) or []
