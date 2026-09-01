@@ -561,18 +561,23 @@ def _complete_report_section(
 ) -> str:
     if model == "openrouter/free":
         _wait_for_free_model_slot()
-    response = get_openrouter_client().chat.completions.create(
-        model=model,
-        max_tokens=REPORT_MAX_TOKENS,
-        temperature=temperature,
-        messages=[
+    completion_kwargs = {
+        "model": model,
+        "max_tokens": REPORT_MAX_TOKENS,
+        "temperature": temperature,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        response_format={"type": "json_object"},
-        extra_body={"reasoning": {"enabled": False}},
-        timeout=30,
-    )
+        "response_format": {"type": "json_object"},
+        "timeout": 30,
+    }
+    # OpenRouter 무료 라우터는 추론을 필수로 요구하는 모델을 선택할 수 있다.
+    # 해당 경로에 reasoning.enabled=False를 보내면 400이 되므로, 무료 모델에는
+    # 옵션을 생략하고 유료/고정 모델에서만 출력 비용 절감을 위해 비활성화한다.
+    if model != "openrouter/free" and not model.endswith(":free"):
+        completion_kwargs["extra_body"] = {"reasoning": {"enabled": False}}
+    response = get_openrouter_client().chat.completions.create(**completion_kwargs)
     choices = getattr(response, "choices", None) or []
     if not choices:
         raise ReportComposerError("LLM response does not contain choices.")
