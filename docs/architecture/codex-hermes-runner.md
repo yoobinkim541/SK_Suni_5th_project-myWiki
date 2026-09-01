@@ -27,6 +27,13 @@ cd ~/projects/myWiki
 docker compose --profile codex-login run --rm codex-login
 ```
 
+브라우저가 없는 OCI VM에서는 `--device-auth`를 붙여 표시되는 안내 URL을
+개인 PC에서 완료합니다.
+
+```bash
+docker compose --profile codex-login run --rm codex-login --device-auth
+```
+
 백엔드 컨테이너의 `.env`에는 다음을 설정합니다.
 
 ```env
