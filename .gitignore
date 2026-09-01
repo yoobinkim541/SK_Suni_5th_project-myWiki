@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.codex/
 
 # Python
 __pycache__/
