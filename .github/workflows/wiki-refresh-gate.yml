@@ -1,5 +1,7 @@
 name: Wiki Refresh Gate
 
+# Wiki generation runs in the Hermes backend container so the stock-report-style
+# Codex CLI fallback can use the VM's read-only ~/.codex mount.
 on:
   schedule:
     - cron: "*/30 * * * *" # 30분마다 — 실제 갱신 여부는 스크립트 안에서 주기 설정을 보고 판단
@@ -14,20 +16,17 @@ jobs:
     # refresh_wiki_scheduled.py의 REPORT_CRITICAL_WINDOW_KST(06:00~08:30 스킵)가 보장한다.
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run wiki refresh gate
-        run: python scripts/refresh_wiki_scheduled.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_CLAIMS_SUB: ${{ secrets.VAPID_CLAIMS_SUB }}
+      - name: Run wiki refresh gate on Hermes
+        run: |
+          ssh -o BatchMode=yes -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" '
+            set -e
+            cd ~/projects/myWiki
+            docker compose exec -T api python scripts/refresh_wiki_scheduled.py
+          '
