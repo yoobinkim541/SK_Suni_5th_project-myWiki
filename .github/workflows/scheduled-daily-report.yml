@@ -4,6 +4,9 @@ name: Scheduled Daily Report
 # 수십 분 밀리는 경우가 흔하다 (2026-08-07 관측: 23:00 UTC 예약 실행이 23:21:58 UTC에
 # 시작 — 22분 지연, KST 08:00 마감을 넘김). 마감(KST 08:00 = UTC 23:00) 30분 전인
 # 22:30 UTC로 당겨서, 지연이 있어도 마감을 지킬 여유를 둔다.
+#
+# 보고서 생성은 Hermes VM의 백엔드 컨테이너에서 실행한다. 그래야 컨테이너에 설치된
+# Codex CLI와 읽기 전용 ~/.codex 인증 마운트를 OpenRouter fallback으로 사용할 수 있다.
 on:
   schedule:
     - cron: "30 22 * * *" # UTC 22:30 = KST 07:30 — KST 08:00 마감 30분 전 여유
@@ -18,18 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Generate daily report
-        run: python scripts/generate_daily_report_scheduled.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      - name: Generate daily report on Hermes
+        run: |
+          ssh -o BatchMode=yes -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" '
+            set -e
+            cd ~/projects/myWiki
+            docker compose exec -T api python scripts/generate_daily_report_scheduled.py
+          '
