@@ -13,3 +13,16 @@ services:
     # normal OpenRouter-only deployments working.
     volumes:
       - ${CODEX_HOST_HOME:-./.codex}:/root/.codex:ro
+
+  # Run once on Hermes to create/update the ChatGPT-managed auth.json. This
+  # profile is never started with the API and is the only RW auth mount.
+  codex-login:
+    profiles: ["codex-login"]
+    build: .
+    image: mywiki-api:latest
+    entrypoint: ["codex"]
+    command: ["login"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - ${CODEX_HOST_HOME:-./.codex}:/root/.codex
