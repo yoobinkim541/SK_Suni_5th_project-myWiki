@@ -12,6 +12,11 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ..analysis.classifier import _wait_for_free_model_slot
 from ..analysis.importance_models import ImpactDirection, TimeHorizon
+from ..llm.codex_cli import (
+    CodexCliError,
+    create_json_completion_with_codex,
+    get_codex_cli_settings,
+)
 from ..analysis.models import Category
 from .models import (
     EnrichedIssueGroup,
@@ -527,33 +532,48 @@ def _create_report_json_completion(
     user_prompt: str,
     config: ReportComposerConfig,
 ) -> str:
-    """기본 모델로 호출하고, 실패하면 fallback_model로 한 번만 더 시도한다."""
-    settings = get_openrouter_settings()
-    if not settings.api_key:
-        raise ReportComposerError("OPENROUTER_API_KEY is not configured.")
-
-    primary_model = config.model or settings.model
+    """OpenRouter를 기본으로 사용하고, 두 호출이 실패하면 Hermes Codex CLI를 시도한다."""
     try:
-        return _complete_report_section(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            model=primary_model,
-            temperature=config.temperature,
-        )
+        settings = get_openrouter_settings()
+        if not settings.api_key:
+            raise ReportComposerError("OPENROUTER_API_KEY is not configured.")
+
+        primary_model = config.model or settings.model
+        try:
+            return _complete_report_section(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=primary_model,
+                temperature=config.temperature,
+            )
+        except Exception:
+            fallback_model = config.fallback_model or settings.fallback_model
+            if fallback_model == primary_model:
+                raise
+            logger.warning(
+                "openrouter_primary_model_failed_using_fallback",
+                extra={"primary_model": primary_model, "fallback_model": fallback_model},
+            )
+            return _complete_report_section(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=fallback_model,
+                temperature=config.temperature,
+            )
     except Exception:
-        fallback_model = config.fallback_model or settings.fallback_model
-        if fallback_model == primary_model:
+        codex_settings = get_codex_cli_settings()
+        if not codex_settings.enabled:
             raise
-        logger.warning(
-            "openrouter_primary_model_failed_using_fallback",
-            extra={"primary_model": primary_model, "fallback_model": fallback_model},
-        )
-        return _complete_report_section(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            model=fallback_model,
-            temperature=config.temperature,
-        )
+        try:
+            logger.warning("openrouter_report_completion_failed_using_codex_cli")
+            return create_json_completion_with_codex(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                settings=codex_settings,
+            )
+        except CodexCliError:
+            logger.exception("codex_cli_report_completion_failed")
+            raise
 
 
 def _complete_report_section(
