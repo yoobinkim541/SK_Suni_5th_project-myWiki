@@ -18,4 +18,4 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run report composer regression test
-        run: pytest -q tests/test_report_composer.py
+        run: PYTHONPATH=. pytest -q tests/test_report_composer.py
