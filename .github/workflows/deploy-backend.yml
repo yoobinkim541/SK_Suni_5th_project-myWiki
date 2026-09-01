@@ -45,3 +45,18 @@ jobs:
             git reset --hard origin/develop
             docker compose up -d --build --remove-orphans
           '
+
+
+      - name: Verify Hermes Codex CLI bridge
+        continue-on-error: true
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" '
+            set +e
+            cd ~/projects/myWiki
+            echo "host_codex=$(command -v codex || true)"
+            if command -v codex >/dev/null 2>&1; then codex --version 2>/dev/null || true; fi
+            echo "container_codex"
+            docker compose exec -T api sh -lc "command -v codex || true; codex --version 2>/dev/null || true" || true
+            echo "codex_env"
+            grep -E "^(CODEX_CLI_ENABLED|CODEX_CLI_PATH|CODEX_CLI_WORKSPACE|CODEX_MODEL|CODEX_REASONING|CODEX_SANDBOX|CODEX_CLI_TIMEOUT_SECONDS)=" .env 2>/dev/null || true
+          '
