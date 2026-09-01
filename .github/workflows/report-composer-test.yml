@@ -5,6 +5,9 @@ on:
     branches: [develop]
     paths:
       - "tests/test_report_composer.py"
+      - "tests/test_codex_cli.py"
+      - "tests/test_codex_provider_fallback.py"
+      - "tests/test_wiki_generation.py"
       - "src/report/composer.py"
       - ".github/workflows/report-composer-test.yml"
 
@@ -19,4 +22,4 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run report composer regression test
-        run: PYTHONPATH=. pytest -q tests/test_report_composer.py
+        run: PYTHONPATH=. pytest -q tests/test_report_composer.py tests/test_codex_cli.py tests/test_codex_provider_fallback.py tests/test_wiki_generation.py
