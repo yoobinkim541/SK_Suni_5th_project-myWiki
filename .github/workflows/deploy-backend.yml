@@ -58,6 +58,6 @@ jobs:
             echo "container_codex"
             docker compose exec -T api sh -lc "command -v codex || true; codex --version 2>/dev/null || true" || true
             echo "codex_env"
-            grep -E "^(CODEX_CLI_ENABLED|CODEX_CLI_PATH|CODEX_CLI_WORKSPACE|CODEX_MODEL|CODEX_REASONING|CODEX_SANDBOX|CODEX_CLI_TIMEOUT_SECONDS)=" .env 2>/dev/null || true
+            grep -E "^(CODEX_CLI_ENABLED|CODEX_CLI_PATH|CODEX_CLI_WORKSPACE|CODEX_HOST_HOME|CODEX_MODEL|CODEX_REASONING|CODEX_SANDBOX|CODEX_CLI_TIMEOUT_SECONDS)=" .env 2>/dev/null || true
             if docker compose exec -T api sh -lc "test -f /root/.codex/auth.json"; then echo "codex_auth=present"; else echo "codex_auth=missing"; fi
           '
