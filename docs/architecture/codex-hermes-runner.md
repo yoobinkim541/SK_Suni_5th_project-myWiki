@@ -43,7 +43,9 @@ CODEX_CLI_TIMEOUT_SECONDS=180
 3. 두 호출이 모두 실패하고 `CODEX_CLI_ENABLED=true`이면 Hermes Codex CLI를 호출합니다.
 4. Codex도 실패하면 기존과 동일하게 해당 산출물을 실패 상태로 기록합니다.
 
-GitHub Actions의 스케줄러는 여전히 GitHub runner에서 실행됩니다. 따라서 Codex 경로를
-실제로 사용하려면 스케줄 작업을 Hermes에서 실행하거나, Actions가 Hermes의 검증된
-래퍼를 호출하도록 별도 배포해야 합니다. 단순히 `.env`에 플래그만 추가하면 Actions
-runner에 Codex 인증이 생기지는 않습니다.
+보고서·위키 스케줄은 GitHub Actions가 `DEPLOY_SSH_*` 시크릿으로 Hermes에 접속한 뒤
+컨테이너 안에서 실행하도록 구성되어 있습니다. 따라서 이 두 작업은 Hermes의 Codex
+인증을 사용할 수 있습니다. 반면 수집·전처리·분류 같은 대량 데이터 작업은 기존
+GitHub runner에 남겨 Codex를 호출하지 않습니다. 단순히 `.env`에 플래그만 추가하면
+인증이 생기지는 않으므로, Hermes의 `.codex` 인증 디렉터리와 `CODEX_CLI_ENABLED=true`
+설정이 모두 필요합니다.
