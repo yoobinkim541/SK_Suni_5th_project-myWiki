@@ -360,3 +360,38 @@ def test_compose_report_sections_preserves_input_order() -> None:
     )
 
     assert [section.issue_key for section in sections] == ["issue-1", "issue-2"]
+
+
+def test_free_model_request_does_not_disable_reasoning(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    calls: dict[str, object] = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=valid_response()),
+                    )
+                ]
+            )
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=FakeCompletions()),
+    )
+    monkeypatch.setattr("src.report.composer.get_openrouter_client", lambda: fake_client)
+    monkeypatch.setattr("src.report.composer._wait_for_free_model_slot", lambda: None)
+
+    from src.report.composer import _complete_report_section
+
+    result = _complete_report_section(
+        system_prompt="system",
+        user_prompt="user",
+        model="openrouter/free",
+        temperature=0.0,
+    )
+
+    assert json.loads(result)["title"] == "HBM3E roadmap update"
+    assert "extra_body" not in calls
