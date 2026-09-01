@@ -19,6 +19,14 @@ Hermes 호스트의 Codex CLI로 한 번 더 시도할 수 있습니다. 문서 
 `.codex` 디렉터리로 지정하면 해당 디렉터리가 컨테이너 `/root/.codex`에
 읽기 전용으로 연결됩니다. 인증 파일은 이미지나 Git에 포함되지 않습니다.
 
+Hermes 호스트에 Codex 바이너리를 별도로 설치하지 않아도 됩니다. 이미지가 빌드된 뒤
+다음 일회성 명령으로 로그인하면 `codex-login` 프로필만 인증 디렉터리에 쓰고 종료합니다.
+
+```bash
+cd ~/projects/myWiki
+docker compose --profile codex-login run --rm codex-login
+```
+
 백엔드 컨테이너의 `.env`에는 다음을 설정합니다.
 
 ```env
