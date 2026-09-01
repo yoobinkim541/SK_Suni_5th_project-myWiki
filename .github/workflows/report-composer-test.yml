@@ -5,6 +5,7 @@ on:
     branches: [develop]
     paths:
       - "tests/test_report_composer.py"
+      - "src/report/composer.py"
       - ".github/workflows/report-composer-test.yml"
 
 jobs:
