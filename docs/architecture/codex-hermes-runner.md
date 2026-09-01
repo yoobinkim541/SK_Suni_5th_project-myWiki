@@ -13,21 +13,28 @@ Hermes 호스트의 Codex CLI로 한 번 더 시도할 수 있습니다. 문서 
 
 ## Hermes 설정
 
-Hermes VM에서 한 번만 Codex 인증을 완료한 뒤, 백엔드 컨테이너의 `.env`에 다음을 설정합니다.
+백엔드 Docker 이미지에는 `@openai/codex@0.151.0`가 포함되어 있으므로
+컨테이너 안에서 `codex --version`을 바로 확인할 수 있습니다. Hermes VM에서
+한 번만 Codex 인증을 완료하고, Compose의 `CODEX_HOST_HOME`을 호스트의
+`.codex` 디렉터리로 지정하면 해당 디렉터리가 컨테이너 `/root/.codex`에
+읽기 전용으로 연결됩니다. 인증 파일은 이미지나 Git에 포함되지 않습니다.
+
+백엔드 컨테이너의 `.env`에는 다음을 설정합니다.
 
 ```env
 CODEX_CLI_ENABLED=true
 CODEX_CLI_PATH=codex
 CODEX_CLI_WORKSPACE=/app
+CODEX_HOST_HOME=/home/ubuntu/.codex
 CODEX_MODEL=gpt-5.5
 CODEX_REASONING=low
 CODEX_SANDBOX=read-only
 CODEX_CLI_TIMEOUT_SECONDS=180
 ```
 
-컨테이너 안에서 `codex --version`과 `codex login`이 동작하지 않는 배포라면
-`CODEX_CLI_PATH`를 호스트 Codex CLI를 호출하는 검증된 래퍼로 지정해야 합니다.
-Codex CLI가 없는 환경에서는 설정을 켜도 기존 OpenRouter 경로만 사용됩니다.
+배포 후 `docker compose exec -T api codex --version`으로 실행 파일만 확인합니다.
+로그인 토큰 자체는 출력하지 않습니다. Codex CLI 인증이 없거나 설정이 꺼져
+있으면 기존 OpenRouter 경로만 사용됩니다.
 
 ## 동작 순서
 
@@ -40,5 +47,3 @@ GitHub Actions의 스케줄러는 여전히 GitHub runner에서 실행됩니다.
 실제로 사용하려면 스케줄 작업을 Hermes에서 실행하거나, Actions가 Hermes의 검증된
 래퍼를 호출하도록 별도 배포해야 합니다. 단순히 `.env`에 플래그만 추가하면 Actions
 runner에 Codex 인증이 생기지는 않습니다.
-
-
