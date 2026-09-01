@@ -17,6 +17,7 @@ on:
       - "src/pipeline_common/**"
       - "src/preprocessing/**"
       - "src/report/**"
+      - "src/llm/**"
       - "scripts/**"
       - "requirements.txt"
       - "Dockerfile"
