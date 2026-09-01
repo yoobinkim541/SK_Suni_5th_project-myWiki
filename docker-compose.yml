@@ -8,3 +8,8 @@ services:
       - "8010:8000"
     env_file:
       - .env
+    # Optional ChatGPT-managed Codex login. Set CODEX_HOST_HOME on Hermes to
+    # the host user's ~/.codex directory; the default empty directory keeps
+    # normal OpenRouter-only deployments working.
+    volumes:
+      - ${CODEX_HOST_HOME:-./.codex}:/root/.codex:ro
