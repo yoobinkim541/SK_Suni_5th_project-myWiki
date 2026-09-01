@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from supabase import Client
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
+from ..llm.codex_cli import CodexCliError, create_json_completion_with_codex, get_codex_cli_settings
 from ..analysis.reliability_models import ReliabilityLevel
 from ..report.candidate_provider import get_recently_analyzed_candidates
 from ..report.composer import compose_report_sections
@@ -278,6 +279,31 @@ def _generate_issue_page(
     return page_id, version_id
 
 
+
+def _create_topic_json_completion(system_prompt: str, user_prompt: str, model: str) -> str:
+    """OpenRouter를 기본으로 사용하고, 실패하면 Hermes Codex CLI를 시도한다."""
+    try:
+        return create_json_completion(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model=model,
+        )
+    except Exception:
+        codex_settings = get_codex_cli_settings()
+        if not codex_settings.enabled:
+            raise
+        try:
+            logger.warning("openrouter_wiki_completion_failed_using_codex_cli")
+            return create_json_completion_with_codex(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                settings=codex_settings,
+            )
+        except CodexCliError:
+            logger.exception("codex_cli_wiki_completion_failed")
+            raise
+
+
 def _wiki_contexts_to_candidates(
     wiki_contexts: list[WikiContext],
     *,
@@ -336,10 +362,10 @@ def _generate_topic_page(
     if llm_client is not None:
         response_text = llm_client(WIKI_TOPIC_SYSTEM_PROMPT, user_prompt, settings.model)
     else:
-        response_text = create_json_completion(
-            system_prompt=WIKI_TOPIC_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            model=settings.model,
+        response_text = _create_topic_json_completion(
+            WIKI_TOPIC_SYSTEM_PROMPT,
+            user_prompt,
+            settings.model,
         )
     payload = parse_json_response(response_text)
     try:
