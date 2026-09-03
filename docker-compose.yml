@@ -11,11 +11,17 @@ services:
     # Optional ChatGPT-managed Codex login. Set CODEX_HOST_HOME on Hermes to
     # the host user's ~/.codex directory; the default empty directory keeps
     # normal OpenRouter-only deployments working.
+    #
+    # This must be read-write, not :ro — Codex CLI writes its own runtime
+    # state (app-server socket/cache, PATH alias shims) under $CODEX_HOME at
+    # every invocation, not just auth.json at login time. A read-only mount
+    # made every call fail with "failed to initialize in-process app-server
+    # client: Read-only file system" even though login/auth itself worked
+    # (confirmed live, 2026-09-03).
     volumes:
-      - ${CODEX_HOST_HOME:-./.codex}:/root/.codex:ro
+      - ${CODEX_HOST_HOME:-./.codex}:/root/.codex
 
-  # Run once on Hermes to create/update the ChatGPT-managed auth.json. This
-  # profile is never started with the API and is the only RW auth mount.
+  # Run once on Hermes to create/update the ChatGPT-managed auth.json.
   codex-login:
     profiles: ["codex-login"]
     build: .
