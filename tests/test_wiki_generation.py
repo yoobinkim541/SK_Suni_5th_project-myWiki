@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -478,6 +479,52 @@ def test_generate_topic_page_skips_when_llm_returns_skip(monkeypatch):
     assert action == "skip"
     assert page_id is None
     assert version_id is None
+
+
+def test_generate_topic_page_uses_codex_after_schema_validation_failure(monkeypatch):
+    """OpenRouter가 JSON이지만 위키 스키마를 만족하지 않으면 Codex로 복구한다."""
+    calls = []
+    monkeypatch.setattr(generation, "get_openrouter_settings", lambda: SimpleNamespace(model="model"))
+    monkeypatch.setattr(generation, "list_top_level_topic_pages", lambda workspace_id, supabase=None: [])
+    openrouter_calls = 0
+
+    def invalid_openrouter(**_kwargs):
+        nonlocal openrouter_calls
+        openrouter_calls += 1
+        return json.dumps({"claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}]})
+
+    monkeypatch.setattr(generation, "create_json_completion", invalid_openrouter)
+    monkeypatch.setattr(generation, "get_codex_cli_settings", lambda: SimpleNamespace(enabled=True))
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion_with_codex",
+        lambda **_kwargs: json.dumps({
+            "action": "create_new",
+            "slug": "hbm4-supply",
+            "title": "HBM4_수급현황",
+            "page_type": "technology",
+            "markdown": "# HBM4_수급현황",
+            "change_summary": "최초 생성",
+            "claims": [{"document_version_id": "doc-1", "claim_text": "근거", "citation_order": 1}],
+            "confidence_score": 0.8,
+            "reliability": _RELIABILITY_MEDIUM,
+        }),
+    )
+    monkeypatch.setattr(generation, "upsert_wiki_page", lambda *a, **k: "page-new")
+    monkeypatch.setattr(generation, "create_wiki_version", lambda draft, **k: calls.append("create") or "version-new")
+    monkeypatch.setattr(generation, "record_wiki_validation", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "review_wiki_version", lambda *a, **k: None)
+    monkeypatch.setattr(generation, "publish_wiki_version", lambda *a, **k: None)
+
+    action, page_id, version_id = generation._generate_topic_page(
+        _section(), [], workspace_id="ws-1", requested_by=None,
+    )
+
+    assert action == "create_new"
+    assert page_id == "page-new"
+    assert version_id == "version-new"
+    assert openrouter_calls == 1
+    assert calls == ["create"]
 
 
 def test_generate_topic_page_skips_when_reliability_is_low(monkeypatch):
