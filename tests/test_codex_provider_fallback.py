@@ -40,3 +40,16 @@ def test_wiki_uses_codex_after_openrouter_failure(monkeypatch) -> None:
     )
 
     assert generation._create_topic_json_completion("system", "user", "model") == expected
+
+
+def test_wiki_uses_codex_when_openrouter_returns_non_json(monkeypatch) -> None:
+    expected = '{"action":"skip","claims":[]}'
+    monkeypatch.setattr(generation, "create_json_completion", lambda **_kwargs: "not-json")
+    monkeypatch.setattr(generation, "get_codex_cli_settings", lambda: SimpleNamespace(enabled=True))
+    monkeypatch.setattr(
+        generation,
+        "create_json_completion_with_codex",
+        lambda **_kwargs: expected,
+    )
+
+    assert generation._create_topic_json_completion("system", "user", "model") == expected
