@@ -8,7 +8,12 @@ from pydantic import ValidationError
 from supabase import Client
 
 from ..analysis.classifier import create_json_completion, get_openrouter_settings, parse_json_response
-from ..llm.codex_cli import CodexCliError, create_json_completion_with_codex, get_codex_cli_settings
+from ..llm.codex_cli import (
+    CodexCliError,
+    create_json_completion_with_codex,
+    get_codex_cli_settings,
+    normalize_json_output,
+)
 from ..analysis.reliability_models import ReliabilityLevel
 from ..report.candidate_provider import get_recently_analyzed_candidates
 from ..report.composer import compose_report_sections
@@ -283,10 +288,12 @@ def _generate_issue_page(
 def _create_topic_json_completion(system_prompt: str, user_prompt: str, model: str) -> str:
     """OpenRouter를 기본으로 사용하고, 실패하면 Hermes Codex CLI를 시도한다."""
     try:
-        return create_json_completion(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            model=model,
+        return normalize_json_output(
+            create_json_completion(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=model,
+            )
         )
     except Exception:
         codex_settings = get_codex_cli_settings()

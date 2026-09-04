@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,6 +22,7 @@ from src.report.composer import (
     compose_report_sections,
 )
 from src.report.models import EnrichedIssueGroup, IssueGroup, ReportCandidate, WikiContext
+from src.report import composer as report_composer
 
 
 def make_candidate(
@@ -96,6 +98,52 @@ def valid_response() -> str:
             ],
         }
     )
+
+
+def test_compose_report_section_uses_codex_after_openrouter_payload_validation_failure(monkeypatch) -> None:
+    invalid = json.dumps(
+        {
+            "title": "HBM3E roadmap update",
+            "current_summary": {"text": "Current situation.", "news_refs": ["N1"]},
+            "key_facts": [{"text": "Fact one.", "news_refs": ["N1"]}],
+            "historical_context": [{"text": "Background.", "wiki_refs": []}],
+            "implications": [{"text": "Implication.", "news_refs": ["N1"], "wiki_refs": []}],
+            "watch_points": [{"text": "Watch this.", "news_refs": ["N1"], "wiki_refs": []}],
+        }
+    )
+    openrouter_calls = 0
+
+    monkeypatch.setattr(
+        report_composer,
+        "get_openrouter_settings",
+        lambda: SimpleNamespace(
+            api_key="configured",
+            model="primary",
+            fallback_model="fallback",
+            base_url="https://example.test",
+        ),
+    )
+
+    def fake_openrouter(**_kwargs):
+        nonlocal openrouter_calls
+        openrouter_calls += 1
+        return invalid
+
+    monkeypatch.setattr(report_composer, "_complete_report_section", fake_openrouter)
+    monkeypatch.setattr(report_composer, "get_codex_cli_settings", lambda: SimpleNamespace(enabled=True))
+    monkeypatch.setattr(
+        report_composer,
+        "create_json_completion_with_codex",
+        lambda **_kwargs: valid_response(),
+    )
+
+    section = compose_report_section(
+        make_group(),
+        config=ReportComposerConfig(max_retries=1),
+    )
+
+    assert section.title == "HBM3E roadmap update"
+    assert openrouter_calls == 1
 
 
 def test_build_composer_input_assigns_deterministic_refs() -> None:

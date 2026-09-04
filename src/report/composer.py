@@ -16,6 +16,7 @@ from ..llm.codex_cli import (
     CodexCliError,
     create_json_completion_with_codex,
     get_codex_cli_settings,
+    normalize_json_output,
 )
 from ..analysis.models import Category
 from .models import (
@@ -183,11 +184,19 @@ def compose_report_section(
     last_error: Exception | None = None
     for _attempt in range(config.max_retries + 1):
         system_prompt, user_prompt = build_report_section_messages(composer_input)
+        if last_error is not None:
+            user_prompt += (
+                "\n\nREPAIR REQUIRED\n"
+                "The previous response failed validation. Return a corrected JSON object "
+                "that follows every source-reference rule. Do not repeat the previous error.\n"
+                f"Validation error: {last_error}"
+            )
         raw_response = call_section_llm(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             config=config,
             llm_client=llm_client,
+            prefer_codex=_attempt > 0,
         )
         try:
             payload = _parse_section_payload(raw_response)
@@ -233,6 +242,7 @@ def call_section_llm(
     user_prompt: str,
     config: ReportComposerConfig,
     llm_client: Callable[[str, str, ReportComposerConfig], str] | None = None,
+    prefer_codex: bool = False,
 ) -> str:
     if llm_client is not None:
         return llm_client(system_prompt, user_prompt, config)
@@ -240,6 +250,7 @@ def call_section_llm(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         config=config,
+        prefer_codex=prefer_codex,
     )
 
 
@@ -531,8 +542,21 @@ def _create_report_json_completion(
     system_prompt: str,
     user_prompt: str,
     config: ReportComposerConfig,
+    prefer_codex: bool = False,
 ) -> str:
     """OpenRouter를 기본으로 사용하고, 두 호출이 실패하면 Hermes Codex CLI를 시도한다."""
+    codex_settings = get_codex_cli_settings()
+    if prefer_codex and codex_settings.enabled:
+        try:
+            logger.warning("report_completion_retrying_with_codex_cli")
+            return create_json_completion_with_codex(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                settings=codex_settings,
+            )
+        except Exception:
+            logger.exception("codex_cli_report_retry_failed_using_openrouter")
+
     try:
         settings = get_openrouter_settings()
         if not settings.api_key:
@@ -540,11 +564,13 @@ def _create_report_json_completion(
 
         primary_model = config.model or settings.model
         try:
-            return _complete_report_section(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                model=primary_model,
-                temperature=config.temperature,
+            return normalize_json_output(
+                _complete_report_section(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    model=primary_model,
+                    temperature=config.temperature,
+                )
             )
         except Exception:
             fallback_model = config.fallback_model or settings.fallback_model
@@ -554,14 +580,15 @@ def _create_report_json_completion(
                 "openrouter_primary_model_failed_using_fallback",
                 extra={"primary_model": primary_model, "fallback_model": fallback_model},
             )
-            return _complete_report_section(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                model=fallback_model,
-                temperature=config.temperature,
+            return normalize_json_output(
+                _complete_report_section(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    model=fallback_model,
+                    temperature=config.temperature,
+                )
             )
     except Exception:
-        codex_settings = get_codex_cli_settings()
         if not codex_settings.enabled:
             raise
         try:
