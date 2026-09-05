@@ -285,8 +285,26 @@ def _generate_issue_page(
 
 
 
-def _create_topic_json_completion(system_prompt: str, user_prompt: str, model: str) -> str:
+def _create_topic_json_completion(
+    system_prompt: str,
+    user_prompt: str,
+    model: str,
+    *,
+    prefer_codex: bool = False,
+) -> str:
     """OpenRouter를 기본으로 사용하고, 실패하면 Hermes Codex CLI를 시도한다."""
+    codex_settings = get_codex_cli_settings()
+    if prefer_codex and codex_settings.enabled:
+        try:
+            logger.warning("wiki_topic_validation_retrying_with_codex_cli")
+            return create_json_completion_with_codex(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                settings=codex_settings,
+            )
+        except Exception:
+            logger.exception("codex_cli_wiki_validation_retry_failed_using_openrouter")
+
     try:
         return normalize_json_output(
             create_json_completion(
@@ -296,7 +314,6 @@ def _create_topic_json_completion(system_prompt: str, user_prompt: str, model: s
             )
         )
     except Exception:
-        codex_settings = get_codex_cli_settings()
         if not codex_settings.enabled:
             raise
         try:
@@ -309,6 +326,22 @@ def _create_topic_json_completion(system_prompt: str, user_prompt: str, model: s
         except CodexCliError:
             logger.exception("codex_cli_wiki_completion_failed")
             raise
+
+
+def _parse_topic_llm_result(response_text: str) -> WikiTopicLLMResult:
+    payload = parse_json_response(response_text)
+    try:
+        return WikiTopicLLMResult.model_validate(payload)
+    except ValidationError as exc:
+        # page_type만 스키마 밖 값이면(예: LLM이 지어낸 카테고리명) industry로 대체해
+        # 페이지 생성 자체가 막히지 않게 한다.
+        if {e["loc"] for e in exc.errors()} != {("page_type",)}:
+            raise
+        logger.warning(
+            "wiki_topic_page_type_fallback",
+            extra={"invalid_page_type": payload.get("page_type")},
+        )
+        return WikiTopicLLMResult.model_validate({**payload, "page_type": "industry"})
 
 
 def _wiki_contexts_to_candidates(
@@ -374,20 +407,30 @@ def _generate_topic_page(
             user_prompt,
             settings.model,
         )
-    payload = parse_json_response(response_text)
     try:
-        result = WikiTopicLLMResult.model_validate(payload)
+        result = _parse_topic_llm_result(response_text)
     except ValidationError as exc:
-        # page_type만 스키마 밖 값이면(예: LLM이 지어낸 카테고리명) industry로 대체해
-        # 페이지 생성 자체가 막히지 않게 한다. 다른 필드 문제면 그대로 올린다.
-        if {e["loc"] for e in exc.errors()} != {("page_type",)}:
+        # OpenRouter가 JSON은 반환했지만 스키마를 지키지 못한 경우에는
+        # Codex CLI에 오류 내용을 포함해 한 번만 교정 요청한다.
+        if llm_client is not None:
             raise
-        logger.warning(
-            "wiki_topic_page_type_fallback",
-            extra={"issue_key": section.issue_key, "invalid_page_type": payload.get("page_type")},
+        repair_prompt = (
+            f"{user_prompt}\n\nREPAIR REQUIRED\n"
+            "The previous response was valid JSON but did not match the required wiki schema. "
+            "Return a complete corrected JSON object with every required field.\n"
+            f"Validation error: {exc}"
         )
-        payload = {**payload, "page_type": "industry"}
-        result = WikiTopicLLMResult.model_validate(payload)
+        try:
+            repaired_response = _create_topic_json_completion(
+                WIKI_TOPIC_SYSTEM_PROMPT,
+                repair_prompt,
+                settings.model,
+                prefer_codex=True,
+            )
+            result = _parse_topic_llm_result(repaired_response)
+        except Exception:
+            logger.exception("wiki_topic_schema_repair_failed")
+            raise exc
 
     # LLM이 돌려준 식별자는 프롬프트에 보여준 값에서만 골라야 한다.
     allowed_document_version_ids = {
