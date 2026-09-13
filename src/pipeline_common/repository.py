@@ -259,16 +259,21 @@ def list_active_documents(workspace_id: UUID) -> list[dict]:
     rows: list[dict] = []
     offset = 0
     while True:
-        res = (
-            client.table("documents")
-            .select("*")
-            .eq("workspace_id", str(workspace_id))
-            .eq("status", DOC_STATUS_ACTIVE)
-            # 순서를 고정해야 페이지가 겹치거나 빠지지 않는다.
-            .order("id")
-            .range(offset, offset + _PAGE_SIZE - 1)
-            .execute()
-        )
+        def fetch_page() -> Any:
+            return (
+                client.table("documents")
+                # Active-document callers only need these fields. Keeping the page
+                # narrow avoids timing out while serializing large document rows.
+                .select("id, workspace_id, canonical_url")
+                .eq("workspace_id", str(workspace_id))
+                .eq("status", DOC_STATUS_ACTIVE)
+                # 순서를 고정해야 페이지가 겹치거나 빠지지 않는다.
+                .order("id")
+                .range(offset, offset + _PAGE_SIZE - 1)
+                .execute()
+            )
+
+        res = db.execute_with_retry(fetch_page)
         page = _rows(res)
         rows.extend(page)
         if len(page) < _PAGE_SIZE:

@@ -142,8 +142,8 @@ def _complete(
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
-            # DeepSeek V4 Flash의 추론 토큰을 끄면 작은 잔액에서도 구조화 응답을 안정적으로 받는다.
-            extra_body={"reasoning": {"enabled": False}},
+            # 모델별 reasoning 요구사항은 OpenRouter가 결정하게 둔다.
+            # 일부 라우팅 대상은 reasoning을 필수로 요구하므로 강제로 끄면 400이 된다.
             timeout=timeout,
         )
     except Exception as exc:  # pragma: no cover
@@ -223,4 +223,3 @@ def _get_openai_exception(name: str):
     except ImportError:
         return None
     return getattr(module, name, None)
-

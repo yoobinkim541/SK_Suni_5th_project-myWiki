@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 from src.analysis.classifier import classify_document, parse_classification_response
 from src.analysis.exceptions import InvalidCategoryError, InvalidJsonResponseError, MissingApiKeyError
@@ -78,6 +79,38 @@ def test_missing_api_key_fails_immediately(monkeypatch: pytest.MonkeyPatch) -> N
 
     with pytest.raises(MissingApiKeyError, match="OPENROUTER_API_KEY"):
         classify_document(title="t", markdown="m")
+
+
+def test_classifier_request_leaves_reasoning_policy_to_openrouter(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, object] = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content='{"ok": true}'),
+                    )
+                ]
+            )
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=FakeCompletions()),
+    )
+    monkeypatch.setattr("src.analysis.classifier.get_openrouter_client", lambda: fake_client)
+
+    from src.analysis.classifier import _complete
+
+    assert _complete(
+        system_prompt="system",
+        user_prompt="user",
+        model="deepseek/deepseek-v4-flash-0731",
+        temperature=0,
+        timeout=30,
+        max_tokens=32,
+    ) == '{"ok": true}'
+    assert "extra_body" not in calls
 
 
 def test_reject_more_than_two_secondary_categories() -> None:
