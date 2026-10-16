@@ -11,6 +11,7 @@ from typing import Any
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
+from ..llm.agy_cli import wrap_client
 from .exceptions import (
     InvalidCategoryError,
     InvalidJsonResponseError,
@@ -142,8 +143,8 @@ def _complete(
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
-            # DeepSeek V4 Flash의 추론 토큰을 끄면 작은 잔액에서도 구조화 응답을 안정적으로 받는다.
-            extra_body={"reasoning": {"enabled": False}},
+            # 모델별 reasoning 요구사항은 OpenRouter가 결정하게 둔다.
+            # 일부 라우팅 대상은 reasoning을 필수로 요구하므로 강제로 끄면 400이 된다.
             timeout=timeout,
         )
     except Exception as exc:  # pragma: no cover
@@ -209,11 +210,11 @@ def _get_openai_constructor():
 def get_openrouter_client():
     settings = get_openrouter_settings()
     constructor = _get_openai_constructor()
-    return constructor(
+    return wrap_client(constructor(
         base_url=settings.base_url,
         api_key=settings.api_key,
         max_retries=DEFAULT_MAX_RETRIES,
-    )
+    ))
 
 
 @lru_cache(maxsize=8)
@@ -223,4 +224,3 @@ def _get_openai_exception(name: str):
     except ImportError:
         return None
     return getattr(module, name, None)
-

@@ -13,6 +13,7 @@ from typing import Optional
 
 from openai import OpenAI
 
+from ..llm.agy_cli import wrap_client
 from .core import MODEL_NAME, OPENROUTER_BASE_URL
 
 logger = logging.getLogger(__name__)
@@ -36,9 +37,9 @@ TITLE_PROMPT = """\
 
 def generate_session_title(question: str, client: Optional[OpenAI] = None) -> Optional[str]:
     try:
-        openai_client = client or OpenAI(
+        openai_client = client or wrap_client(OpenAI(
             base_url=OPENROUTER_BASE_URL, api_key=os.environ["OPENROUTER_API_KEY"]
-        )
+        ))
         response = openai_client.chat.completions.create(
             model=MODEL_NAME,
             max_tokens=MAX_TOKENS,

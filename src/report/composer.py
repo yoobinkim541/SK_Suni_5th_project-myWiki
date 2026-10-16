@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ..analysis.classifier import _wait_for_free_model_slot
 from ..analysis.importance_models import ImpactDirection, TimeHorizon
+from ..llm.agy_cli import wrap_client
 from ..llm.codex_cli import (
     CodexCliError,
     create_json_completion_with_codex,
@@ -403,11 +404,11 @@ def get_openrouter_settings() -> OpenRouterSettings:
 @lru_cache(maxsize=1)
 def get_openrouter_client() -> OpenAI:
     settings = get_openrouter_settings()
-    return OpenAI(
+    return wrap_client(OpenAI(
         base_url=settings.base_url,
         api_key=settings.api_key,
         max_retries=1,
-    )
+    ))
 
 
 def _iter_news_refs(payload: GeneratedReportSectionPayload):

@@ -9,14 +9,74 @@
 """
 from __future__ import annotations
 
+import logging
 import os
+import time
+from collections.abc import Callable
 from functools import lru_cache
-from typing import Any
+from typing import Any, TypeVar
 
 # 반환 타입을 supabase.Client로 좁히지 않고 Any로 둔다.
 # 테스트가 더블을 주입할 수 있어야 하고, 이 모듈이 supabase 패키지를
 # import하지 않아야 패키지 없이도 테스트가 돈다.
 _injected: Any | None = None
+_T = TypeVar("_T")
+_logger = logging.getLogger(__name__)
+
+_RETRYABLE_DATABASE_CODES = {"408", "429", "500", "502", "503", "504"}
+
+
+def _error_code(exc: Exception) -> str | None:
+    code = getattr(exc, "code", None)
+    if code is None:
+        args = getattr(exc, "args", ())
+        if args and isinstance(args[0], dict):
+            code = args[0].get("code")
+    return str(code) if code is not None else None
+
+
+def is_transient_database_error(exc: Exception) -> bool:
+    """Return whether a database failure is safe to retry at the request boundary."""
+    if _error_code(exc) in _RETRYABLE_DATABASE_CODES:
+        return True
+
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in ("gateway timeout", "connection reset", "connection refused", "timed out")
+    )
+
+
+def execute_with_retry(
+    operation: Callable[[], _T],
+    *,
+    attempts: int = 3,
+    initial_delay_seconds: float = 2.0,
+) -> _T:
+    """Run a database operation with bounded exponential retry for transient failures."""
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1")
+
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            if attempt >= attempts or not is_transient_database_error(exc):
+                raise
+
+            delay = initial_delay_seconds * (2 ** (attempt - 1))
+            _logger.warning(
+                "supabase_request_retrying",
+                extra={
+                    "attempt": attempt + 1,
+                    "max_attempts": attempts,
+                    "error_code": _error_code(exc),
+                },
+            )
+            if delay > 0:
+                time.sleep(delay)
+
+    raise AssertionError("execute_with_retry loop exited unexpectedly")
 
 
 @lru_cache(maxsize=1)

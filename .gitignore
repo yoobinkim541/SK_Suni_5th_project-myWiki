@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .codex/
+.agy-home/
 
 # Python
 __pycache__/

@@ -20,6 +20,11 @@ services:
     # (confirmed live, 2026-09-03).
     volumes:
       - ${CODEX_HOST_HOME:-./.codex}:/root/.codex
+      # Optional Antigravity CLI (agy → Gemini) login. AGY_HOST_HOME is a dedicated directory
+      # holding the `agy` binary and its own .gemini login state (NOT the host user's ~/.gemini:
+      # the container runs as root and would leave root-owned files in it). Read-write because
+      # agy writes conversation state and refreshes its token. See .env.example (AGY_CLI_*).
+      - ${AGY_HOST_HOME:-./.agy-home}:/opt/agy-home
 
   # Run once on Hermes to create/update the ChatGPT-managed auth.json.
   codex-login:
