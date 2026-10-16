@@ -11,6 +11,7 @@ from typing import Any
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
+from ..llm.agy_cli import wrap_client
 from .exceptions import (
     InvalidCategoryError,
     InvalidJsonResponseError,
@@ -209,11 +210,11 @@ def _get_openai_constructor():
 def get_openrouter_client():
     settings = get_openrouter_settings()
     constructor = _get_openai_constructor()
-    return constructor(
+    return wrap_client(constructor(
         base_url=settings.base_url,
         api_key=settings.api_key,
         max_retries=DEFAULT_MAX_RETRIES,
-    )
+    ))
 
 
 @lru_cache(maxsize=8)
